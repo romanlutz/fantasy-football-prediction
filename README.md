@@ -6,5 +6,7 @@ namely Support Vector Regression and Neural Networks, on 2014 NFL game data.
 To get the NFL data, I used the nflgame package from github which is downloadable with the following commands:
 
 sudo apt-get install python-pip
+
 sudo pip install nflgame
+
 sudo nflgame-update-players
