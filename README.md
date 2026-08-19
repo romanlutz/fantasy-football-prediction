@@ -27,7 +27,8 @@ uv sync --all-groups
 
 ## Commands
 
-Build the historical 2010-2013 quarterback training set and 2014 test set:
+Build the default quarterback dataset (the historical 2010-2013 training set
+and 2014 test set):
 
 ```console
 uv run ffpred build-dataset
