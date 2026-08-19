@@ -6,282 +6,313 @@
 # the terms of this license.
 # You must not remove this notice, or any other, from this software.
 
-from get_data import fetch_defense_stats, fetch_qb_stats, test_players, determine_team
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from datetime import date, datetime, timezone
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 
-""" Returns stats of the player or team corresponding to the id
-for the last game before the given week in the given year
-"""
-def last_game(statistics, id, year, week):
-    # if the week was the first, go back by one week
-    week -= 1
-    if week == 0:
-        week = 17
-        year -= 1
-    # check if there are previous years
-    if year < 2009 or year > 2014:
+from get_data import fetch_defense_stats, fetch_qb_stats, source_metadata
+
+QB_FIELDS = (
+    "passing_attempts",
+    "passing_yards",
+    "passing_touchdowns",
+    "passing_interceptions",
+    "passing_two_point_attempts",
+    "passing_two_point_made",
+    "rushing_attempts",
+    "rushing_yards",
+    "rushing_touchdowns",
+    "rushing_two_point_attempts",
+    "rushing_two_point_made",
+    "fumbles",
+)
+DEFENSE_FIELDS = (
+    "points_allowed",
+    "passing_yards_allowed",
+    "rushing_yards_allowed",
+    "turnovers",
+)
+
+
+def _played_games_before(
+    statistics: dict[str, dict[str, Any]], identifier: str, year: int, week: int
+) -> list[tuple[int, int, dict[str, Any]]]:
+    games: list[tuple[int, int, dict[str, Any]]] = []
+    for season_key, season_data in statistics[identifier].items():
+        if not str(season_key).isdigit() or not isinstance(season_data, dict):
+            continue
+        season = int(season_key)
+        for week_key, game in season_data.items():
+            if not str(week_key).isdigit() or not game.get("played"):
+                continue
+            game_week = int(week_key)
+            if (season, game_week) < (year, week):
+                games.append((season, game_week, game))
+    return sorted(games, key=lambda item: (item[0], item[1]), reverse=True)
+
+
+def last_game(
+    statistics: dict[str, dict[str, Any]], identifier: str, year: int, week: int
+) -> tuple[dict[str, Any] | None, int | None, int | None]:
+    games = _played_games_before(statistics, identifier, year, week)
+    if not games:
         return None, None, None
+    game_year, game_week, game = games[0]
+    return game, game_year, game_week
 
-    # check if the team/player played in the given week
-    # if not played, recursively call previous week to check
-    if not(statistics[id][str(year)][str(week)]['played']):
-        return last_game(statistics, id, year, week)
-    # team/player played in the given week, return stats
-    else:
-        return statistics[id][str(year)][str(week)], year, week
 
-""" Returns the statistics of the last k games for the given
-player or team corresponding to the id. If there are less than
-k games, only the existing ones are returned.
-"""
-def last_k_games(k, statistics, id, year, week):
-    stats, year, week = last_game(statistics, id, year, week)
-    last_k = [stats]
-    k -= 1
-    # case 1: no prior games
-    if stats == None:
-        return []
-    # case 2: only one game requested
-    if k == 0:
-        return last_k
+def last_k_games(
+    k: int,
+    statistics: dict[str, dict[str, Any]],
+    identifier: str,
+    year: int,
+    week: int,
+) -> list[dict[str, Any]]:
+    return [
+        game
+        for _, _, game in _played_games_before(
+            statistics, identifier, year, week
+        )[:k]
+    ]
 
-    # case 3: multiple games requested
-    # repeatedly check if there are further games
-    while last_k[-1] != None and k > 0:
-        stats, year, week = last_game(statistics, id, year, week)
-        last_k.append(stats)
-        k -= 1
-    # if None appears in the list, remove it
-    return last_k[:-1] if last_k[-1] == None else last_k
 
-""" Calculates the average stats of a defense over the games
-handed over to the function.
-"""
-def average_defense_stats(games):
-    points = 0
-    passing_yards = 0
-    rushing_yards = 0
-    turnovers = 0
-
-    n_games = len(games)
-
-    if n_games == 0:
+def _average_stats(
+    games: list[dict[str, Any]], fields: tuple[str, ...]
+) -> dict[str, float] | None:
+    if not games:
         return None
-
-    for game in games:
-        points += game['points_allowed']
-        passing_yards += game['passing_yards_allowed']
-        rushing_yards += game['rushing_yards_allowed']
-        turnovers += game['turnovers']
-
     return {
-        'points_allowed': float(points)/float(n_games),
-        'passing_yards_allowed': float(passing_yards)/float(n_games),
-        'rushing_yards_allowed': float(rushing_yards)/float(n_games),
-        'turnovers': float(turnovers)/float(n_games),
+        field: float(sum(game[field] for game in games)) / len(games)
+        for field in fields
     }
 
-""" Calculates the average QB stats over the games
-handed over to the function.
-"""
-def average_qb_stats(games):
-    passing_attempts = 0
-    passing_yards = 0
-    passing_touchdowns = 0
-    passing_interceptions = 0
-    passing_two_point_attempts = 0
-    passing_two_point_made = 0
-    rushing_attempts = 0
-    rushing_yards = 0
-    rushing_touchdowns = 0
-    rushing_two_point_attempts = 0
-    rushing_two_point_made = 0
-    fumbles = 0
 
-    n_games = len(games)
+def average_defense_stats(
+    games: list[dict[str, Any]],
+) -> dict[str, float] | None:
+    return _average_stats(games, DEFENSE_FIELDS)
 
-    if n_games == 0:
+
+def average_qb_stats(games: list[dict[str, Any]]) -> dict[str, float] | None:
+    return _average_stats(games, QB_FIELDS)
+
+
+def _parse_date(value: str | date | datetime) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    for date_format in ("%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(value, date_format).date()
+        except ValueError:
+            continue
+    raise ValueError(f"Unsupported date format: {value}")
+
+
+def calculate_age(
+    birthdate: str | date | datetime, game_date: str | date | datetime
+) -> float:
+    born = _parse_date(birthdate)
+    played = _parse_date(game_date)
+    return (played - born).days / 365.2425
+
+
+def fantasy_score(
+    passing_yards: float,
+    passing_touchdowns: float,
+    interceptions: float,
+    rushing_yards: float,
+    rushing_touchdowns: float,
+    fumbles: float,
+    two_point: float,
+) -> float:
+    return (
+        passing_yards / 25
+        + passing_touchdowns * 4
+        - interceptions * 2
+        + rushing_yards / 10
+        + rushing_touchdowns * 6
+        - fumbles * 2
+        + two_point * 2
+    )
+
+
+def create_row(
+    qb_statistics: dict[str, dict[str, Any]],
+    defense_statistics: dict[str, dict[str, Any]],
+    rookie_statistics: dict[str, float],
+    identifier: str,
+    year: int,
+    week: int,
+) -> list[Any] | None:
+    player = qb_statistics[identifier]
+    current_game = player[str(year)][str(week)]
+    if not player.get("birthdate") or not current_game.get("game_date"):
         return None
 
-    for game in games:
-        passing_attempts += game['passing_attempts']
-        passing_yards += game['passing_yards']
-        passing_touchdowns += game['passing_touchdowns']
-        passing_interceptions += game ['passing_interceptions']
-        passing_two_point_attempts += game['passing_two_point_attempts']
-        passing_two_point_made += game['passing_two_point_made']
-        rushing_attempts += game['rushing_attempts']
-        rushing_yards += game['rushing_yards']
-        rushing_touchdowns += game['rushing_touchdowns']
-        rushing_two_point_attempts += game['rushing_two_point_attempts']
-        rushing_two_point_made += game['rushing_two_point_made']
-        fumbles += game['fumbles']
+    last_game_qb = average_qb_stats(
+        last_k_games(1, qb_statistics, identifier, year, week)
+    ) or rookie_statistics
+    last_10_qb = average_qb_stats(
+        last_k_games(10, qb_statistics, identifier, year, week)
+    ) or rookie_statistics
 
-    return {
-        'passing_attempts': float(passing_attempts)/float(n_games),
-        'passing_yards': float(passing_yards)/float(n_games),
-        'passing_touchdowns': float(passing_touchdowns)/float(n_games),
-        'passing_interceptions': float(passing_interceptions)/float(n_games),
-        'passing_two_point_attempts': float(passing_two_point_attempts)/float(n_games),
-        'passing_two_point_made': float(passing_two_point_made)/float(n_games),
-        'rushing_attempts': float(rushing_attempts)/float(n_games),
-        'rushing_yards': float(rushing_yards)/float(n_games),
-        'rushing_touchdowns': float(rushing_touchdowns)/float(n_games),
-        'rushing_two_point_attempts': float(rushing_two_point_attempts)/float(n_games),
-        'rushing_two_point_made': float(rushing_two_point_made)/float(n_games),
-        'fumbles': float(fumbles)/float(n_games)
-    }
-
-""" Calculates the age of a player for a given game.
-"""
-def calculate_age(birthdate, game_week, game_year):
-    if birthdate[1] == '/':
-        birthdate = '0' + birthdate
-    birth_month = int(birthdate[0:2])
-    if birthdate[4] == '/':
-        birthdate = birthdate[:3] + '0' + birthdate[3:]
-    birth_day = int(birthdate[3:5])
-    birth_year = int(birthdate[6:10])
-    total_days = 1 + (game_week - 1) * 7
-    game_month = 9 + int(total_days / 31)
-    game_day = total_days % 31
-    age = game_year - birth_year
-    age += float(game_month - birth_month) / 12
-    age += float(game_day - birth_day) / 365
-    return age
-
-""" Creates a row for the dataset. It is assumed 
-that the player with the given ID actually played 
-in the given week and year.
-"""
-def create_row(qb_statistics, defense_statistics, rookie_statistics, id, year, week):
-    age = calculate_age(qb_statistics[id]['birthdate'], week, year)
-    years_pro = qb_statistics[id]['years_pro'] - (2015 - year)
-    last_game_qb_stats = average_qb_stats(last_k_games(1, qb_statistics, id, year, week))
-    if last_game_qb_stats == None:
-        # replace last_game_stats with rookie stats
-        last_game_qb_stats = rookie_statistics
-
-    last_10_games_qb_stats = average_qb_stats(last_k_games(10, qb_statistics, id, year, week))
-    if last_10_games_qb_stats == None:
-        # replace last_10_games with rookie stats
-        last_10_games_qb_stats = rookie_statistics
-
-    # find out the opposing team by determining which team the QB plays for
-    # the API does only allow to query the current team (as of 2015)
-    # therefore this has to be done differently
-    qb_team = determine_team(qb_statistics[id][str(year)])
-    # if QB had multiple teams in the given year, don't include QB stats
-    if qb_team == None:
+    opponent = current_game.get("opponent")
+    if not opponent or opponent not in defense_statistics:
+        return None
+    last_game_defense = average_defense_stats(
+        last_k_games(1, defense_statistics, opponent, year, week)
+    )
+    last_10_defense = average_defense_stats(
+        last_k_games(10, defense_statistics, opponent, year, week)
+    )
+    if last_game_defense is None or last_10_defense is None:
         return None
 
-    home_team = qb_statistics[id][str(year)][str(week)]['home']
-    away_team = qb_statistics[id][str(year)][str(week)]['away']
-    # take other team as opponent
-    opponent = home_team if away_team == qb_team else away_team
+    rookie_season = player.get("rookie_season")
+    years_pro = max(0, year - int(rookie_season)) if rookie_season else 0
+    score = fantasy_score(
+        current_game["passing_yards"],
+        current_game["passing_touchdowns"],
+        current_game["passing_interceptions"],
+        current_game["rushing_yards"],
+        current_game["rushing_touchdowns"],
+        current_game["fumbles"],
+        current_game["rushing_two_point_made"]
+        + current_game["passing_two_point_made"],
+    )
 
-    # the defense stats should only be used based on some data
-    # it cannot be substituted by 'rookie' stats
-    last_game_defense_stats = average_defense_stats(last_k_games(1, defense_statistics, opponent, year, week))
-    last_10_games_defense_stats = average_defense_stats(last_k_games(10, defense_statistics, opponent, year, week))
+    return [
+        identifier,
+        player["name"],
+        calculate_age(player["birthdate"], current_game["game_date"]),
+        years_pro,
+        *(last_game_qb[field] for field in QB_FIELDS),
+        *(last_10_qb[field] for field in QB_FIELDS),
+        *(last_game_defense[field] for field in DEFENSE_FIELDS),
+        *(last_10_defense[field] for field in DEFENSE_FIELDS),
+        score,
+    ]
 
-    # row consists of
-    # 0: QB id
-    # 1: QB name
-    # 2: QB age
-    # 3: QB years pro
-    # 4-15: last game QB stats
-    # 16-27: last 10 games QB stats
-    # 28-31: last game defense stats
-    # 32-35: last 10 games defense stats
-    # 36: actual fantasy score = target
-    return [id,
-            qb_statistics[id]['name'],
-            age,
-            years_pro,
-            last_game_qb_stats['passing_attempts'],
-            last_game_qb_stats['passing_yards'],
-            last_game_qb_stats['passing_touchdowns'],
-            last_game_qb_stats['passing_interceptions'],
-            last_game_qb_stats['passing_two_point_attempts'],
-            last_game_qb_stats['passing_two_point_made'],
-            last_game_qb_stats['rushing_attempts'],
-            last_game_qb_stats['rushing_yards'],
-            last_game_qb_stats['rushing_touchdowns'],
-            last_game_qb_stats['rushing_two_point_attempts'],
-            last_game_qb_stats['rushing_two_point_made'],
-            last_game_qb_stats['fumbles'],
-            last_10_games_qb_stats['passing_attempts'],
-            last_10_games_qb_stats['passing_yards'],
-            last_10_games_qb_stats['passing_touchdowns'],
-            last_10_games_qb_stats['passing_interceptions'],
-            last_10_games_qb_stats['passing_two_point_attempts'],
-            last_10_games_qb_stats['passing_two_point_made'],
-            last_10_games_qb_stats['rushing_attempts'],
-            last_10_games_qb_stats['rushing_yards'],
-            last_10_games_qb_stats['rushing_touchdowns'],
-            last_10_games_qb_stats['rushing_two_point_attempts'],
-            last_10_games_qb_stats['rushing_two_point_made'],
-            last_10_games_qb_stats['fumbles'],
-            last_game_defense_stats['points_allowed'],
-            last_game_defense_stats['passing_yards_allowed'],
-            last_game_defense_stats['rushing_yards_allowed'],
-            last_game_defense_stats['turnovers'],
-            last_10_games_defense_stats['points_allowed'],
-            last_10_games_defense_stats['passing_yards_allowed'],
-            last_10_games_defense_stats['rushing_yards_allowed'],
-            last_10_games_defense_stats['turnovers'],
-            fantasy_score(qb_statistics[id][str(year)][str(week)]['passing_yards'],
-            qb_statistics[id][str(year)][str(week)]['passing_touchdowns'],
-            qb_statistics[id][str(year)][str(week)]['passing_interceptions'],
-            qb_statistics[id][str(year)][str(week)]['rushing_yards'],
-            qb_statistics[id][str(year)][str(week)]['rushing_touchdowns'],
-            qb_statistics[id][str(year)][str(week)]['fumbles'],
-            qb_statistics[id][str(year)][str(week)]['rushing_two_point_made'] + qb_statistics[id][str(year)][str(week)]['passing_two_point_made'])
-            ]
 
-""" Calculate the fantasy score based on NFL standard rules.
-"""
-def fantasy_score(passing_yards, passing_touchdowns, interceptions, rushing_yards, rushing_touchdowns, fumbles, two_point):
-    return float(passing_yards) / 25 + passing_touchdowns * 4.0 - interceptions * 2.0 + float(rushing_yards) / 10 + rushing_touchdowns * 6.0 - fumbles * 2.0 + two_point * 2
-
-""" Calculate the average stats of all Rookie QBs in the
-observed years.
-"""
-def rookie_qb_average(qb_statistics):
-    games = []
-    for qb in qb_statistics.keys():
-        rookie_year = 2015 - qb_statistics[qb]['years_pro'] + 1
-        if rookie_year >= 2009:
-            # some wrong NFL data has 2014 rookies labelled as 2015 rookies
-            if rookie_year > 2014:
-                rookie_year = 2014
-            # data on rookie_year is available
-            for week in range(1, 18):
-                if qb_statistics[qb][str(rookie_year)][str(week)]['played']:
-                    games.append(qb_statistics[qb][str(rookie_year)][str(week)])
+def rookie_qb_average(
+    qb_statistics: dict[str, dict[str, Any]],
+    before: tuple[int, int] | None = None,
+) -> dict[str, float] | None:
+    games: list[dict[str, Any]] = []
+    for player in qb_statistics.values():
+        rookie_season = player.get("rookie_season")
+        season_data = player.get(str(rookie_season), {}) if rookie_season else {}
+        for week_key, game in season_data.items():
+            if not str(week_key).isdigit() or not game.get("played"):
+                continue
+            if before is None or (int(rookie_season), int(week_key)) < before:
+                games.append(game)
     return average_qb_stats(games)
 
-""" Create the dataset by determining all rows
-"""
-def create_all_rows(qb_statistics, defense_statistics, start_year, end_year):
-    rows = []
-    rookie_qb_stats = rookie_qb_average(qb_statistics)
-    # year 2009 should be left such that some previous defense data is available
+
+def create_all_rows(
+    qb_statistics: dict[str, dict[str, Any]],
+    defense_statistics: dict[str, dict[str, Any]],
+    start_year: int,
+    end_year: int,
+) -> list[list[Any]]:
+    rows: list[list[Any]] = []
+    rookie_stats_by_week: dict[tuple[int, int], dict[str, float] | None] = {}
     for year in range(start_year, end_year):
-        for week in range(1, 18):
-            for qb in qb_statistics.keys():
-                if qb_statistics[qb][str(year)][str(week)]['played']:
-                    row = create_row(qb_statistics, defense_statistics, rookie_qb_stats, qb, year, week)
-                    # if stats are inconclusive, don't use them
-                    # for more information see create_row documentation
-                    if row != None:
-                        rows.append(row)
+        for player_id, player in qb_statistics.items():
+            for week_key, game in player.get(str(year), {}).items():
+                if not str(week_key).isdigit() or not game.get("played"):
+                    continue
+                week = int(week_key)
+                cutoff = (year, week)
+                if cutoff not in rookie_stats_by_week:
+                    rookie_stats_by_week[cutoff] = rookie_qb_average(
+                        qb_statistics, before=cutoff
+                    )
+                rookie_stats = rookie_stats_by_week[cutoff]
+                if rookie_stats is None:
+                    continue
+                row = create_row(
+                    qb_statistics,
+                    defense_statistics,
+                    rookie_stats,
+                    player_id,
+                    year,
+                    week,
+                )
+                if row is not None:
+                    rows.append(row)
     return rows
 
-# save data sets to files
-np.save('train.npy', np.array(create_all_rows(fetch_qb_stats(), fetch_defense_stats(), 2010, 2014)))
-np.save('test.npy', np.array(create_all_rows(fetch_qb_stats(), fetch_defense_stats(), 2014, 2015)))
+
+def _save_array(path: Path, rows: list[list[Any]]) -> dict[str, Any]:
+    if not rows:
+        raise ValueError(
+            f"No rows were generated for {path.stem}; check season availability "
+            "and ensure the history range includes prior games"
+        )
+    array = np.asarray(rows, dtype=str)
+    np.save(path, array, allow_pickle=False)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {"path": str(path), "rows": len(rows), "sha256": digest}
 
 
+def generate_datasets(
+    output_dir: Path,
+    history_start: int = 2009,
+    train_start: int = 2010,
+    test_year: int = 2014,
+) -> dict[str, Any]:
+    seasons = range(history_start, test_year + 1)
+    qb_statistics = fetch_qb_stats(seasons)
+    defense_statistics = fetch_defense_stats(seasons)
+    train_rows = create_all_rows(
+        qb_statistics, defense_statistics, train_start, test_year
+    )
+    test_rows = create_all_rows(
+        qb_statistics, defense_statistics, test_year, test_year + 1
+    )
 
+    output_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        **source_metadata(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "history_start": history_start,
+        "train_start": train_start,
+        "test_year": test_year,
+        "outputs": {
+            "train": _save_array(output_dir / "train.npy", train_rows),
+            "test": _save_array(output_dir / "test.npy", test_rows),
+        },
+    }
+    (output_dir / "dataset-manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    return manifest
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build fantasy football datasets")
+    parser.add_argument("--output-dir", type=Path, default=Path("."))
+    parser.add_argument("--history-start", type=int, default=2009)
+    parser.add_argument("--train-start", type=int, default=2010)
+    parser.add_argument("--test-year", type=int, default=2014)
+    args = parser.parse_args()
+
+    manifest = generate_datasets(
+        args.output_dir, args.history_start, args.train_start, args.test_year
+    )
+    print(json.dumps(manifest, indent=2))
+
+
+if __name__ == "__main__":
+    main()

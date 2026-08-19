@@ -6,161 +6,257 @@
 # the terms of this license.
 # You must not remove this notice, or any other, from this software.
 
-import nflgame
+from __future__ import annotations
 
-""" create dictionary consisting of all games in the used
-year. All these games have a single attribute 'played'
-set to False.
-"""
-def create_empty_entry():
-    dict = {}
-    for year in range(2009, 2015):
-        dict[str(year)] = {}
-        for week in range(1, 18):
-            dict[str(year)][str(week)] = {'played': False}
-    return dict
+from collections.abc import Callable, Iterable, Mapping
+from importlib.metadata import version
+from typing import Any
 
-""" Returns a dictionary with the name, birthdate
-and the number of years the player has spent as a
-professional player.
-"""
-def get_static_data(id):
-    player = nflgame.players[id]
-    return {'name': player.full_name,
-            'birthdate': player.birthdate,
-            'years_pro': player.years_pro}
+import nflreadpy as nfl
+import polars as pl
+
+DEFAULT_SEASONS = tuple(range(2009, 2015))
+REGULAR_SEASON = "REG"
+NFLVERSE_DATA_URL = "https://github.com/nflverse/nflverse-data/releases"
 
 
-""" Checks if player had a single team in one season and
-return team, if multiple teams: return None
-"""
-def determine_team(year_data):
-    teams = {}
-    games = 0
-    for week in year_data.keys():
-        if year_data[week]['played']:
-            games += 1
-            if year_data[week]['home'] in teams.keys():
-                teams[year_data[week]['home']] += 1
+def create_empty_entry(
+    seasons: Iterable[int] = DEFAULT_SEASONS, max_week: int = 18
+) -> dict[str, dict[str, dict[str, bool]]]:
+    return {
+        str(year): {
+            str(week): {"played": False} for week in range(1, max_week + 1)
+        }
+        for year in seasons
+    }
+
+
+def _number(value: Any) -> int | float:
+    return 0 if value is None else value
+
+
+def _regular_season(frame: pl.DataFrame) -> pl.DataFrame:
+    if "season_type" not in frame.columns:
+        raise KeyError("Expected nflverse column 'season_type'")
+    return frame.filter(pl.col("season_type") == REGULAR_SEASON)
+
+
+def _schedule_index(schedules: pl.DataFrame) -> dict[str, dict[str, Any]]:
+    return {
+        row["game_id"]: row
+        for row in schedules.iter_rows(named=True)
+        if row.get("game_id")
+    }
+
+
+def _player_index(players: pl.DataFrame) -> dict[str, dict[str, Any]]:
+    return {
+        row["gsis_id"]: row
+        for row in players.iter_rows(named=True)
+        if row.get("gsis_id")
+    }
+
+
+def load_two_point_attempts(
+    seasons: Iterable[int],
+    load_pbp: Callable[[int], pl.DataFrame] = nfl.load_pbp,
+) -> dict[tuple[str, str], dict[str, int]]:
+    attempts: dict[tuple[str, str], dict[str, int]] = {}
+    columns = [
+        "game_id",
+        "season_type",
+        "two_point_attempt",
+        "passer_player_id",
+        "rusher_player_id",
+    ]
+
+    for season in seasons:
+        plays = load_pbp(season).select(columns)
+        plays = plays.filter(
+            (pl.col("season_type") == REGULAR_SEASON)
+            & (pl.col("two_point_attempt") == 1)
+        )
+        for play in plays.iter_rows(named=True):
+            if play["passer_player_id"]:
+                player_id = play["passer_player_id"]
+                attempt_type = "passing"
+            elif play["rusher_player_id"]:
+                player_id = play["rusher_player_id"]
+                attempt_type = "rushing"
             else:
-                teams[year_data[week]['home']] = 1
-            if year_data[week]['away'] in teams.keys():
-                teams[year_data[week]['away']] += 1
-            else:
-                teams[year_data[week]['away']] = 1
-    for team in teams.keys():
-        # if one team occurs in every game, return game
-        if teams[team] == games:
-            return team
-    # no team occurs in every game
-    return None
+                continue
 
-""" Gets all QB statistics in a single dictionary.
-The keys are the player names, the value for each player
-is a dictionary with all his game statistics.
-"""
-def fetch_qb_stats():
-    # statistics is a dictionary of all player stats
-    # the keys are player names, the values are lists
-    # each list contains dictionaries that contain single game stats
-    statistics = {}
-    teams = map(lambda x: x[0], nflgame.teams)
-    for year in range(2009, 2015):
-        for week in range(1, 18):
-            games = nflgame.games(year=year, week=week)
-            for index, game in enumerate(games):
-                players = nflgame.combine([games[index]])
-                # every player with at least 5 passing attempts
-                # less than five is not taken into account
-                for player in filter(lambda player: player.passing_att >= 5, players.passing()):
-                    # if player has not been saved before create entry
-                    if not(player.playerid in statistics.keys()):
-                        statistics[player.playerid] = create_empty_entry()
-                        statistics[player.playerid].update(get_static_data(id = player.playerid))
-                    # save data in dictionary
-                    statistics[player.playerid][str(year)][str(week)]= {
-                        'home': game.home,
-                        'away': game.away,
-                        'passing_attempts': player.passing_att,
-                        'passing_yards': player.passing_yds,
-                        'passing_touchdowns': player.passing_tds,
-                        'passing_interceptions': player.passing_ints,
-                        'passing_two_point_attempts': player.passing_twopta,
-                        'passing_two_point_made': player.passing_twoptm,
-                        'rushing_attempts': player.rushing_att,
-                        'rushing_yards': player.rushing_yds,
-                        'rushing_touchdowns': player.rushing_tds,
-                        'rushing_two_point_attempts': player.rushing_twopta,
-                        'rushing_two_point_made': player.rushing_twoptm,
-                        'fumbles': player.fumbles_tot,
-                        'played': True
-                        }
+            key = (play["game_id"], player_id)
+            counts = attempts.setdefault(key, {"passing": 0, "rushing": 0})
+            counts[attempt_type] += 1
+
+    return attempts
+
+
+def fetch_qb_stats(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    min_attempts: int = 5,
+    *,
+    player_stats: pl.DataFrame | None = None,
+    players: pl.DataFrame | None = None,
+    schedules: pl.DataFrame | None = None,
+    two_point_attempts: Mapping[tuple[str, str], Mapping[str, int]] | None = None,
+    load_pbp: Callable[[int], pl.DataFrame] = nfl.load_pbp,
+) -> dict[str, dict[str, Any]]:
+    season_list = sorted(set(seasons))
+    player_stats = (
+        nfl.load_player_stats(season_list) if player_stats is None else player_stats
+    )
+    players = nfl.load_players() if players is None else players
+    schedules = nfl.load_schedules(season_list) if schedules is None else schedules
+    if two_point_attempts is None:
+        two_point_attempts = load_two_point_attempts(season_list, load_pbp)
+
+    games = _schedule_index(schedules)
+    player_details = _player_index(players)
+    quarterbacks = _regular_season(player_stats).filter(
+        (pl.col("position") == "QB") & (pl.col("attempts") >= min_attempts)
+    )
+
+    statistics: dict[str, dict[str, Any]] = {}
+    for row in quarterbacks.iter_rows(named=True):
+        player_id = row["player_id"]
+        season = str(row["season"])
+        week = str(row["week"])
+        game = games.get(row["game_id"], {})
+        details = player_details.get(player_id, {})
+        attempts = two_point_attempts.get(
+            (row["game_id"], player_id), {"passing": 0, "rushing": 0}
+        )
+
+        if player_id not in statistics:
+            statistics[player_id] = create_empty_entry(season_list)
+            statistics[player_id].update(
+                {
+                    "name": details.get("display_name")
+                    or row.get("player_display_name"),
+                    "birthdate": details.get("birth_date"),
+                    "rookie_season": details.get("rookie_season"),
+                }
+            )
+
+        statistics[player_id].setdefault(season, {})
+        statistics[player_id][season].setdefault(week, {"played": False})
+        statistics[player_id][season][week] = {
+            "game_id": row["game_id"],
+            "game_date": game.get("gameday"),
+            "home": game.get("home_team"),
+            "away": game.get("away_team"),
+            "team": row.get("team"),
+            "opponent": row.get("opponent_team"),
+            "passing_attempts": _number(row.get("attempts")),
+            "passing_yards": _number(row.get("passing_yards")),
+            "passing_touchdowns": _number(row.get("passing_tds")),
+            "passing_interceptions": _number(row.get("passing_interceptions")),
+            "passing_two_point_attempts": attempts["passing"],
+            "passing_two_point_made": _number(
+                row.get("passing_2pt_conversions")
+            ),
+            "rushing_attempts": _number(row.get("carries")),
+            "rushing_yards": _number(row.get("rushing_yards")),
+            "rushing_touchdowns": _number(row.get("rushing_tds")),
+            "rushing_two_point_attempts": attempts["rushing"],
+            "rushing_two_point_made": _number(
+                row.get("rushing_2pt_conversions")
+            ),
+            "fumbles": _number(row.get("fumbles_total")),
+            "played": True,
+        }
+
     return statistics
 
-# the test players were selected based on their stats
+
+def fetch_defense_stats(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    *,
+    team_stats: pl.DataFrame | None = None,
+    schedules: pl.DataFrame | None = None,
+) -> dict[str, dict[str, Any]]:
+    season_list = sorted(set(seasons))
+    team_stats = nfl.load_team_stats(season_list) if team_stats is None else team_stats
+    schedules = nfl.load_schedules(season_list) if schedules is None else schedules
+    games = _schedule_index(schedules)
+    regular_stats = _regular_season(team_stats)
+
+    teams = {
+        team
+        for column in ("team", "opponent_team")
+        for team in regular_stats[column].drop_nulls().to_list()
+    }
+    statistics: dict[str, dict[str, Any]] = {
+        team: create_empty_entry(season_list) for team in teams
+    }
+
+    for row in regular_stats.iter_rows(named=True):
+        offense = row["team"]
+        defense = row["opponent_team"]
+        if not offense or not defense:
+            continue
+
+        game = games.get(row["game_id"], {})
+        if offense == game.get("home_team"):
+            points_allowed = game.get("home_score")
+        elif offense == game.get("away_team"):
+            points_allowed = game.get("away_score")
+        else:
+            continue
+
+        season = str(row["season"])
+        week = str(row["week"])
+        statistics[defense].setdefault(season, {})
+        statistics[defense][season].setdefault(week, {"played": False})
+        statistics[defense][season][week] = {
+            "game_id": row["game_id"],
+            "game_date": game.get("gameday"),
+            "home": game.get("home_team"),
+            "away": game.get("away_team"),
+            "points_allowed": _number(points_allowed),
+            "passing_yards_allowed": _number(row.get("passing_yards")),
+            "rushing_yards_allowed": _number(row.get("rushing_yards")),
+            "turnovers": _number(row.get("passing_interceptions"))
+            + _number(row.get("fumbles_lost_total")),
+            "played": True,
+        }
+
+    return statistics
+
+
+def source_metadata() -> dict[str, str]:
+    return {
+        "client": "nflreadpy",
+        "client_version": version("nflreadpy"),
+        "data_source": NFLVERSE_DATA_URL,
+    }
+
+
 test_players = {
-    '00-0029263': 'Russell Wilson',
-    '00-0023459': 'Aaron Rodgers',
-    '00-0026143': 'Matt Ryan',
-    '00-0020531': 'Drew Brees',
-    '00-0026158': 'Joe Flacco',
-    '00-0027973': 'Andy Dalton',
-    '00-0024226': 'Jay Cutler',
-    '00-0023436': 'Alex Smith',
-    '00-0029701': 'Ryan Tannehill',
-    '00-0019596': 'Tom Brady',
-    '00-0031280': 'Derek Carr',
-    '00-0022924': 'Ben Roethlisberger',
-    '00-0026625': 'Brian Hoyer',
-    '00-0021678': 'Tony Romo',
-    '00-0027974': 'Colin Kaepernick',
-    '00-0010346': 'Peyton Manning',
-    '00-0029668': 'Andrew Luck',
-    '00-0026498': 'Matthew Stafford',
-    '00-0022803': 'Eli Manning',
-    '00-0022942': 'Philip Rivers',
-    '00-0027939': 'Cam Newton',
-    '00-0031237': 'Teddy Bridgewater',
-    '00-0031407': 'Blake Bortles',
-    '00-0023541': 'Kyle Orton'
+    "00-0029263": "Russell Wilson",
+    "00-0023459": "Aaron Rodgers",
+    "00-0026143": "Matt Ryan",
+    "00-0020531": "Drew Brees",
+    "00-0026158": "Joe Flacco",
+    "00-0027973": "Andy Dalton",
+    "00-0024226": "Jay Cutler",
+    "00-0023436": "Alex Smith",
+    "00-0029701": "Ryan Tannehill",
+    "00-0019596": "Tom Brady",
+    "00-0031280": "Derek Carr",
+    "00-0022924": "Ben Roethlisberger",
+    "00-0026625": "Brian Hoyer",
+    "00-0021678": "Tony Romo",
+    "00-0027974": "Colin Kaepernick",
+    "00-0010346": "Peyton Manning",
+    "00-0029668": "Andrew Luck",
+    "00-0026498": "Matthew Stafford",
+    "00-0022803": "Eli Manning",
+    "00-0022942": "Philip Rivers",
+    "00-0027939": "Cam Newton",
+    "00-0031237": "Teddy Bridgewater",
+    "00-0031407": "Blake Bortles",
+    "00-0023541": "Kyle Orton",
 }
-
-""" Get the game statistics of all 32 defenses of all
-games in the observed time. The dictionary is indexed
-by the team's abbreviation, e.g. ATL for Atlanta.
-"""
-def fetch_defense_stats():
-    # team defense statistics
-    statistics = {}
-    for team in map(lambda x: x[0], nflgame.teams):
-        statistics[team] = create_empty_entry()
-
-    for year in range(2009, 2015):
-        for week in range(1, 18):
-            for game in nflgame.games(year=year, week=week):
-                home = game.home
-                away = game.away
-                statistics[home][str(year)][str(week)] = {
-                    'home': home,
-                    'away': away,
-                    'points_allowed': game.score_away,
-                    'passing_yards_allowed': game.stats_away[2],
-                    'rushing_yards_allowed': game.stats_away[3],
-                    'turnovers': game.stats_away[6],
-                    'played': True
-
-                }
-                statistics[away][str(year)][str(week)] = {
-                    'home': home,
-                    'away': away,
-                    'points_allowed': game.score_home,
-                    'passing_yards_allowed': game.stats_home[2],
-                    'rushing_yards_allowed': game.stats_home[3],
-                    'turnovers': game.stats_home[6],
-                    'played': True
-                }
-
-    return statistics
-
-
-

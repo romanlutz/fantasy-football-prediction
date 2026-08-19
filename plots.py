@@ -6,17 +6,21 @@
 # the terms of this license.
 # You must not remove this notice, or any other, from this software.
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
-import pylab as P
 import numpy as np
 
-def histogram(y_vals, pred):
-    P.hist(map(lambda (y, p): np.fabs(y-p), zip(y_vals,pred)), bins=range(35), rwidth=1.0, histtype='bar')
-    P.xlabel('Absolute Error')
-    P.ylabel('number of data cases')
-    #P.xlim([0, 1])
-    #P.xticks([0.25, 0.75], ['female', 'male'])
-    P.title('Absolute Error Distribution')
-    P.savefig('absolute_error_distribution.pdf')
-    # P.show()
-    P.close('all')
+
+def histogram(
+    y_vals: np.ndarray,
+    prediction: np.ndarray,
+    output: Path = Path("absolute_error_distribution.pdf"),
+) -> None:
+    errors = np.abs(np.asarray(y_vals, dtype=float) - np.asarray(prediction, dtype=float))
+    plt.hist(errors, bins=range(35), rwidth=1.0, histtype="bar")
+    plt.xlabel("Absolute Error")
+    plt.ylabel("Number of data cases")
+    plt.title("Absolute Error Distribution")
+    plt.savefig(output)
+    plt.close("all")

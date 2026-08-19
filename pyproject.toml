@@ -1,0 +1,19 @@
+[project]
+name = "fantasy-football-prediction"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.9",
+    "nflreadpy==0.1.5",
+    "numpy>=2.0",
+    "polars>=1.30",
+    "scikit-learn>=1.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
