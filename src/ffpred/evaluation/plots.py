@@ -8,13 +8,18 @@
 
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
+from numpy.typing import ArrayLike
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
 
 
 def histogram(
-    y_vals: np.ndarray,
-    prediction: np.ndarray,
+    y_vals: ArrayLike,
+    prediction: ArrayLike,
     output: Path = Path("absolute_error_distribution.pdf"),
 ) -> None:
     errors = np.abs(

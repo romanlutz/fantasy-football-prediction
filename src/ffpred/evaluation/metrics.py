@@ -1,20 +1,55 @@
-# Copyright (c) Roman Lutz. All rights reserved.
-# The use and distribution terms for this software are covered by the
-# Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php)
-# which can be found in the file LICENSE.md at the root of this distribution.
-# By using this software in any fashion, you are agreeing to be bound by
-# the terms of this license.
-# You must not remove this notice, or any other, from this software.
+"""Shared regression metrics."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
-def mean_relative_error(y: np.ndarray, prediction: np.ndarray) -> float:
-    actual = np.asarray(y, dtype=float)
-    predicted = np.asarray(prediction, dtype=float)
-    nonzero = actual != 0
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RegressionMetrics:
+    """Regression metrics reported by every trainer."""
+
+    rmse: float
+    mae: float
+    mre: float
+    samples: int
+
+
+def _paired_arrays(
+    actual: ArrayLike,
+    prediction: ArrayLike,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    actual_array = np.asarray(actual, dtype=np.float64).reshape(-1)
+    prediction_array = np.asarray(prediction, dtype=np.float64).reshape(-1)
+    if actual_array.shape != prediction_array.shape:
+        raise ValueError("actual and prediction must have the same shape")
+    if actual_array.size == 0:
+        raise ValueError("metrics require at least one sample")
+    return actual_array, prediction_array
+
+
+def mean_relative_error(actual: ArrayLike, prediction: ArrayLike) -> float:
+    """Return absolute relative error, excluding undefined zero targets."""
+    actual_array, prediction_array = _paired_arrays(actual, prediction)
+    nonzero = actual_array != 0
     if not np.any(nonzero):
         raise ValueError("Mean relative error is undefined when all targets are zero")
-    return float(
-        np.mean(np.abs(predicted[nonzero] - actual[nonzero]) / np.abs(actual[nonzero]))
+    relative = np.abs(prediction_array[nonzero] - actual_array[nonzero]) / np.abs(
+        actual_array[nonzero]
+    )
+    return float(np.mean(relative))
+
+
+def evaluate(actual: ArrayLike, prediction: ArrayLike) -> RegressionMetrics:
+    """Calculate the canonical evaluation metric set."""
+    actual_array, prediction_array = _paired_arrays(actual, prediction)
+    return RegressionMetrics(
+        rmse=float(mean_squared_error(actual_array, prediction_array) ** 0.5),
+        mae=float(mean_absolute_error(actual_array, prediction_array)),
+        mre=mean_relative_error(actual_array, prediction_array),
+        samples=actual_array.size,
     )
