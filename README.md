@@ -174,15 +174,17 @@ The offline suite includes unit, property, mocked-provider, schema-contract,
 integration, golden snapshot, leakage, model, plot, and CLI tests with a 90%
 branch-aware coverage gate.
 
-Live nflreadpy contracts pull the completed 2025 season from nflverse:
+Live nflreadpy contracts pull the completed 2025 season from nflverse for
+every implemented position:
 
 ```console
 uv run pytest -m "live and not live_slow" --no-cov
 uv run pytest -m live_slow --no-cov
 ```
 
-The second command includes the larger play-by-play download. CI runs the core
-live contracts weekly and allows the play-by-play tier through manual dispatch.
+The second command includes the larger play-by-play download (only needed by
+QB acquisition, for two-point attempts). CI runs the core live contracts
+weekly and allows the play-by-play tier through manual dispatch.
 
 ## Data licensing
 

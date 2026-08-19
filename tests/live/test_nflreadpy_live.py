@@ -1,15 +1,23 @@
 import pytest
 
 from ffpred.acquisition.contracts import (
+    DST_TEAM_STATS_CONTRACT,
+    IDP_PLAYER_STATS_CONTRACT,
+    KICKER_PLAYER_STATS_CONTRACT,
     PBP_CONTRACT,
     PLAYER_STATS_CONTRACT,
     PLAYERS_CONTRACT,
+    RECEIVING_PLAYER_STATS_CONTRACT,
     SCHEDULES_CONTRACT,
     TEAM_STATS_CONTRACT,
 )
 from ffpred.acquisition.normalize import (
     acquire_defense_histories,
+    acquire_dst_histories,
+    acquire_idp_histories,
+    acquire_kicker_histories,
     acquire_quarterback_histories,
+    acquire_receiving_histories,
 )
 from ffpred.acquisition.schema import validate_frame
 from ffpred.providers.nflreadpy import NflReadPyProvider
@@ -30,6 +38,23 @@ def test_live_nflreadpy_core_contracts() -> None:
     assert not validate_frame(players, PLAYERS_CONTRACT).is_empty()
     assert not validate_frame(player_stats, PLAYER_STATS_CONTRACT).is_empty()
     assert not validate_frame(team_stats, TEAM_STATS_CONTRACT).is_empty()
+
+
+@pytest.mark.live
+def test_live_nflreadpy_position_contracts() -> None:
+    """Validate the position-specific frame contracts added for D/ST, kicker,
+    RB/WR/TE, and IDP against the same real player_stats/team_stats frames
+    the core contract test already downloads.
+    """
+    provider = NflReadPyProvider(cache_mode="filesystem")
+
+    player_stats = provider.load_player_stats((COMPLETED_SEASON,))
+    team_stats = provider.load_team_stats((COMPLETED_SEASON,))
+
+    assert not validate_frame(team_stats, DST_TEAM_STATS_CONTRACT).is_empty()
+    assert not validate_frame(player_stats, KICKER_PLAYER_STATS_CONTRACT).is_empty()
+    assert not validate_frame(player_stats, RECEIVING_PLAYER_STATS_CONTRACT).is_empty()
+    assert not validate_frame(player_stats, IDP_PLAYER_STATS_CONTRACT).is_empty()
 
 
 @pytest.mark.live
@@ -61,3 +86,45 @@ def test_live_normalized_acquisition() -> None:
         for history in quarterbacks.values()
         for game in history.games.values()
     )
+
+
+@pytest.mark.live
+def test_live_new_position_acquisition() -> None:
+    """Acquisition smoke test for the four positions added after the
+    original QB/D-ST pipeline: D/ST-as-target, kicker, RB/WR/TE, and IDP.
+    None of these need a play-by-play join, so unlike QB acquisition this
+    does not require the live_slow tier.
+    """
+    provider = NflReadPyProvider(cache_mode="filesystem")
+
+    team_dst = acquire_dst_histories((COMPLETED_SEASON,), provider=provider)
+    kickers = acquire_kicker_histories((COMPLETED_SEASON,), provider=provider)
+    receivers = acquire_receiving_histories((COMPLETED_SEASON,), provider=provider)
+    idp = acquire_idp_histories((COMPLETED_SEASON,), provider=provider)
+
+    assert team_dst
+    assert kickers
+    assert receivers
+    assert idp
+    assert all(
+        game.key.season == COMPLETED_SEASON
+        for history in team_dst.values()
+        for game in history.games.values()
+    )
+    assert all(
+        game.key.season == COMPLETED_SEASON
+        for history in kickers.values()
+        for game in history.games.values()
+    )
+    assert all(
+        game.key.season == COMPLETED_SEASON
+        for history in receivers.values()
+        for game in history.games.values()
+    )
+    assert all(
+        game.key.season == COMPLETED_SEASON
+        for history in idp.values()
+        for game in history.games.values()
+    )
+    assert {history.position for history in receivers.values()} <= {"RB", "WR", "TE"}
+    assert {history.position_group for history in idp.values()} <= {"DL", "LB", "DB"}
