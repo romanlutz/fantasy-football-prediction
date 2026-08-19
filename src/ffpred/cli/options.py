@@ -25,6 +25,7 @@ class SvrOptions:
     train_path: Path
     test_path: Path
     predictions_path: Path
+    position: str = "qb"
     manual_features: bool
     select_hyperparameters: bool
     folds: int
@@ -37,6 +38,7 @@ class MlpOptions:
     train_path: Path
     test_path: Path
     predictions_path: Path
+    position: str = "qb"
     hidden_units: int
     activation: Activation
     iterations: int

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from ffpred.domain.models import QuarterbackGameStats
+from ffpred.domain.models import DstGameStats, QuarterbackGameStats
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -37,4 +37,63 @@ def fantasy_score(
         + stats.fumbles * config.fumble
         + (stats.passing_two_point_made + stats.rushing_two_point_made)
         * config.two_point_conversion
+    )
+
+
+#: Ascending (points_allowed <= threshold, points) tiers. The final tier's
+#: threshold is a catch-all for any higher points-allowed total. This mirrors
+#: common default team-defense scoring (e.g. 0 allowed -> 10, 35+ -> -4).
+DEFAULT_POINTS_ALLOWED_TIERS: tuple[tuple[float, float], ...] = (
+    (0.0, 10.0),
+    (6.0, 7.0),
+    (13.0, 4.0),
+    (20.0, 1.0),
+    (27.0, 0.0),
+    (34.0, -1.0),
+    (float("inf"), -4.0),
+)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DstScoringConfig:
+    """Weights for team defense/special-teams fantasy scoring."""
+
+    sack: float = 1.0
+    interception: float = 2.0
+    fumble_recovery: float = 2.0
+    touchdown: float = 6.0
+    safety: float = 2.0
+    blocked_kick: float = 2.0
+    points_allowed_tiers: tuple[tuple[float, float], ...] = field(
+        default=DEFAULT_POINTS_ALLOWED_TIERS
+    )
+
+
+DEFAULT_DST_SCORING = DstScoringConfig()
+
+
+def points_allowed_score(
+    points_allowed: float,
+    tiers: tuple[tuple[float, float], ...] = DEFAULT_POINTS_ALLOWED_TIERS,
+) -> float:
+    """Look up the tiered points-allowed score for one points total."""
+    for threshold, points in tiers:
+        if points_allowed <= threshold:
+            return points
+    return tiers[-1][1]
+
+
+def dst_fantasy_score(
+    stats: DstGameStats,
+    config: DstScoringConfig = DEFAULT_DST_SCORING,
+) -> float:
+    """Calculate team defense/special-teams points from game statistics."""
+    return (
+        stats.sacks * config.sack
+        + stats.interceptions * config.interception
+        + stats.fumble_recoveries * config.fumble_recovery
+        + stats.touchdowns * config.touchdown
+        + stats.safeties * config.safety
+        + stats.blocked_kicks * config.blocked_kick
+        + points_allowed_score(stats.points_allowed, config.points_allowed_tiers)
     )

@@ -21,10 +21,17 @@ from ffpred.cli.options import (
     SvrOptions,
 )
 from ffpred.config import Settings
-from ffpred.datasets.builder import DatasetBuildConfig, build_datasets
+from ffpred.datasets.builder import (
+    DatasetBuildConfig,
+    DstDatasetBuildConfig,
+    build_datasets,
+    build_dst_datasets,
+)
 from ffpred.errors import FfpredError
 from ffpred.evaluation.metrics import evaluate
-from ffpred.features.schema import IDENTITY_COLUMNS, TARGET_COLUMN
+from ffpred.features import dst_schema
+from ffpred.features import schema as qb_schema
+from ffpred.features.schema import TARGET_COLUMN
 from ffpred.logging import configure_logging
 from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
@@ -39,6 +46,22 @@ from ffpred.training.svr import (
 
 LOGGER = logging.getLogger(__name__)
 PREDICTION_COLUMN = "prediction"
+#: Positions supported by the generic train-svr/train-mlp/evaluate commands.
+#: Adding a position here only requires a feature-schema module exposing
+#: MODEL_FEATURE_COLUMNS, IDENTITY_COLUMNS, and validate_feature_frame;
+#: TARGET_COLUMN is shared.
+POSITION_FEATURE_COLUMNS: dict[str, tuple[str, ...]] = {
+    "qb": qb_schema.MODEL_FEATURE_COLUMNS,
+    "dst": dst_schema.MODEL_FEATURE_COLUMNS,
+}
+POSITION_IDENTITY_COLUMNS: dict[str, tuple[str, ...]] = {
+    "qb": qb_schema.IDENTITY_COLUMNS,
+    "dst": dst_schema.IDENTITY_COLUMNS,
+}
+POSITION_VALIDATORS = {
+    "qb": qb_schema.validate_feature_frame,
+    "dst": dst_schema.validate_feature_frame,
+}
 
 
 def _parser(settings: Settings) -> argparse.ArgumentParser:
@@ -49,20 +72,28 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
     parser.add_argument("-v", "--verbose", action="count", default=0)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    build = subparsers.add_parser("build-dataset", help="build train/test datasets")
-    build.add_argument("--output-dir", type=Path, default=settings.output_dir)
-    build.add_argument("--history-start", type=int, default=settings.history_start)
-    build.add_argument("--train-start", type=int, default=settings.train_start)
-    build.add_argument("--test-year", type=int, default=settings.test_year)
+    build = subparsers.add_parser("build-dataset", help="build QB train/test datasets")
+    _add_build_arguments(build, settings)
+
+    build_dst = subparsers.add_parser(
+        "build-dst-dataset", help="build team D/ST train/test datasets"
+    )
+    _add_build_arguments(build_dst, settings)
 
     svr = subparsers.add_parser("train-svr", help="train an SVR model")
     _add_dataset_arguments(svr, "svr-predictions.parquet")
+    svr.add_argument(
+        "--position", choices=tuple(POSITION_FEATURE_COLUMNS), default="qb"
+    )
     svr.add_argument("--manual-features", action="store_true")
     svr.add_argument("--select-hyperparameters", action="store_true")
     svr.add_argument("--folds", type=int, default=5)
 
     mlp = subparsers.add_parser("train-mlp", help="train an MLP model")
     _add_dataset_arguments(mlp, "mlp-predictions.parquet")
+    mlp.add_argument(
+        "--position", choices=tuple(POSITION_FEATURE_COLUMNS), default="qb"
+    )
     mlp.add_argument("--hidden-units", type=int, default=50)
     mlp.add_argument(
         "--activation",
@@ -79,6 +110,13 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
     )
     evaluation.add_argument("predictions", type=Path)
     return parser
+
+
+def _add_build_arguments(parser: argparse.ArgumentParser, settings: Settings) -> None:
+    parser.add_argument("--output-dir", type=Path, default=settings.output_dir)
+    parser.add_argument("--history-start", type=int, default=settings.history_start)
+    parser.add_argument("--train-start", type=int, default=settings.train_start)
+    parser.add_argument("--test-year", type=int, default=settings.test_year)
 
 
 def _add_dataset_arguments(
@@ -105,9 +143,11 @@ def _write_predictions(
     path: Path,
     test_frame: pl.DataFrame,
     predictions: NDArray[np.float64],
+    *,
+    identity_columns: tuple[str, ...],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    frame = test_frame.select(*IDENTITY_COLUMNS, TARGET_COLUMN).with_columns(
+    frame = test_frame.select(*identity_columns, TARGET_COLUMN).with_columns(
         pl.Series(PREDICTION_COLUMN, predictions, dtype=pl.Float64)
     )
     frame.write_parquet(path, compression="zstd", statistics=True)
@@ -127,6 +167,7 @@ def _svr_options(args: argparse.Namespace) -> SvrOptions:
         train_path=args.train,
         test_path=args.test,
         predictions_path=args.predictions,
+        position=args.position,
         manual_features=args.manual_features,
         select_hyperparameters=args.select_hyperparameters,
         folds=args.folds,
@@ -138,6 +179,7 @@ def _mlp_options(args: argparse.Namespace) -> MlpOptions:
         train_path=args.train,
         test_path=args.test,
         predictions_path=args.predictions,
+        position=args.position,
         hidden_units=args.hidden_units,
         activation=args.activation,
         iterations=args.iterations,
@@ -166,9 +208,34 @@ def _run_build(
     }
 
 
+def _run_build_dst(
+    options: BuildOptions,
+    provider: NflDataProvider,
+) -> dict[str, object]:
+    manifest = build_dst_datasets(
+        DstDatasetBuildConfig(
+            output_dir=options.output_dir,
+            history_start=options.history_start,
+            train_start=options.train_start,
+            test_year=options.test_year,
+        ),
+        provider=provider,
+    )
+    return {
+        "manifest": str(options.output_dir / "dataset-manifest.json"),
+        "train_rows": manifest.outputs["train"].rows,
+        "test_rows": manifest.outputs["test"].rows,
+    }
+
+
 def _run_svr(options: SvrOptions) -> dict[str, object]:
-    train = load_training_data(options.train_path)
-    test = load_training_data(options.test_path)
+    if options.manual_features and options.position != "qb":
+        raise FfpredError("--manual-features is only supported for --position qb")
+    feature_names = POSITION_FEATURE_COLUMNS[options.position]
+    identity_columns = POSITION_IDENTITY_COLUMNS[options.position]
+    validator = POSITION_VALIDATORS[options.position]
+    train = load_training_data(options.train_path, feature_names, validator=validator)
+    test = load_training_data(options.test_path, feature_names, validator=validator)
     if options.manual_features:
         train = select_manual_features(train)
         test = select_manual_features(test)
@@ -182,7 +249,12 @@ def _run_svr(options: SvrOptions) -> dict[str, object]:
         else None
     )
     result = train_svr(train, test, **({"config": config} if config else {}))
-    _write_predictions(options.predictions_path, test.frame, result.predictions)
+    _write_predictions(
+        options.predictions_path,
+        test.frame,
+        result.predictions,
+        identity_columns=identity_columns,
+    )
     return {
         "metrics": asdict(result.metrics),
         "features": list(result.feature_names),
@@ -192,8 +264,11 @@ def _run_svr(options: SvrOptions) -> dict[str, object]:
 
 
 def _run_mlp(options: MlpOptions) -> dict[str, object]:
-    train = load_training_data(options.train_path)
-    test = load_training_data(options.test_path)
+    feature_names = POSITION_FEATURE_COLUMNS[options.position]
+    identity_columns = POSITION_IDENTITY_COLUMNS[options.position]
+    validator = POSITION_VALIDATORS[options.position]
+    train = load_training_data(options.train_path, feature_names, validator=validator)
+    test = load_training_data(options.test_path, feature_names, validator=validator)
     config = MlpConfig(
         hidden_units=options.hidden_units,
         activation=options.activation,
@@ -202,7 +277,12 @@ def _run_mlp(options: MlpOptions) -> dict[str, object]:
         random_state=options.random_state,
     )
     result = train_mlp(train, test, config=config)
-    _write_predictions(options.predictions_path, test.frame, result.predictions)
+    _write_predictions(
+        options.predictions_path,
+        test.frame,
+        result.predictions,
+        identity_columns=identity_columns,
+    )
     return {
         "metrics": asdict(result.metrics),
         "features": list(result.feature_names),
@@ -234,6 +314,11 @@ def main(
     try:
         if args.command == "build-dataset":
             output = _run_build(
+                _build_options(args),
+                provider or _provider(settings),
+            )
+        elif args.command == "build-dst-dataset":
+            output = _run_build_dst(
                 _build_options(args),
                 provider or _provider(settings),
             )

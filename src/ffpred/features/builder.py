@@ -14,6 +14,7 @@ from ffpred.domain.models import (
     QuarterbackHistory,
 )
 from ffpred.domain.scoring import DEFAULT_SCORING, ScoringConfig
+from ffpred.features.rolling import rolling_expressions
 from ffpred.features.schema import (
     DEFENSE_STAT_FIELDS,
     FEATURE_COLUMNS,
@@ -63,36 +64,6 @@ def _defense_frame(histories: Mapping[TeamCode, DefenseHistory]) -> pl.DataFrame
     return pl.DataFrame(rows, infer_schema_length=None).sort(
         "defense", "target_season", "target_week"
     )
-
-
-def _rolling_expressions(
-    fields: Iterable[str],
-    *,
-    prefix: str,
-    group: str,
-) -> list[pl.Expr]:
-    expressions: list[pl.Expr] = [
-        pl.col("target_season")
-        .shift(1)
-        .over(group)
-        .alias(f"{prefix}_history_through_season"),
-        pl.col("target_week")
-        .shift(1)
-        .over(group)
-        .alias(f"{prefix}_history_through_week"),
-    ]
-    for field in fields:
-        expressions.extend(
-            (
-                pl.col(field).shift(1).over(group).alias(f"{prefix}_last_1_{field}"),
-                pl.col(field)
-                .rolling_mean(window_size=10, min_samples=1)
-                .shift(1)
-                .over(group)
-                .alias(f"{prefix}_last_10_{field}"),
-            )
-        )
-    return expressions
 
 
 def _rookie_average_rows(
@@ -155,10 +126,10 @@ def build_feature_frame(
     defenses = _defense_frame(defense_histories)
 
     quarterbacks = quarterbacks.with_columns(
-        _rolling_expressions(QB_STAT_FIELDS, prefix="qb", group="player_id")
+        rolling_expressions(QB_STAT_FIELDS, prefix="qb", group="player_id")
     )
     defenses = defenses.with_columns(
-        _rolling_expressions(DEFENSE_STAT_FIELDS, prefix="defense", group="defense")
+        rolling_expressions(DEFENSE_STAT_FIELDS, prefix="defense", group="defense")
     ).select(
         "defense",
         "target_season",

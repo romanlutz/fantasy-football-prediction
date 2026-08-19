@@ -98,3 +98,40 @@ class DefenseHistory:
 
     team: TeamCode
     games: dict[GameKey, DefenseGame] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DstGameStats:
+    """A team's own defense/special-teams counting statistics for one game.
+
+    Distinct from ``DefenseGameStats``, which records what an *opponent's*
+    offense produced against a team's defense (used as opponent-context
+    features elsewhere). These fields are the team's own defensive/special-
+    teams production, which is what a team-defense (D/ST) fantasy roster
+    slot is scored on.
+    """
+
+    points_allowed: float
+    sacks: float
+    interceptions: float
+    fumble_recoveries: float
+    touchdowns: float
+    safeties: float
+    blocked_kicks: float
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DstGame:
+    """A team defense/special-teams normalized game record."""
+
+    key: GameKey
+    context: GameContext
+    stats: DstGameStats
+
+
+@dataclass(slots=True, kw_only=True)
+class DstHistory:
+    """Team defense/special-teams games indexed by typed chronological keys."""
+
+    team: TeamCode
+    games: dict[GameKey, DstGame] = field(default_factory=dict)

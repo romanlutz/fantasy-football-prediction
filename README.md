@@ -10,9 +10,11 @@ associated with the paper is preserved in the
 [`legacy-2015`](https://github.com/romanlutz/fantasy-football-prediction/tree/legacy-2015)
 tag.
 
-This project builds reproducible, leakage-safe quarterback fantasy-football
-datasets from [nflverse](https://github.com/nflverse/nflverse-data), then trains
-support-vector and multilayer-perceptron regressors.
+This project builds reproducible, leakage-safe fantasy-football datasets from
+[nflverse](https://github.com/nflverse/nflverse-data), then trains support-
+vector and multilayer-perceptron regressors. Quarterback and team defense/
+special-teams (D/ST) prediction are implemented today; additional positions
+are being added incrementally.
 
 ## Requirements and setup
 
@@ -25,10 +27,16 @@ uv sync --all-groups
 
 ## Commands
 
-Build the historical 2010-2013 training set and 2014 test set:
+Build the historical 2010-2013 quarterback training set and 2014 test set:
 
 ```console
 uv run ffpred build-dataset
+```
+
+Build the equivalent team defense/special-teams (D/ST) dataset:
+
+```console
+uv run ffpred build-dst-dataset
 ```
 
 Build a more recent experiment:
@@ -48,11 +56,14 @@ $env:FFPRED_CACHE_MODE = "filesystem"
 uv run ffpred build-dataset
 ```
 
-Train and evaluate either model:
+Train and evaluate either model. Pass `--position dst` to train on a D/ST
+dataset instead of the default quarterback dataset (`--manual-features` is
+quarterback-only):
 
 ```console
 uv run ffpred train-svr --train train.parquet --test test.parquet
 uv run ffpred train-mlp --train train.parquet --test test.parquet
+uv run ffpred train-svr --position dst --train train.parquet --test test.parquet
 uv run ffpred evaluate svr-predictions.parquet
 ```
 
@@ -99,9 +110,26 @@ schemas for every source frame. Preserve the manifest and Parquet files
 together. nflverse release assets can be corrected after publication, so source
 hashes are necessary to distinguish upstream revisions.
 
-Feature rows include target identity and the latest quarterback and defense
-history period used. Those lineage columns are never model inputs; tests assert
-that every history period strictly precedes its target.
+Feature rows include target identity and the latest history period used for
+that row's own group (a quarterback and their upcoming opponent's defense, or
+a team's own D/ST unit). Those lineage columns are never model inputs; tests
+assert that every history period strictly precedes its target.
+
+## Positions
+
+| Position | Status | Scoring |
+|---|---|---|
+| QB | Implemented | Standard passing/rushing, configurable via `ScoringConfig` |
+| Team D/ST | Implemented | Sacks, interceptions, fumble recoveries, defensive/ST touchdowns, safeties, blocked kicks, and tiered points-allowed, configurable via `DstScoringConfig` |
+| RB / WR / TE, K, IDP | Not yet implemented | — |
+
+Both implemented positions share the same acquisition/features/datasets
+architecture below; adding a position means adding a domain stats type, a
+scoring config, an acquisition contract and normalize function, a feature
+schema/builder module pair, and a dataset-build function, then registering
+the new position's feature columns/identity columns/validator with the CLI's
+`POSITION_FEATURE_COLUMNS`/`POSITION_IDENTITY_COLUMNS`/`POSITION_VALIDATORS`
+maps in `cli/app.py`.
 
 ## Quality checks
 

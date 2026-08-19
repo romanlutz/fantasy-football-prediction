@@ -70,6 +70,26 @@ TEAM_STATS_CONTRACT = FrameContract(
     },
     non_null=frozenset({"season", "week", "game_id"}),
 )
+DST_TEAM_STATS_CONTRACT = FrameContract(
+    name="team_stats",
+    columns={
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "team": ColumnKind.TEXT,
+        "opponent_team": ColumnKind.TEXT,
+        "def_sacks": ColumnKind.NUMBER,
+        "def_interceptions": ColumnKind.NUMBER,
+        "def_tds": ColumnKind.NUMBER,
+        "def_safeties": ColumnKind.NUMBER,
+        "fumble_recovery_opp": ColumnKind.NUMBER,
+        "def_punt_blocks": ColumnKind.NUMBER,
+        "def_pat_blocks": ColumnKind.NUMBER,
+        "def_fg_blocks": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"season", "week", "game_id"}),
+)
 SCHEDULES_CONTRACT = FrameContract(
     name="schedules",
     columns={

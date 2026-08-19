@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
@@ -10,6 +11,8 @@ import polars as pl
 from ffpred.datasets.manifest import DatasetArtifact
 from ffpred.errors import DatasetIntegrityError, EmptyDatasetError
 from ffpred.features.schema import validate_feature_frame
+
+Validator = Callable[[pl.DataFrame], pl.DataFrame]
 
 
 def file_sha256(path: Path) -> str:
@@ -21,9 +24,14 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def write_dataset(path: Path, frame: pl.DataFrame) -> DatasetArtifact:
+def write_dataset(
+    path: Path,
+    frame: pl.DataFrame,
+    *,
+    validator: Validator = validate_feature_frame,
+) -> DatasetArtifact:
     """Validate and atomically persist a feature table as Parquet."""
-    validate_feature_frame(frame)
+    validator(frame)
     if frame.is_empty():
         raise EmptyDatasetError(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -42,6 +50,7 @@ def read_dataset(
     path: Path,
     *,
     expected_sha256: str | None = None,
+    validator: Validator = validate_feature_frame,
 ) -> pl.DataFrame:
     """Read and validate a persisted feature table."""
     if expected_sha256 is not None:
@@ -51,4 +60,4 @@ def read_dataset(
                 f"Checksum mismatch for {path}: "
                 f"expected {expected_sha256}, got {actual}"
             )
-    return validate_feature_frame(pl.read_parquet(path))
+    return validator(pl.read_parquet(path))

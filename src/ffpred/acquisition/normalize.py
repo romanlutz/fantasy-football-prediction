@@ -10,6 +10,7 @@ import polars as pl
 
 from ffpred.acquisition.contracts import (
     DEFAULT_SEASONS,
+    DST_TEAM_STATS_CONTRACT,
     PBP_CONTRACT,
     PLAYER_STATS_CONTRACT,
     PLAYERS_CONTRACT,
@@ -24,6 +25,9 @@ from ffpred.domain.models import (
     DefenseGame,
     DefenseGameStats,
     DefenseHistory,
+    DstGame,
+    DstGameStats,
+    DstHistory,
     GameContext,
     GameKey,
     PlayerProfile,
@@ -298,6 +302,63 @@ def acquire_defense_histories(
                 rushing_yards_allowed=_number(row["rushing_yards"]),
                 turnovers=_number(row["passing_interceptions"])
                 + _number(row["fumbles_lost_total"]),
+            ),
+        )
+    return histories
+
+
+def acquire_dst_histories(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[TeamCode, DstHistory]:
+    """Acquire each team's own defense/special-teams production by game.
+
+    Unlike ``acquire_defense_histories`` (which attributes a game's offensive
+    production to the *opposing* defense, for use as opponent-context
+    features), this attributes team_stats' ``def_*`` columns to the team the
+    row itself names: nflverse team_stats rows report each team's own
+    defensive box score, verified live (e.g. a team credited with sacking its
+    opponent's quarterback shows those sacks under its own row).
+    """
+    season_list = sorted(set(seasons))
+    provider = provider or NflReadPyProvider()
+    schedules = _schedule_index(provider.load_schedules(season_list))
+    frame = validate_frame(
+        provider.load_team_stats(season_list), DST_TEAM_STATS_CONTRACT
+    ).filter(pl.col("season_type") == REGULAR_SEASON)
+
+    histories: dict[TeamCode, DstHistory] = {}
+    for row in frame.iter_rows(named=True):
+        game_id = GameId(_required_text(row["game_id"], "game_id"))
+        if game_id not in schedules:
+            raise DataAcquisitionError(f"No schedule row found for game {game_id}")
+        schedule = schedules[game_id]
+        team = TeamCode(_required_text(row["team"], "team"))
+        opponent = TeamCode(_required_text(row["opponent_team"], "opponent_team"))
+        if team == schedule.home_team:
+            points_allowed = schedule.away_score
+        elif team == schedule.away_team:
+            points_allowed = schedule.home_score
+        else:
+            raise DataAcquisitionError(
+                f"Team {team} is not listed in schedule for {game_id}"
+            )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history = histories.setdefault(team, DstHistory(team=team))
+        history.games[key] = DstGame(
+            key=key,
+            context=_game_context(schedule, team=team, opponent=opponent),
+            stats=DstGameStats(
+                points_allowed=points_allowed,
+                sacks=_number(row["def_sacks"]),
+                interceptions=_number(row["def_interceptions"]),
+                fumble_recoveries=_number(row["fumble_recovery_opp"]),
+                touchdowns=_number(row["def_tds"]),
+                safeties=_number(row["def_safeties"]),
+                blocked_kicks=_number(row["def_punt_blocks"])
+                + _number(row["def_pat_blocks"])
+                + _number(row["def_fg_blocks"]),
             ),
         )
     return histories
