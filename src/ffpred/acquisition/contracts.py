@@ -7,6 +7,26 @@ from ffpred.acquisition.schema import ColumnKind, FrameContract
 DEFAULT_SEASONS = tuple(range(2009, 2015))
 REGULAR_SEASON = "REG"
 
+# nflreadpy normalizes `player_stats`/`team_stats` team columns to each
+# franchise's *current* abbreviation for every historical season, but
+# `load_schedules` reports the abbreviation that was actually in use during
+# that season. Both refer to the same franchise, so joins that compare a
+# schedule code against a stats code must reconcile them first. This is the
+# complete set of nflverse team-code changes since 1999, verified against every
+# completed season in nflreadpy 0.1.5: the St. Louis Rams (2016 relocation),
+# San Diego Chargers (2017 relocation), and Oakland Raiders (2020 relocation).
+RELOCATED_TEAM_CODES = {
+    "STL": "LA",
+    "SD": "LAC",
+    "OAK": "LV",
+}
+
+
+def normalize_team_code(code: str) -> str:
+    """Map a season-contemporaneous team code to its current-franchise code."""
+    return RELOCATED_TEAM_CODES.get(code, code)
+
+
 PLAYER_STATS_CONTRACT = FrameContract(
     name="player_stats",
     columns={

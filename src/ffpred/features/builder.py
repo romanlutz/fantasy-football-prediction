@@ -108,16 +108,22 @@ def _rookie_average_rows(
     ]
     rows: list[dict[str, float | int]] = []
     for cutoff in sorted(set(cutoffs)):
-        prior = [game.stats for game in rookie_games if game.key < cutoff]
+        prior = [game for game in rookie_games if game.key < cutoff]
         if not prior:
             continue
+        # The most recent rookie-cohort game strictly before the cutoff is the
+        # history period this fallback actually draws on, so it must be
+        # recorded as lineage exactly like a player's own last game is.
+        latest = max(game.key for game in prior)
         row: dict[str, float | int] = {
             "target_season": cutoff.season,
             "target_week": cutoff.week,
+            "rookie_history_through_season": latest.season,
+            "rookie_history_through_week": latest.week,
         }
         for field in QB_STAT_FIELDS:
             row[f"rookie_{field}"] = sum(
-                getattr(stats, field) for stats in prior
+                getattr(game.stats, field) for game in prior
             ) / len(prior)
         rows.append(row)
     return rows
@@ -177,6 +183,14 @@ def build_feature_frame(
             how="left",
         )
         quarterbacks = quarterbacks.with_columns(
+            pl.coalesce(
+                pl.col("qb_history_through_season"),
+                pl.col("rookie_history_through_season"),
+            ).alias("qb_history_through_season"),
+            pl.coalesce(
+                pl.col("qb_history_through_week"),
+                pl.col("rookie_history_through_week"),
+            ).alias("qb_history_through_week"),
             *(
                 pl.coalesce(
                     pl.col(f"qb_last_1_{field}"),
