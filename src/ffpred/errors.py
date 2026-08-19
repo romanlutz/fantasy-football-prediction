@@ -41,5 +41,9 @@ class EmptyDatasetError(DatasetGenerationError):
         )
 
 
+class DatasetIntegrityError(DatasetGenerationError):
+    """Raised when a persisted artifact does not match its manifest."""
+
+
 class ModelTrainingError(FfpredError):
     """Raised when model fitting cannot proceed."""
