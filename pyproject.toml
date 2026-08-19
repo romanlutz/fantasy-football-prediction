@@ -4,6 +4,7 @@ version = "0.1.0"
 license = "MIT"
 requires-python = ">=3.11,<3.14"
 dependencies = [
+    "altair>=5.5,<6",
     "interpret>=0.7,<0.8",
     "matplotlib>=3.9",
     "nflreadpy==0.1.5",
@@ -12,10 +13,12 @@ dependencies = [
     "requests>=2.31",
     "scikit-learn>=1.5",
     "shap>=0.51,<0.52",
+    "streamlit>=1.47,<2",
 ]
 
 [project.scripts]
 ffpred = "ffpred.cli.app:run"
+ffpred-dashboard = "ffpred.dashboard.app:run"
 
 [build-system]
 requires = ["hatchling>=1.27"]
@@ -45,6 +48,9 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = ["ffpred"]
+# Streamlit executes the view module in its own ScriptRunner context. It is
+# exercised with AppTest, but that context is not observed by coverage.py.
+omit = ["src/ffpred/dashboard/app.py"]
 
 [tool.coverage.report]
 fail_under = 90

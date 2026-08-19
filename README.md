@@ -157,6 +157,25 @@ comparable with EBM. Their existing training behavior is unchanged when the
 option is omitted. Controls such as `--ale-bins`, `--permutation-repeats`,
 `--shap-background`, and `--shap-samples` bound diagnostic cost.
 
+Launch the graphical war room with one or more prediction artifacts:
+
+```console
+uv run ffpred-dashboard --predictions svr-predictions.parquet
+uv run ffpred-dashboard \
+  --predictions svr-predictions.parquet \
+  --predictions mlp-predictions.parquet
+```
+
+The **Draft Board** aggregates weekly rows into season totals. **Weekly
+Decisions** keeps single-game comparisons separate, and **Model Room** shows
+error and bias when actual results are present. The dashboard automatically
+discovers `*-predictions.parquet` files in the current directory and
+`artifacts/`; files can also be uploaded in the browser.
+
+Artifacts with a `position` column automatically add their positions to the
+interface. Historical artifacts include completed game outcomes and are labeled
+as backtests, not live future projections.
+
 Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as
 `FFPRED_OUTPUT_DIR`, `FFPRED_HISTORY_START`, `FFPRED_TRAIN_START`,
