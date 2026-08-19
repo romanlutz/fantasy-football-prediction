@@ -15,4 +15,6 @@ def mean_relative_error(y: np.ndarray, prediction: np.ndarray) -> float:
     nonzero = actual != 0
     if not np.any(nonzero):
         raise ValueError("Mean relative error is undefined when all targets are zero")
-    return float(np.mean(np.abs(predicted[nonzero] - actual[nonzero]) / np.abs(actual[nonzero])))
+    return float(
+        np.mean(np.abs(predicted[nonzero] - actual[nonzero]) / np.abs(actual[nonzero]))
+    )

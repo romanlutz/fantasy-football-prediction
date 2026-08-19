@@ -17,7 +17,9 @@ def histogram(
     prediction: np.ndarray,
     output: Path = Path("absolute_error_distribution.pdf"),
 ) -> None:
-    errors = np.abs(np.asarray(y_vals, dtype=float) - np.asarray(prediction, dtype=float))
+    errors = np.abs(
+        np.asarray(y_vals, dtype=float) - np.asarray(prediction, dtype=float)
+    )
     plt.hist(errors, bins=range(35), rwidth=1.0, histtype="bar")
     plt.xlabel("Absolute Error")
     plt.ylabel("Number of data cases")

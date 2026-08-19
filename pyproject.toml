@@ -12,8 +12,63 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.165.10",
+    "pre-commit>=4.6.2",
     "pytest>=8.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.3",
+    "syrupy>=5.5.3",
+    "ty>=0.0.73",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+addopts = "--strict-config --strict-markers"
+markers = [
+    "live: tests that access live nflverse data",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+src = [".", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "B",
+    "C4",
+    "E",
+    "F",
+    "I",
+    "NPY",
+    "PERF",
+    "PL",
+    "PTH",
+    "RUF",
+    "SIM",
+    "T20",
+    "TRY",
+    "UP",
+]
+ignore = [
+    # Removed as typed domain/config modules replace the legacy scripts.
+    "PERF203",
+    "PLR0913",
+    "PLR0917",
+    "PLR2004",
+    "T201",
+    "TRY003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ty.rules]
+possibly-unresolved-reference = "error"
+unresolved-import = "error"
+
+[tool.ty.terminal]
+error-on-warning = false

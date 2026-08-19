@@ -24,9 +24,7 @@ def create_empty_entry(
     seasons: Iterable[int] = DEFAULT_SEASONS, max_week: int = 18
 ) -> dict[str, dict[str, dict[str, bool]]]:
     return {
-        str(year): {
-            str(week): {"played": False} for week in range(1, max_week + 1)
-        }
+        str(year): {str(week): {"played": False} for week in range(1, max_week + 1)}
         for year in seasons
     }
 
@@ -154,16 +152,12 @@ def fetch_qb_stats(
             "passing_touchdowns": _number(row.get("passing_tds")),
             "passing_interceptions": _number(row.get("passing_interceptions")),
             "passing_two_point_attempts": attempts["passing"],
-            "passing_two_point_made": _number(
-                row.get("passing_2pt_conversions")
-            ),
+            "passing_two_point_made": _number(row.get("passing_2pt_conversions")),
             "rushing_attempts": _number(row.get("carries")),
             "rushing_yards": _number(row.get("rushing_yards")),
             "rushing_touchdowns": _number(row.get("rushing_tds")),
             "rushing_two_point_attempts": attempts["rushing"],
-            "rushing_two_point_made": _number(
-                row.get("rushing_2pt_conversions")
-            ),
+            "rushing_two_point_made": _number(row.get("rushing_2pt_conversions")),
             "fumbles": _number(row.get("fumbles_total")),
             "played": True,
         }

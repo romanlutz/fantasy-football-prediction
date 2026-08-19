@@ -77,9 +77,7 @@ def last_k_games(
 ) -> list[dict[str, Any]]:
     return [
         game
-        for _, _, game in _played_games_before(
-            statistics, identifier, year, week
-        )[:k]
+        for _, _, game in _played_games_before(statistics, identifier, year, week)[:k]
     ]
 
 
@@ -158,12 +156,14 @@ def create_row(
     if not player.get("birthdate") or not current_game.get("game_date"):
         return None
 
-    last_game_qb = average_qb_stats(
-        last_k_games(1, qb_statistics, identifier, year, week)
-    ) or rookie_statistics
-    last_10_qb = average_qb_stats(
-        last_k_games(10, qb_statistics, identifier, year, week)
-    ) or rookie_statistics
+    last_game_qb = (
+        average_qb_stats(last_k_games(1, qb_statistics, identifier, year, week))
+        or rookie_statistics
+    )
+    last_10_qb = (
+        average_qb_stats(last_k_games(10, qb_statistics, identifier, year, week))
+        or rookie_statistics
+    )
 
     opponent = current_game.get("opponent")
     if not opponent or opponent not in defense_statistics:
@@ -186,8 +186,7 @@ def create_row(
         current_game["rushing_yards"],
         current_game["rushing_touchdowns"],
         current_game["fumbles"],
-        current_game["rushing_two_point_made"]
-        + current_game["passing_two_point_made"],
+        current_game["rushing_two_point_made"] + current_game["passing_two_point_made"],
     )
 
     return [
@@ -302,7 +301,7 @@ def generate_datasets(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build fantasy football datasets")
-    parser.add_argument("--output-dir", type=Path, default=Path("."))
+    parser.add_argument("--output-dir", type=Path, default=Path())
     parser.add_argument("--history-start", type=int, default=2009)
     parser.add_argument("--train-start", type=int, default=2010)
     parser.add_argument("--test-year", type=int, default=2014)

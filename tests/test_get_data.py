@@ -115,9 +115,7 @@ def test_fetch_defense_stats_uses_opponent_offense() -> None:
         ]
     )
 
-    result = fetch_defense_stats(
-        [2014], team_stats=team_stats, schedules=schedules
-    )
+    result = fetch_defense_stats([2014], team_stats=team_stats, schedules=schedules)
 
     seattle = result["SEA"]["2014"]["1"]
     assert seattle["points_allowed"] == 16

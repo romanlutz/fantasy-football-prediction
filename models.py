@@ -82,9 +82,7 @@ def hyperparameter_selection(
             fold_train = scaler.fit_transform(x[train])
             fold_validation = scaler.transform(x[validation])
             prediction = (
-                clone(regressor)
-                .fit(fold_train, y[train])
-                .predict(fold_validation)
+                clone(regressor).fit(fold_train, y[train]).predict(fold_validation)
             )
             errors.append(mean_absolute_error(y[validation], prediction))
         average_errors.append(float(np.mean(errors)))
@@ -116,15 +114,11 @@ def candidate_regressors() -> list[SVR]:
                 for gamma in (0.05, 0.1, 0.15)
             )
         else:
-            regressors.append(
-                SVR(C=c_value, epsilon=epsilon, kernel=kernel)
-            )
+            regressors.append(SVR(C=c_value, epsilon=epsilon, kernel=kernel))
     return regressors
 
 
-def evaluate(
-    actual: np.ndarray, prediction: np.ndarray
-) -> tuple[float, float, float]:
+def evaluate(actual: np.ndarray, prediction: np.ndarray) -> tuple[float, float, float]:
     return (
         float(mean_squared_error(actual, prediction) ** 0.5),
         float(mean_absolute_error(actual, prediction)),

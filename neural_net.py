@@ -21,9 +21,7 @@ from metrics import mean_relative_error
 from models import load_data
 
 
-def evaluate(
-    actual: np.ndarray, prediction: np.ndarray
-) -> tuple[float, float, float]:
+def evaluate(actual: np.ndarray, prediction: np.ndarray) -> tuple[float, float, float]:
     return (
         float(mean_squared_error(actual, prediction) ** 0.5),
         float(mean_absolute_error(actual, prediction)),
@@ -37,18 +35,17 @@ def main() -> None:
     )
     parser.add_argument("--train", type=Path, default=Path("train.npy"))
     parser.add_argument("--test", type=Path, default=Path("test.npy"))
-    parser.add_argument(
-        "--epochs", type=int, nargs="+", default=[10, 50, 100, 1000]
-    )
+    parser.add_argument("--epochs", type=int, nargs="+", default=[10, 50, 100, 1000])
     parser.add_argument(
         "--hidden-units", type=int, nargs="+", default=[10, 25, 50, 100]
     )
     parser.add_argument(
-        "--activations", nargs="+", choices=("logistic", "tanh"), default=["logistic", "tanh"]
+        "--activations",
+        nargs="+",
+        choices=("logistic", "tanh"),
+        default=["logistic", "tanh"],
     )
-    parser.add_argument(
-        "--output", type=Path, default=Path("neural_net_output.txt")
-    )
+    parser.add_argument("--output", type=Path, default=Path("neural_net_output.txt"))
     args = parser.parse_args()
 
     train_x, train_y, test_x, test_y, test = load_data(args.train, args.test)
