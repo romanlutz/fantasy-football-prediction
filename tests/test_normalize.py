@@ -108,3 +108,67 @@ def test_defense_acquisition_attributes_opponent_offense() -> None:
     assert game.stats.points_allowed == 16
     assert game.stats.passing_yards_allowed == 189
     assert game.stats.turnovers == 2
+
+
+def test_defense_acquisition_reconciles_relocated_team_codes() -> None:
+    """nflreadpy normalizes player_stats/team_stats team codes to each
+    franchise's *current* abbreviation for every historical season (the 2010
+    Chargers appear as "LAC"), while load_schedules reports the abbreviation
+    contemporaneous to that season (the 2010 Chargers appear as "SD"). Without
+    reconciling the two, acquire_defense_histories cannot match a relocated
+    team's offense against the schedule's home/away codes for any season
+    before its relocation.
+    """
+    provider = FakeProvider(
+        schedules=pl.DataFrame(
+            [
+                {
+                    "game_id": "2010_01_SD_KC",
+                    "gameday": "2010-09-12",
+                    "home_team": "KC",
+                    "away_team": "SD",
+                    "home_score": 16,
+                    "away_score": 38,
+                }
+            ]
+        ),
+        team_stats=pl.DataFrame(
+            [
+                {
+                    "season": 2010,
+                    "week": 1,
+                    "season_type": "REG",
+                    "game_id": "2010_01_SD_KC",
+                    "team": "LAC",
+                    "opponent_team": "KC",
+                    "passing_yards": 300,
+                    "rushing_yards": 120,
+                    "passing_interceptions": 0,
+                    "fumbles_lost_total": 0,
+                },
+                {
+                    "season": 2010,
+                    "week": 1,
+                    "season_type": "REG",
+                    "game_id": "2010_01_SD_KC",
+                    "team": "KC",
+                    "opponent_team": "LAC",
+                    "passing_yards": 150,
+                    "rushing_yards": 70,
+                    "passing_interceptions": 2,
+                    "fumbles_lost_total": 1,
+                },
+            ]
+        ),
+    )
+
+    histories = acquire_defense_histories([2010], provider=provider)
+
+    key = GameKey(Season(2010), Week(1))
+    # KC's defense allowed 38 points, scored by the Chargers' (LAC) offense.
+    kc_defense = histories[TeamCode("KC")].games[key]
+    assert kc_defense.stats.points_allowed == 38
+
+    # The Chargers' (LAC) defense allowed 16 points, scored by KC's offense.
+    lac_defense = histories[TeamCode("LAC")].games[key]
+    assert lac_defense.stats.points_allowed == 16

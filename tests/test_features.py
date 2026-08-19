@@ -119,3 +119,78 @@ def test_empty_histories_produce_empty_schema() -> None:
 
     assert frame.is_empty()
     assert tuple(frame.columns) == FEATURE_COLUMNS
+
+
+def test_rookie_fallback_records_the_cohort_history_period_used() -> None:
+    """A player's own debut game has no prior game of their own, so
+    qb_last_1/10 fall back to the rookie cohort's average. The lineage
+    columns must then record that cohort history's most recent period,
+    never a null the leakage-safety invariant cannot check.
+    """
+    week_one = GameKey(Season(2014), Week(1))
+    week_two = GameKey(Season(2014), Week(2))
+    quarterbacks = {
+        PlayerId("earlier-rookie"): QuarterbackHistory(
+            profile=PlayerProfile(
+                player_id=PlayerId("earlier-rookie"),
+                name="Earlier Rookie",
+                birth_date=date(1990, 1, 1),
+                rookie_season=Season(2014),
+            ),
+            games={
+                week_one: QuarterbackGame(
+                    key=week_one,
+                    context=_context("g1", "GB", "SEA", 1),
+                    stats=_qb_stats(100),
+                ),
+            },
+        ),
+        PlayerId("week-two-debut"): QuarterbackHistory(
+            profile=PlayerProfile(
+                player_id=PlayerId("week-two-debut"),
+                name="Week Two Debut",
+                birth_date=date(1991, 1, 1),
+                rookie_season=Season(2014),
+            ),
+            games={
+                # This player's only recorded game is their own debut: there
+                # is no earlier game of their own for qb_last_1/10 to shift
+                # from, so the row must rely entirely on the rookie fallback.
+                week_two: QuarterbackGame(
+                    key=week_two,
+                    context=_context("g3", "NYG", "SEA", 8),
+                    stats=_qb_stats(150),
+                ),
+            },
+        ),
+    }
+    defenses = {
+        TeamCode("SEA"): DefenseHistory(
+            team=TeamCode("SEA"),
+            games={
+                week_one: DefenseGame(
+                    key=week_one,
+                    context=_context("d1", "SEA", "GB", 1),
+                    stats=_defense_stats(150),
+                ),
+                week_two: DefenseGame(
+                    key=week_two,
+                    context=_context("d2", "SEA", "NYG", 8),
+                    stats=_defense_stats(999),
+                ),
+            },
+        )
+    }
+
+    frame = build_feature_frame(quarterbacks, defenses)
+
+    assert frame.height == 1
+    row = frame.row(0, named=True)
+    assert row["player_id"] == "week-two-debut"
+    assert row["qb_last_1_passing_yards"] == 100
+    assert row["qb_history_through_season"] == 2014
+    assert row["qb_history_through_week"] == 1
+    assert (
+        row["qb_history_through_season"],
+        row["qb_history_through_week"],
+    ) < (row["target_season"], row["target_week"])

@@ -16,6 +16,7 @@ from ffpred.acquisition.contracts import (
     REGULAR_SEASON,
     SCHEDULES_CONTRACT,
     TEAM_STATS_CONTRACT,
+    normalize_team_code,
 )
 from ffpred.acquisition.schema import validate_frame
 from ffpred.domain.identifiers import GameId, PlayerId, Season, TeamCode, Week
@@ -101,11 +102,18 @@ def _schedule_index(frame: pl.DataFrame) -> dict[GameId, ScheduleRecord]:
     schedules: dict[GameId, ScheduleRecord] = {}
     for row in validate_frame(frame, SCHEDULES_CONTRACT).iter_rows(named=True):
         game_id = GameId(_required_text(row["game_id"], "game_id"))
+        # Schedules report the team code contemporaneous to the season, while
+        # player_stats/team_stats report each franchise's current code even
+        # for old seasons. Normalize here so every downstream comparison
+        # against those frames' team codes uses the same franchise identity,
+        # regardless of relocations (see normalize_team_code).
+        home_team = normalize_team_code(_required_text(row["home_team"], "home_team"))
+        away_team = normalize_team_code(_required_text(row["away_team"], "away_team"))
         schedules[game_id] = ScheduleRecord(
             game_id=game_id,
             game_date=_date(row["gameday"], "gameday"),
-            home_team=TeamCode(_required_text(row["home_team"], "home_team")),
-            away_team=TeamCode(_required_text(row["away_team"], "away_team")),
+            home_team=TeamCode(home_team),
+            away_team=TeamCode(away_team),
             home_score=_number(row["home_score"]),
             away_score=_number(row["away_score"]),
         )
