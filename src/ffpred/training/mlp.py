@@ -16,9 +16,9 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 
-from get_data import test_players
-from metrics import mean_relative_error
-from models import load_data
+from ffpred.acquisition.nflverse import test_players
+from ffpred.evaluation.metrics import mean_relative_error
+from ffpred.training.svr import load_data
 
 
 def evaluate(actual: np.ndarray, prediction: np.ndarray) -> tuple[float, float, float]:

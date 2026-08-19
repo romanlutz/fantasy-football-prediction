@@ -20,9 +20,9 @@ from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 
-from get_data import test_players
-from metrics import mean_relative_error
-from plots import histogram
+from ffpred.acquisition.nflverse import test_players
+from ffpred.evaluation.metrics import mean_relative_error
+from ffpred.evaluation.plots import histogram
 
 MANUAL_FEATURE_INDICES = [
     0,

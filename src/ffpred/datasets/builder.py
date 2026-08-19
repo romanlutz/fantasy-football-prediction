@@ -17,7 +17,11 @@ from typing import Any
 
 import numpy as np
 
-from get_data import fetch_defense_stats, fetch_qb_stats, source_metadata
+from ffpred.acquisition.nflverse import (
+    fetch_defense_stats,
+    fetch_qb_stats,
+    source_metadata,
+)
 
 QB_FIELDS = (
     "passing_attempts",

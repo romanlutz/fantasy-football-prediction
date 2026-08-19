@@ -1,6 +1,6 @@
 import polars as pl
 
-from get_data import fetch_defense_stats, fetch_qb_stats
+from ffpred.acquisition.nflverse import fetch_defense_stats, fetch_qb_stats
 
 
 def test_fetch_qb_stats_maps_nflverse_fields() -> None:

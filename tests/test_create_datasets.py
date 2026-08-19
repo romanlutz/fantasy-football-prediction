@@ -3,7 +3,7 @@ from datetime import date
 import numpy as np
 import pytest
 
-from create_datasets import (
+from ffpred.datasets.builder import (
     _save_array,
     average_qb_stats,
     calculate_age,
@@ -11,7 +11,7 @@ from create_datasets import (
     last_k_games,
     rookie_qb_average,
 )
-from metrics import mean_relative_error
+from ffpred.evaluation.metrics import mean_relative_error
 
 
 def test_last_k_games_crosses_season_boundary() -> None:
