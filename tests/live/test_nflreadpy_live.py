@@ -7,6 +7,10 @@ from ffpred.acquisition.contracts import (
     SCHEDULES_CONTRACT,
     TEAM_STATS_CONTRACT,
 )
+from ffpred.acquisition.normalize import (
+    acquire_defense_histories,
+    acquire_quarterback_histories,
+)
 from ffpred.acquisition.schema import validate_frame
 from ffpred.providers.nflreadpy import NflReadPyProvider
 
@@ -34,3 +38,26 @@ def test_live_nflreadpy_play_by_play_contract() -> None:
     frame = NflReadPyProvider().load_pbp(COMPLETED_SEASON)
 
     assert not validate_frame(frame, PBP_CONTRACT).is_empty()
+
+
+@pytest.mark.live
+@pytest.mark.live_slow
+def test_live_normalized_acquisition() -> None:
+    provider = NflReadPyProvider(cache_mode="filesystem")
+
+    quarterbacks = acquire_quarterback_histories(
+        (COMPLETED_SEASON,),
+        provider=provider,
+    )
+    defenses = acquire_defense_histories(
+        (COMPLETED_SEASON,),
+        provider=provider,
+    )
+
+    assert quarterbacks
+    assert defenses
+    assert all(
+        game.key.season == COMPLETED_SEASON
+        for history in quarterbacks.values()
+        for game in history.games.values()
+    )

@@ -53,7 +53,8 @@ Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as
 `FFPRED_OUTPUT_DIR`, `FFPRED_HISTORY_START`, `FFPRED_TRAIN_START`,
 `FFPRED_TEST_YEAR`, `FFPRED_CACHE_MODE`, and `FFPRED_LOG_LEVEL`; explicit CLI
-arguments take precedence.
+arguments take precedence. Set `FFPRED_CACHE_DIR` to choose the filesystem cache
+location.
 
 ## Architecture
 

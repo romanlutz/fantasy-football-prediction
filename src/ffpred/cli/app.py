@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
@@ -96,9 +95,10 @@ def _add_dataset_arguments(
 
 
 def _provider(settings: Settings) -> NflDataProvider:
-    if settings.cache_mode == "filesystem":
-        os.environ["NFLREADPY_CACHE"] = "filesystem"
-    return NflReadPyProvider()
+    return NflReadPyProvider(
+        cache_mode=("filesystem" if settings.cache_mode == "filesystem" else "off"),
+        cache_dir=settings.cache_dir,
+    )
 
 
 def _write_predictions(

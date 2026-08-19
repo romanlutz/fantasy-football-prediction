@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import Mock
 
 import polars as pl
@@ -49,3 +50,21 @@ def test_nflreadpy_adapter_reports_reproducibility_metadata() -> None:
     assert metadata["client"] == "nflreadpy"
     assert metadata["client_version"]
     assert metadata["data_source"] == NFLVERSE_DATA_URL
+
+
+def test_nflreadpy_adapter_applies_explicit_cache_settings(monkeypatch) -> None:
+    update_config = Mock()
+    monkeypatch.setattr(
+        "ffpred.providers.nflreadpy.update_config",
+        update_config,
+    )
+
+    NflReadPyProvider(
+        cache_mode="filesystem",
+        cache_dir=Path("cache"),
+    )
+
+    update_config.assert_called_once_with(
+        cache_mode="filesystem",
+        cache_dir=Path("cache"),
+    )

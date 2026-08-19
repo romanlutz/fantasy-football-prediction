@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-import io
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -24,12 +24,16 @@ class SourceArtifact:
 
 def fingerprint_frame(name: str, frame: pl.DataFrame) -> SourceArtifact:
     """Fingerprint exact frame content using uncompressed Arrow IPC."""
-    buffer = io.BytesIO()
-    frame.write_ipc(buffer, compression="uncompressed")
+    digest = hashlib.sha256()
+    with tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024) as buffer:
+        frame.write_ipc(buffer, compression="uncompressed")
+        buffer.seek(0)
+        for chunk in iter(lambda: buffer.read(1024 * 1024), b""):
+            digest.update(chunk)
     return SourceArtifact(
         name=name,
         rows=frame.height,
-        sha256=hashlib.sha256(buffer.getvalue()).hexdigest(),
+        sha256=digest.hexdigest(),
         schema={column: str(dtype) for column, dtype in frame.schema.items()},
     )
 
