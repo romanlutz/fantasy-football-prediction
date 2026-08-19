@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ffpred.domain.models import DstGameStats, QuarterbackGameStats
+from ffpred.domain.models import DstGameStats, KickerGameStats, QuarterbackGameStats
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -96,4 +96,39 @@ def dst_fantasy_score(
         + stats.safeties * config.safety
         + stats.blocked_kicks * config.blocked_kick
         + points_allowed_score(stats.points_allowed, config.points_allowed_tiers)
+    )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class KickerScoringConfig:
+    """Weights for kicker fantasy scoring.
+
+    Field goals are scored by distance band; the two common conventions (flat
+    3-points-per-make, or distance-tiered) are both expressible by setting
+    all three make weights equal or distinct, respectively.
+    """
+
+    field_goal_0_39: float = 3.0
+    field_goal_40_49: float = 4.0
+    field_goal_50_plus: float = 5.0
+    field_goal_missed: float = 0.0
+    extra_point_made: float = 1.0
+    extra_point_missed: float = 0.0
+
+
+DEFAULT_KICKER_SCORING = KickerScoringConfig()
+
+
+def kicker_fantasy_score(
+    stats: KickerGameStats,
+    config: KickerScoringConfig = DEFAULT_KICKER_SCORING,
+) -> float:
+    """Calculate kicker points from game statistics."""
+    return (
+        stats.fg_made_0_39 * config.field_goal_0_39
+        + stats.fg_made_40_49 * config.field_goal_40_49
+        + stats.fg_made_50_plus * config.field_goal_50_plus
+        + stats.fg_missed * config.field_goal_missed
+        + stats.pat_made * config.extra_point_made
+        + stats.pat_missed * config.extra_point_missed
     )

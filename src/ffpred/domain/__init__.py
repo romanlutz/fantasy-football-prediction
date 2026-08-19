@@ -9,6 +9,9 @@ from ffpred.domain.models import (
     DstHistory,
     GameContext,
     GameKey,
+    KickerGame,
+    KickerGameStats,
+    KickerHistory,
     PlayerProfile,
     QuarterbackGame,
     QuarterbackGameStats,
@@ -16,16 +19,20 @@ from ffpred.domain.models import (
 )
 from ffpred.domain.scoring import (
     DEFAULT_DST_SCORING,
+    DEFAULT_KICKER_SCORING,
     DEFAULT_SCORING,
     DstScoringConfig,
+    KickerScoringConfig,
     ScoringConfig,
     dst_fantasy_score,
     fantasy_score,
+    kicker_fantasy_score,
     points_allowed_score,
 )
 
 __all__ = [
     "DEFAULT_DST_SCORING",
+    "DEFAULT_KICKER_SCORING",
     "DEFAULT_SCORING",
     "DefenseGame",
     "DefenseGameStats",
@@ -36,6 +43,10 @@ __all__ = [
     "DstScoringConfig",
     "GameContext",
     "GameKey",
+    "KickerGame",
+    "KickerGameStats",
+    "KickerHistory",
+    "KickerScoringConfig",
     "PlayerProfile",
     "QuarterbackGame",
     "QuarterbackGameStats",
@@ -43,5 +54,6 @@ __all__ = [
     "ScoringConfig",
     "dst_fantasy_score",
     "fantasy_score",
+    "kicker_fantasy_score",
     "points_allowed_score",
 ]

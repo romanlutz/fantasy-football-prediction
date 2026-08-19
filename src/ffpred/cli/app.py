@@ -24,12 +24,14 @@ from ffpred.config import Settings
 from ffpred.datasets.builder import (
     DatasetBuildConfig,
     DstDatasetBuildConfig,
+    KickerDatasetBuildConfig,
     build_datasets,
     build_dst_datasets,
+    build_kicker_datasets,
 )
 from ffpred.errors import FfpredError
 from ffpred.evaluation.metrics import evaluate
-from ffpred.features import dst_schema
+from ffpred.features import dst_schema, kicker_schema
 from ffpred.features import schema as qb_schema
 from ffpred.features.schema import TARGET_COLUMN
 from ffpred.logging import configure_logging
@@ -53,14 +55,17 @@ PREDICTION_COLUMN = "prediction"
 POSITION_FEATURE_COLUMNS: dict[str, tuple[str, ...]] = {
     "qb": qb_schema.MODEL_FEATURE_COLUMNS,
     "dst": dst_schema.MODEL_FEATURE_COLUMNS,
+    "k": kicker_schema.MODEL_FEATURE_COLUMNS,
 }
 POSITION_IDENTITY_COLUMNS: dict[str, tuple[str, ...]] = {
     "qb": qb_schema.IDENTITY_COLUMNS,
     "dst": dst_schema.IDENTITY_COLUMNS,
+    "k": kicker_schema.IDENTITY_COLUMNS,
 }
 POSITION_VALIDATORS = {
     "qb": qb_schema.validate_feature_frame,
     "dst": dst_schema.validate_feature_frame,
+    "k": kicker_schema.validate_feature_frame,
 }
 
 
@@ -79,6 +84,11 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
         "build-dst-dataset", help="build team D/ST train/test datasets"
     )
     _add_build_arguments(build_dst, settings)
+
+    build_kicker = subparsers.add_parser(
+        "build-kicker-dataset", help="build kicker train/test datasets"
+    )
+    _add_build_arguments(build_kicker, settings)
 
     svr = subparsers.add_parser("train-svr", help="train an SVR model")
     _add_dataset_arguments(svr, "svr-predictions.parquet")
@@ -228,6 +238,26 @@ def _run_build_dst(
     }
 
 
+def _run_build_kicker(
+    options: BuildOptions,
+    provider: NflDataProvider,
+) -> dict[str, object]:
+    manifest = build_kicker_datasets(
+        KickerDatasetBuildConfig(
+            output_dir=options.output_dir,
+            history_start=options.history_start,
+            train_start=options.train_start,
+            test_year=options.test_year,
+        ),
+        provider=provider,
+    )
+    return {
+        "manifest": str(options.output_dir / "dataset-manifest.json"),
+        "train_rows": manifest.outputs["train"].rows,
+        "test_rows": manifest.outputs["test"].rows,
+    }
+
+
 def _run_svr(options: SvrOptions) -> dict[str, object]:
     if options.manual_features and options.position != "qb":
         raise FfpredError("--manual-features is only supported for --position qb")
@@ -319,6 +349,11 @@ def main(
             )
         elif args.command == "build-dst-dataset":
             output = _run_build_dst(
+                _build_options(args),
+                provider or _provider(settings),
+            )
+        elif args.command == "build-kicker-dataset":
+            output = _run_build_kicker(
                 _build_options(args),
                 provider or _provider(settings),
             )

@@ -147,3 +147,35 @@ def make_dst_provider(seasons: tuple[int, ...] = (2020, 2021, 2022)) -> FakeProv
         team_stats=pl.DataFrame(team_stats),
         schedules=pl.DataFrame(schedules),
     )
+
+
+def make_kicker_provider(seasons: tuple[int, ...] = (2020, 2021, 2022)) -> FakeProvider:
+    """A provider whose player_stats carry the fg_*/pat_* columns
+    acquire_kicker_histories needs, across enough seasons/weeks for
+    leakage-safe rolling features.
+    """
+    player_stats: list[dict[str, object]] = []
+    for index, season in enumerate(seasons):
+        for week in (1, 2):
+            game_id = f"{season}_{week:02d}_GB_SEA"
+            player_stats.append(
+                {
+                    "player_id": "00-KICKER",
+                    "player_display_name": "Test Kicker",
+                    "position": "K",
+                    "season": season,
+                    "week": week,
+                    "season_type": "REG",
+                    "game_id": game_id,
+                    "fg_made_0_19": 0,
+                    "fg_made_20_29": 1,
+                    "fg_made_30_39": 1,
+                    "fg_made_40_49": 1 + index % 2,
+                    "fg_made_50_59": 0,
+                    "fg_made_60_": 0,
+                    "fg_missed": index % 2,
+                    "pat_made": 2,
+                    "pat_missed": 0,
+                }
+            )
+    return FakeProvider(player_stats=pl.DataFrame(player_stats))

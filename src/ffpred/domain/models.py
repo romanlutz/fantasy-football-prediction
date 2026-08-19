@@ -135,3 +135,43 @@ class DstHistory:
 
     team: TeamCode
     games: dict[GameKey, DstGame] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class KickerGameStats:
+    """A kicker's counting statistics for one game.
+
+    Field-goal makes are grouped into the distance bands most fantasy scoring
+    formats use (0-39, 40-49, 50+) rather than nflverse's finer buckets, since
+    scoring never distinguishes further than that.
+    """
+
+    fg_made_0_39: float
+    fg_made_40_49: float
+    fg_made_50_plus: float
+    fg_missed: float
+    pat_made: float
+    pat_missed: float
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class KickerGame:
+    """A kicker's normalized game record.
+
+    Kicker scoring needs no opponent context, so this omits the full
+    ``GameContext`` team-and-opponent scaffolding used by the QB/D/ST records
+    and keeps only the identifiers a feature row needs.
+    """
+
+    key: GameKey
+    game_id: GameId
+    stats: KickerGameStats
+
+
+@dataclass(slots=True, kw_only=True)
+class KickerHistory:
+    """A kicker's profile and games indexed by typed chronological keys."""
+
+    player_id: PlayerId
+    name: str
+    games: dict[GameKey, KickerGame] = field(default_factory=dict)

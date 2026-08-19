@@ -11,6 +11,7 @@ import polars as pl
 from ffpred.acquisition.contracts import (
     DEFAULT_SEASONS,
     DST_TEAM_STATS_CONTRACT,
+    KICKER_PLAYER_STATS_CONTRACT,
     PBP_CONTRACT,
     PLAYER_STATS_CONTRACT,
     PLAYERS_CONTRACT,
@@ -30,6 +31,9 @@ from ffpred.domain.models import (
     DstHistory,
     GameContext,
     GameKey,
+    KickerGame,
+    KickerGameStats,
+    KickerHistory,
     PlayerProfile,
     QuarterbackGame,
     QuarterbackGameStats,
@@ -359,6 +363,51 @@ def acquire_dst_histories(
                 blocked_kicks=_number(row["def_punt_blocks"])
                 + _number(row["def_pat_blocks"])
                 + _number(row["def_fg_blocks"]),
+            ),
+        )
+    return histories
+
+
+def acquire_kicker_histories(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[PlayerId, KickerHistory]:
+    """Acquire regular-season kicker histories.
+
+    Kicker scoring needs no opponent context, so unlike QB/D/ST acquisition
+    this does not join a schedule index at all.
+    """
+    season_list = sorted(set(seasons))
+    provider = provider or NflReadPyProvider()
+    frame = validate_frame(
+        provider.load_player_stats(season_list), KICKER_PLAYER_STATS_CONTRACT
+    ).filter((pl.col("season_type") == REGULAR_SEASON) & (pl.col("position") == "K"))
+
+    histories: dict[PlayerId, KickerHistory] = {}
+    for row in frame.iter_rows(named=True):
+        player_id = PlayerId(_required_text(row["player_id"], "player_id"))
+        history = histories.setdefault(
+            player_id,
+            KickerHistory(
+                player_id=player_id,
+                name=_required_text(row["player_display_name"], "player_display_name"),
+            ),
+        )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history.games[key] = KickerGame(
+            key=key,
+            game_id=GameId(_required_text(row["game_id"], "game_id")),
+            stats=KickerGameStats(
+                fg_made_0_39=_number(row["fg_made_0_19"])
+                + _number(row["fg_made_20_29"])
+                + _number(row["fg_made_30_39"]),
+                fg_made_40_49=_number(row["fg_made_40_49"]),
+                fg_made_50_plus=_number(row["fg_made_50_59"])
+                + _number(row["fg_made_60_"]),
+                fg_missed=_number(row["fg_missed"]),
+                pat_made=_number(row["pat_made"]),
+                pat_missed=_number(row["pat_missed"]),
             ),
         )
     return histories

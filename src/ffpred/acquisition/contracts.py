@@ -121,3 +121,25 @@ PBP_CONTRACT = FrameContract(
         "rusher_player_id": ColumnKind.TEXT,
     },
 )
+KICKER_PLAYER_STATS_CONTRACT = FrameContract(
+    name="player_stats",
+    columns={
+        "player_id": ColumnKind.TEXT,
+        "player_display_name": ColumnKind.TEXT,
+        "position": ColumnKind.TEXT,
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "fg_made_0_19": ColumnKind.NUMBER,
+        "fg_made_20_29": ColumnKind.NUMBER,
+        "fg_made_30_39": ColumnKind.NUMBER,
+        "fg_made_40_49": ColumnKind.NUMBER,
+        "fg_made_50_59": ColumnKind.NUMBER,
+        "fg_made_60_": ColumnKind.NUMBER,
+        "fg_missed": ColumnKind.NUMBER,
+        "pat_made": ColumnKind.NUMBER,
+        "pat_missed": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"season", "week", "game_id"}),
+)

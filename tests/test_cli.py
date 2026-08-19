@@ -5,7 +5,7 @@ import polars as pl
 import pytest
 
 from ffpred.cli.app import main
-from tests.factories import make_dst_provider, make_provider
+from tests.factories import make_dst_provider, make_kicker_provider, make_provider
 
 
 def test_build_dataset_command_uses_injected_provider(
@@ -161,3 +161,53 @@ def test_manual_features_rejected_for_non_qb_position(
     )
 
     assert result == 2
+
+
+def test_kicker_build_train_and_evaluate_round_trip(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    build_result = main(
+        [
+            "build-kicker-dataset",
+            "--output-dir",
+            str(tmp_path),
+            "--history-start",
+            "2020",
+            "--train-start",
+            "2021",
+            "--test-year",
+            "2022",
+        ],
+        provider=make_kicker_provider(),
+    )
+    build_output = json.loads(capsys.readouterr().out)
+    predictions = tmp_path / "kicker-predictions.parquet"
+
+    train_result = main(
+        [
+            "train-mlp",
+            "--position",
+            "k",
+            "--train",
+            str(tmp_path / "train.parquet"),
+            "--test",
+            str(tmp_path / "test.parquet"),
+            "--predictions",
+            str(predictions),
+        ]
+    )
+    train_output = json.loads(capsys.readouterr().out)
+    evaluation_result = main(["evaluate", str(predictions)])
+    evaluation_output = json.loads(capsys.readouterr().out)
+
+    assert build_result == 0
+    assert train_result == 0
+    assert evaluation_result == 0
+    assert build_output["train_rows"] > 0
+    assert build_output["test_rows"] > 0
+    assert predictions.exists()
+    assert evaluation_output["metrics"] == train_output["metrics"]
+    prediction_frame = pl.read_parquet(predictions)
+    assert "prediction" in prediction_frame.columns
+    assert "player_id" in prediction_frame.columns
