@@ -1,11 +1,18 @@
 # Fantasy Football Prediction
 
-This project builds reproducible, leakage-safe quarterback fantasy-football
-datasets from [nflverse](https://github.com/nflverse/nflverse-data), then trains
-support-vector and multilayer-perceptron regressors. The original 2015
-experiment is preserved at the
+> [!IMPORTANT]
+> This project is undergoing a major overhaul. The current code, commands, and
+> documentation may continue to change.
+
+The original experiment is described in the paper
+[Fantasy Football Prediction](https://arxiv.org/abs/1505.06918). The exact code
+associated with the paper is preserved in the
 [`legacy-2015`](https://github.com/romanlutz/fantasy-football-prediction/tree/legacy-2015)
 tag.
+
+This project builds reproducible, leakage-safe quarterback fantasy-football
+datasets from [nflverse](https://github.com/nflverse/nflverse-data), then trains
+support-vector and multilayer-perceptron regressors.
 
 ## Requirements and setup
 
