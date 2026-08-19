@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 import polars as pl
 
-from ffpred.acquisition.nflverse import (
+from ffpred.acquisition.contracts import (
     DEFAULT_SEASONS,
     PBP_CONTRACT,
     PLAYER_STATS_CONTRACT,

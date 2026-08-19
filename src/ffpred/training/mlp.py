@@ -16,7 +16,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 
-from ffpred.acquisition.nflverse import test_players
+from ffpred.evaluation.cohorts import LEGACY_2014_QUARTERBACKS
 from ffpred.evaluation.metrics import mean_relative_error
 from ffpred.training.svr import load_data
 
@@ -53,7 +53,8 @@ def main() -> None:
     train_x = scaler.fit_transform(train_x)
     test_x = scaler.transform(test_x)
     selected = np.array(
-        [player_id in test_players for player_id in test[:, 0]], dtype=bool
+        [player_id in LEGACY_2014_QUARTERBACKS for player_id in test[:, 0]],
+        dtype=bool,
     )
 
     with args.output.open("w", encoding="utf-8") as output:

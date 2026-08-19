@@ -20,7 +20,7 @@ from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 
-from ffpred.acquisition.nflverse import test_players
+from ffpred.evaluation.cohorts import LEGACY_2014_QUARTERBACKS
 from ffpred.evaluation.metrics import mean_relative_error
 from ffpred.evaluation.plots import histogram
 
@@ -177,7 +177,8 @@ def main() -> None:
 
     print("RMSE, MAE, MRE (all):", *evaluate(test_y, prediction))
     selected = np.array(
-        [player_id in test_players for player_id in test[:, 0]], dtype=bool
+        [player_id in LEGACY_2014_QUARTERBACKS for player_id in test[:, 0]],
+        dtype=bool,
     )
     if np.any(selected):
         print(

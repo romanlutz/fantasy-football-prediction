@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from ffpred.acquisition.nflverse import SCHEDULES_CONTRACT
+from ffpred.acquisition.contracts import SCHEDULES_CONTRACT
 from ffpred.acquisition.schema import validate_frame
 from ffpred.errors import SchemaValidationError
 
