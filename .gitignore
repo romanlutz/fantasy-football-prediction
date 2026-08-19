@@ -9,3 +9,4 @@ neural_net_output.txt
 prediction.npy
 test.npy
 train.npy
+*.parquet

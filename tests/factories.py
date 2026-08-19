@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from datetime import date, timedelta
+
+import polars as pl
+
+from ffpred.providers.fakes import FakeProvider
+
+
+def make_provider(seasons: tuple[int, ...] = (2020, 2021, 2022)) -> FakeProvider:
+    schedules: list[dict[str, object]] = []
+    player_stats: list[dict[str, object]] = []
+    team_stats: list[dict[str, object]] = []
+    pbp_by_season: dict[int, pl.DataFrame] = {}
+    for index, season in enumerate(seasons):
+        game_id = f"{season}_01_GB_SEA"
+        schedules.append(
+            {
+                "game_id": game_id,
+                "gameday": (date(season, 9, 1) + timedelta(days=index)).isoformat(),
+                "home_team": "SEA",
+                "away_team": "GB",
+                "home_score": 24 + index,
+                "away_score": 20 + index,
+            }
+        )
+        player_stats.append(
+            {
+                "player_id": "00-TEST",
+                "player_display_name": "Test Quarterback",
+                "position": "QB",
+                "season": season,
+                "week": 1,
+                "season_type": "REG",
+                "game_id": game_id,
+                "team": "GB",
+                "opponent_team": "SEA",
+                "attempts": 30,
+                "passing_yards": 200 + index * 10,
+                "passing_tds": 2,
+                "passing_interceptions": 1,
+                "passing_2pt_conversions": 0,
+                "carries": 3,
+                "rushing_yards": 20,
+                "rushing_tds": 0,
+                "rushing_2pt_conversions": 0,
+                "fumbles_total": 0,
+            }
+        )
+        team_stats.append(
+            {
+                "season": season,
+                "week": 1,
+                "season_type": "REG",
+                "game_id": game_id,
+                "team": "GB",
+                "opponent_team": "SEA",
+                "passing_yards": 200 + index * 10,
+                "rushing_yards": 100,
+                "passing_interceptions": 1,
+                "fumbles_lost_total": 0,
+            }
+        )
+        pbp_by_season[season] = pl.DataFrame(
+            {
+                "game_id": [game_id],
+                "season_type": ["REG"],
+                "two_point_attempt": [0],
+                "passer_player_id": [None],
+                "rusher_player_id": [None],
+            }
+        )
+    return FakeProvider(
+        player_stats=pl.DataFrame(player_stats),
+        team_stats=pl.DataFrame(team_stats),
+        schedules=pl.DataFrame(schedules),
+        players=pl.DataFrame(
+            {
+                "gsis_id": ["00-TEST"],
+                "display_name": ["Test Quarterback"],
+                "birth_date": ["1990-01-01"],
+                "rookie_season": [2019],
+            }
+        ),
+        pbp_by_season=pbp_by_season,
+    )
