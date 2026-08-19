@@ -25,7 +25,7 @@ uv sync --all-groups
 
 ## Commands
 
-Build the historical 2010-2013 training set and 2014 test set:
+Build the default dataset:
 
 ```console
 uv run ffpred build-dataset
