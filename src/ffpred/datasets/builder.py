@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -288,7 +288,7 @@ def generate_datasets(
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
         **source_metadata(),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "history_start": history_start,
         "train_start": train_start,
         "test_year": test_year,
