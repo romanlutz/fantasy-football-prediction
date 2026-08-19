@@ -47,6 +47,8 @@ def validate_frame(frame: pl.DataFrame, contract: FrameContract) -> pl.DataFrame
             problems.append(f"missing column {column!r}")
             continue
         dtype = frame.schema[column]
+        if dtype == pl.Null and column not in contract.non_null:
+            continue
         if not _matches_kind(dtype, kind):
             problems.append(f"{column!r} is {dtype}, expected {kind}")
     problems.extend(

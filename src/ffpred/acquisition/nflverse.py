@@ -69,7 +69,7 @@ PLAYERS_CONTRACT = FrameContract(
         "gsis_id": ColumnKind.TEXT,
         "display_name": ColumnKind.TEXT,
         "birth_date": ColumnKind.DATE,
-        "rookie_season": ColumnKind.INTEGER,
+        "rookie_season": ColumnKind.NUMBER,
     },
 )
 PBP_CONTRACT = FrameContract(

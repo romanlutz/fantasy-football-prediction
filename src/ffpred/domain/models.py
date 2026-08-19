@@ -34,7 +34,7 @@ class PlayerProfile:
 
     player_id: PlayerId
     name: str
-    birth_date: date
+    birth_date: date | None
     rookie_season: Season | None
 
 
