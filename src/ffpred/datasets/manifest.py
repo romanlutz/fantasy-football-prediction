@@ -5,11 +5,44 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from ffpred.providers.provenance import SourceArtifact
 
 MANIFEST_SCHEMA_VERSION = 2
+
+
+class SourceArtifactJson(TypedDict):
+    name: str
+    rows: int
+    sha256: str
+    schema: dict[str, str]
+
+
+class DatasetArtifactJson(TypedDict):
+    path: str
+    rows: int
+    columns: int
+    sha256: str
+    format: str
+
+
+class BuildParametersJson(TypedDict):
+    history_start: int
+    train_start: int
+    test_year: int
+    scoring: dict[str, float]
+
+
+class DatasetManifestJson(TypedDict):
+    schema_version: int
+    generated_at: str
+    package_version: str
+    provider: dict[str, str]
+    parameters: BuildParametersJson
+    feature_schema_sha256: str
+    sources: dict[str, SourceArtifactJson]
+    outputs: dict[str, DatasetArtifactJson]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -53,7 +86,7 @@ class DatasetManifest:
     @classmethod
     def from_json(cls, value: str) -> DatasetManifest:
         """Deserialize and validate the manifest schema version."""
-        raw: dict[str, Any] = json.loads(value)
+        raw: DatasetManifestJson = json.loads(value)
         version = raw.get("schema_version")
         if version != MANIFEST_SCHEMA_VERSION:
             raise ValueError(f"Unsupported manifest schema version: {version}")

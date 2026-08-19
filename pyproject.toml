@@ -70,24 +70,18 @@ select = [
     "UP",
 ]
 ignore = [
-    # Removed as typed domain/config modules replace the legacy scripts.
-    "PERF203",
-    "PLR0913",
-    "PLR0917",
-    "PLR2004",
-    "T201",
+    # Contextual messages are intentionally kept beside their validation logic.
     "TRY003",
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"src/ffpred/cli/**" = ["T201"]
 "tests/**" = ["PLR2004"]
 
 [tool.ruff.format]
 docstring-code-format = true
 
 [tool.ty.rules]
+all = "error"
 possibly-unresolved-reference = "error"
 unresolved-import = "error"
-
-[tool.ty.terminal]
-error-on-warning = false

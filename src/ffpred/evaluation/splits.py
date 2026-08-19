@@ -10,13 +10,15 @@ from numpy.typing import NDArray
 
 from ffpred.errors import ModelTrainingError
 
+MINIMUM_FOLDS = 2
+
 
 def chronological_folds(
     frame: pl.DataFrame,
     folds: int,
 ) -> Iterator[tuple[NDArray[np.int64], NDArray[np.int64]]]:
     """Split whole season/week periods so validation always follows training."""
-    if folds < 2:
+    if folds < MINIMUM_FOLDS:
         raise ModelTrainingError("At least two folds are required")
     periods = sorted(set(frame.select("target_season", "target_week").iter_rows()))
     if len(periods) < folds + 1:

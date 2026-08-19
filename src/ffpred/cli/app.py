@@ -22,7 +22,7 @@ from ffpred.cli.options import (
     SvrOptions,
 )
 from ffpred.config import Settings
-from ffpred.datasets.builder import generate_datasets
+from ffpred.datasets.builder import DatasetBuildConfig, build_datasets
 from ffpred.errors import FfpredError
 from ffpred.evaluation.metrics import evaluate
 from ffpred.features.schema import IDENTITY_COLUMNS, TARGET_COLUMN
@@ -150,11 +150,13 @@ def _run_build(
     options: BuildOptions,
     provider: NflDataProvider,
 ) -> dict[str, object]:
-    manifest = generate_datasets(
-        options.output_dir,
-        options.history_start,
-        options.train_start,
-        options.test_year,
+    manifest = build_datasets(
+        DatasetBuildConfig(
+            output_dir=options.output_dir,
+            history_start=options.history_start,
+            train_start=options.train_start,
+            test_year=options.test_year,
+        ),
         provider=provider,
     )
     return {

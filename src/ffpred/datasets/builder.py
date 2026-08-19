@@ -6,7 +6,7 @@ import argparse
 import hashlib
 import json
 import logging
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,6 +23,7 @@ from ffpred.datasets.manifest import (
     DatasetManifest,
 )
 from ffpred.domain.scoring import DEFAULT_SCORING, ScoringConfig
+from ffpred.errors import ConfigurationError
 from ffpred.features.builder import build_feature_frame
 from ffpred.features.schema import FEATURE_SCHEMA
 from ffpred.logging import configure_logging
@@ -33,6 +34,26 @@ from ffpred.providers.provenance import ProvenanceProvider
 LOGGER = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DatasetBuildConfig:
+    """All values that materially determine generated datasets."""
+
+    output_dir: Path = Path()
+    history_start: int = 2009
+    train_start: int = 2010
+    test_year: int = 2014
+    scoring: ScoringConfig = DEFAULT_SCORING
+
+    def __post_init__(self) -> None:
+        if not self.history_start < self.train_start <= self.test_year:
+            raise ConfigurationError(
+                "Expected history_start < train_start <= test_year"
+            )
+
+
+DEFAULT_BUILD_CONFIG = DatasetBuildConfig()
+
+
 def _feature_schema_sha256() -> str:
     encoded = json.dumps(
         {column: str(dtype) for column, dtype in FEATURE_SCHEMA.items()},
@@ -41,17 +62,13 @@ def _feature_schema_sha256() -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def generate_datasets(
-    output_dir: Path,
-    history_start: int = 2009,
-    train_start: int = 2010,
-    test_year: int = 2014,
+def build_datasets(
+    config: DatasetBuildConfig = DEFAULT_BUILD_CONFIG,
     *,
     provider: NflDataProvider | None = None,
-    scoring: ScoringConfig = DEFAULT_SCORING,
 ) -> DatasetManifest:
     """Acquire, engineer, split, persist, and describe train/test datasets."""
-    seasons = tuple(range(history_start, test_year + 1))
+    seasons = tuple(range(config.history_start, config.test_year + 1))
     recording_provider = ProvenanceProvider(provider or NflReadPyProvider())
     quarterback_histories = acquire_quarterback_histories(
         seasons,
@@ -64,37 +81,37 @@ def generate_datasets(
     features = build_feature_frame(
         quarterback_histories,
         defense_histories,
-        scoring=scoring,
+        scoring=config.scoring,
     )
     train = features.filter(
         pl.col("target_season").is_between(
-            train_start,
-            test_year,
+            config.train_start,
+            config.test_year,
             closed="left",
         )
     )
-    test = features.filter(pl.col("target_season") == test_year)
+    test = features.filter(pl.col("target_season") == config.test_year)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
     outputs = {
-        "train": write_dataset(output_dir / "train.parquet", train),
-        "test": write_dataset(output_dir / "test.parquet", test),
+        "train": write_dataset(config.output_dir / "train.parquet", train),
+        "test": write_dataset(config.output_dir / "test.parquet", test),
     }
     manifest = DatasetManifest(
         generated_at=datetime.now(UTC).isoformat(),
         package_version=__version__,
         provider=dict(recording_provider.metadata()),
         parameters=BuildParameters(
-            history_start=history_start,
-            train_start=train_start,
-            test_year=test_year,
-            scoring=asdict(scoring),
+            history_start=config.history_start,
+            train_start=config.train_start,
+            test_year=config.test_year,
+            scoring=asdict(config.scoring),
         ),
         feature_schema_sha256=_feature_schema_sha256(),
         sources=dict(recording_provider.artifacts),
         outputs=outputs,
     )
-    manifest.write(output_dir / "dataset-manifest.json")
+    manifest.write(config.output_dir / "dataset-manifest.json")
     return manifest
 
 
@@ -109,11 +126,13 @@ def main() -> None:
     args = parser.parse_args()
     configure_logging(args.verbose)
 
-    manifest = generate_datasets(
-        args.output_dir,
-        args.history_start,
-        args.train_start,
-        args.test_year,
+    manifest = build_datasets(
+        DatasetBuildConfig(
+            output_dir=args.output_dir,
+            history_start=args.history_start,
+            train_start=args.train_start,
+            test_year=args.test_year,
+        )
     )
     LOGGER.info(
         "wrote %d training rows and %d test rows to %s",
