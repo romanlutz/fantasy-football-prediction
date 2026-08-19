@@ -30,7 +30,9 @@ PLAYER_STATS_CONTRACT = FrameContract(
         "rushing_2pt_conversions": ColumnKind.NUMBER,
         "fumbles_total": ColumnKind.NUMBER,
     },
-    non_null=frozenset({"player_id", "season", "week", "game_id"}),
+    # nflverse includes aggregate rows without a player_id; the acquisition
+    # query filters to quarterback rows before requiring a concrete identifier.
+    non_null=frozenset({"season", "week", "game_id"}),
 )
 TEAM_STATS_CONTRACT = FrameContract(
     name="team_stats",
