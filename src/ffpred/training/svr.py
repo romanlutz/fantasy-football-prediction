@@ -1,105 +1,104 @@
-# Copyright (c) Roman Lutz. All rights reserved.
-# The use and distribution terms for this software are covered by the
-# Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php)
-# which can be found in the file LICENSE.md at the root of this distribution.
-# By using this software in any fashion, you are agreeing to be bound by
-# the terms of this license.
-# You must not remove this notice, or any other, from this software.
+"""Support-vector regression training and model selection."""
 
 from __future__ import annotations
 
-import argparse
 import itertools
-from pathlib import Path
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
-from sklearn.base import clone
-from sklearn.feature_selection import RFECV
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-from sklearn.model_selection import KFold
+from sklearn.metrics import mean_absolute_error
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 
-from ffpred.evaluation.cohorts import LEGACY_2014_QUARTERBACKS
-from ffpred.evaluation.metrics import mean_relative_error
-from ffpred.evaluation.plots import histogram
+from ffpred.evaluation.metrics import evaluate
+from ffpred.evaluation.splits import chronological_folds
+from ffpred.features.schema import MODEL_FEATURE_COLUMNS
+from ffpred.training.data import TrainingData, training_data_from_frame
+from ffpred.training.result import TrainingResult
 
-MANUAL_FEATURE_INDICES = [
-    0,
-    1,
-    2,
-    3,
-    4,
-    5,
-    8,
-    9,
-    10,
-    13,
-    14,
-    15,
-    16,
-    17,
-    20,
-    21,
-    22,
-    25,
-    26,
-    27,
-    28,
-    29,
-    30,
-    31,
-    32,
-    33,
-]
+Kernel = Literal["linear", "poly", "rbf", "sigmoid"]
 
-
-def load_data(
-    train_path: Path, test_path: Path
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    train = np.load(train_path, allow_pickle=False)
-    test = np.load(test_path, allow_pickle=False)
-    if train.ndim != 2 or train.shape[1] != 37:
-        raise ValueError(f"{train_path} must contain rows with 37 columns")
-    if test.ndim != 2 or test.shape[1] != 37:
-        raise ValueError(f"{test_path} must contain rows with 37 columns")
-    train_x = train[:, 2:36].astype(float)
-    train_y = train[:, 36].astype(float)
-    test_x = test[:, 2:36].astype(float)
-    test_y = test[:, 36].astype(float)
-    return train_x, train_y, test_x, test_y, test
+MANUAL_FEATURE_COLUMNS = tuple(
+    MODEL_FEATURE_COLUMNS[index]
+    for index in (
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        8,
+        9,
+        10,
+        13,
+        14,
+        15,
+        16,
+        17,
+        20,
+        21,
+        22,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+    )
+)
 
 
-def hyperparameter_selection(
-    regressors: list[SVR], x: np.ndarray, y: np.ndarray, folds: int
-) -> SVR:
-    cross_validation = KFold(n_splits=folds, shuffle=True, random_state=42)
-    average_errors: list[float] = []
-    for regressor in regressors:
-        errors = []
-        for train, validation in cross_validation.split(x):
-            scaler = StandardScaler()
-            fold_train = scaler.fit_transform(x[train])
-            fold_validation = scaler.transform(x[validation])
-            prediction = (
-                clone(regressor).fit(fold_train, y[train]).predict(fold_validation)
-            )
-            errors.append(mean_absolute_error(y[validation], prediction))
-        average_errors.append(float(np.mean(errors)))
-    return regressors[int(np.argmin(average_errors))]
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SvrConfig:
+    """Serializable SVR hyperparameters."""
+
+    c: float = 0.25
+    epsilon: float = 0.25
+    kernel: Kernel = "linear"
+    gamma: float | Literal["scale", "auto"] = "scale"
+    degree: int = 3
 
 
-def candidate_regressors() -> list[SVR]:
-    regressors: list[SVR] = []
+DEFAULT_SVR_CONFIG = SvrConfig()
+
+
+def create_estimator(config: SvrConfig) -> Pipeline:
+    """Create a leakage-safe scaling and regression pipeline."""
+    return Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "regressor",
+                SVR(
+                    C=config.c,
+                    epsilon=config.epsilon,
+                    kernel=config.kernel,
+                    gamma=config.gamma,
+                    degree=config.degree,
+                ),
+            ),
+        ]
+    )
+
+
+def candidate_configs() -> tuple[SvrConfig, ...]:
+    """Return the historical search space as immutable configuration data."""
+    configs: list[SvrConfig] = []
     for c_value, epsilon, kernel in itertools.product(
         (0.25, 0.5, 0.75, 1.0),
         (0.05, 0.1, 0.15, 0.2, 0.25),
         ("rbf", "linear", "sigmoid", "poly"),
     ):
         if kernel == "poly":
-            regressors.extend(
-                SVR(
-                    C=c_value,
+            configs.extend(
+                SvrConfig(
+                    c=c_value,
                     epsilon=epsilon,
                     kernel=kernel,
                     degree=degree,
@@ -109,88 +108,72 @@ def candidate_regressors() -> list[SVR]:
                 for degree in (2, 3)
             )
         elif kernel in {"rbf", "sigmoid"}:
-            regressors.extend(
-                SVR(C=c_value, epsilon=epsilon, kernel=kernel, gamma=gamma)
+            configs.extend(
+                SvrConfig(
+                    c=c_value,
+                    epsilon=epsilon,
+                    kernel=kernel,
+                    gamma=gamma,
+                )
                 for gamma in (0.05, 0.1, 0.15)
             )
         else:
-            regressors.append(SVR(C=c_value, epsilon=epsilon, kernel=kernel))
-    return regressors
+            configs.append(SvrConfig(c=c_value, epsilon=epsilon, kernel=kernel))
+    return tuple(configs)
 
 
-def evaluate(actual: np.ndarray, prediction: np.ndarray) -> tuple[float, float, float]:
-    return (
-        float(mean_squared_error(actual, prediction) ** 0.5),
-        float(mean_absolute_error(actual, prediction)),
-        mean_relative_error(actual, prediction),
+def select_config(
+    data: TrainingData,
+    configs: Iterable[SvrConfig],
+    *,
+    folds: int = 5,
+) -> SvrConfig:
+    """Choose hyperparameters using strictly chronological validation."""
+    candidates = tuple(configs)
+    if not candidates:
+        raise ValueError("At least one SVR configuration is required")
+    scores: list[float] = []
+    splits = tuple(chronological_folds(data.frame, folds))
+    for config in candidates:
+        errors: list[float] = []
+        for train_indices, validation_indices in splits:
+            estimator = create_estimator(config)
+            prediction = estimator.fit(
+                data.features[train_indices],
+                data.target[train_indices],
+            ).predict(data.features[validation_indices])
+            errors.append(
+                float(
+                    mean_absolute_error(
+                        data.target[validation_indices],
+                        prediction,
+                    )
+                )
+            )
+        scores.append(float(np.mean(errors)))
+    return candidates[int(np.argmin(scores))]
+
+
+def train_svr(
+    train: TrainingData,
+    test: TrainingData,
+    *,
+    config: SvrConfig = DEFAULT_SVR_CONFIG,
+) -> TrainingResult:
+    """Fit and evaluate an SVR pipeline."""
+    estimator = create_estimator(config)
+    prediction = np.asarray(
+        estimator.fit(train.features, train.target).predict(test.features),
+        dtype=np.float64,
+    )
+    return TrainingResult(
+        estimator=estimator,
+        predictions=prediction,
+        metrics=evaluate(test.target, prediction),
+        feature_names=train.feature_names,
     )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Train and evaluate an SVR model")
-    parser.add_argument("--train", type=Path, default=Path("train.npy"))
-    parser.add_argument("--test", type=Path, default=Path("test.npy"))
-    parser.add_argument(
-        "--prediction-output", type=Path, default=Path("prediction.npy")
-    )
-    parser.add_argument(
-        "--histogram-output",
-        type=Path,
-        default=Path("absolute_error_distribution.pdf"),
-    )
-    parser.add_argument(
-        "--feature-selection",
-        choices=("none", "manual", "rfecv"),
-        default="none",
-    )
-    parser.add_argument("--select-hyperparameters", action="store_true")
-    parser.add_argument("--no-histogram", action="store_true")
-    parser.add_argument("--show-predictions", action="store_true")
-    args = parser.parse_args()
-
-    train_x, train_y, test_x, test_y, test = load_data(args.train, args.test)
-    if args.feature_selection == "rfecv":
-        selector = RFECV(
-            estimator=SVR(kernel="linear"),
-            step=3,
-            cv=KFold(n_splits=5, shuffle=True, random_state=42),
-        )
-        train_x = selector.fit_transform(train_x, train_y)
-        test_x = selector.transform(test_x)
-        print("Feature rankings:", selector.ranking_)
-    elif args.feature_selection == "manual":
-        train_x = train_x[:, MANUAL_FEATURE_INDICES]
-        test_x = test_x[:, MANUAL_FEATURE_INDICES]
-
-    if args.select_hyperparameters:
-        regressor = hyperparameter_selection(
-            candidate_regressors(), train_x, train_y, 5
-        )
-    else:
-        regressor = SVR(C=0.25, epsilon=0.25, kernel="linear")
-
-    scaler = StandardScaler()
-    train_x = scaler.fit_transform(train_x)
-    test_x = scaler.transform(test_x)
-    prediction = regressor.fit(train_x, train_y).predict(test_x)
-    np.save(args.prediction_output, prediction, allow_pickle=False)
-
-    print("RMSE, MAE, MRE (all):", *evaluate(test_y, prediction))
-    selected = np.array(
-        [player_id in LEGACY_2014_QUARTERBACKS for player_id in test[:, 0]],
-        dtype=bool,
-    )
-    if np.any(selected):
-        print(
-            "RMSE, MAE, MRE (selected players):",
-            *evaluate(test_y[selected], prediction[selected]),
-        )
-        if args.show_predictions:
-            print(list(zip(test_y[selected], prediction[selected], strict=True)))
-
-    if not args.no_histogram:
-        histogram(test_y, prediction, args.histogram_output)
-
-
-if __name__ == "__main__":
-    main()
+def select_manual_features(data: TrainingData) -> TrainingData:
+    """Select the historical hand-picked columns by stable names."""
+    return training_data_from_frame(data.frame, MANUAL_FEATURE_COLUMNS)
