@@ -25,16 +25,18 @@ from ffpred.config import Settings
 from ffpred.datasets.builder import (
     DatasetBuildConfig,
     DstDatasetBuildConfig,
+    IdpDatasetBuildConfig,
     KickerDatasetBuildConfig,
     ReceivingDatasetBuildConfig,
     build_datasets,
     build_dst_datasets,
+    build_idp_datasets,
     build_kicker_datasets,
     build_receiving_datasets,
 )
 from ffpred.errors import FfpredError
 from ffpred.evaluation.metrics import evaluate
-from ffpred.features import dst_schema, kicker_schema, receiving_schema
+from ffpred.features import dst_schema, idp_schema, kicker_schema, receiving_schema
 from ffpred.features import schema as qb_schema
 from ffpred.features.schema import TARGET_COLUMN
 from ffpred.logging import configure_logging
@@ -64,6 +66,7 @@ POSITION_FEATURE_COLUMNS: dict[str, tuple[str, ...]] = {
     "rb": receiving_schema.MODEL_FEATURE_COLUMNS,
     "wr": receiving_schema.MODEL_FEATURE_COLUMNS,
     "te": receiving_schema.MODEL_FEATURE_COLUMNS,
+    "idp": idp_schema.MODEL_FEATURE_COLUMNS,
 }
 POSITION_IDENTITY_COLUMNS: dict[str, tuple[str, ...]] = {
     "qb": qb_schema.IDENTITY_COLUMNS,
@@ -72,6 +75,7 @@ POSITION_IDENTITY_COLUMNS: dict[str, tuple[str, ...]] = {
     "rb": receiving_schema.IDENTITY_COLUMNS,
     "wr": receiving_schema.IDENTITY_COLUMNS,
     "te": receiving_schema.IDENTITY_COLUMNS,
+    "idp": idp_schema.IDENTITY_COLUMNS,
 }
 POSITION_VALIDATORS = {
     "qb": qb_schema.validate_feature_frame,
@@ -80,6 +84,7 @@ POSITION_VALIDATORS = {
     "rb": receiving_schema.validate_feature_frame,
     "wr": receiving_schema.validate_feature_frame,
     "te": receiving_schema.validate_feature_frame,
+    "idp": idp_schema.validate_feature_frame,
 }
 #: Maps the --position value on build-receiving-dataset to the acquired
 #: nflverse position codes.
@@ -120,6 +125,13 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
         "--position", choices=tuple(RECEIVING_BUILD_POSITIONS), default="all"
     )
 
+    build_idp = subparsers.add_parser(
+        "build-idp-dataset", help="build IDP train/test datasets"
+    )
+    _add_build_arguments(
+        build_idp, settings, history_start=2010, train_start=2011, test_year=2014
+    )
+
     svr = subparsers.add_parser("train-svr", help="train an SVR model")
     _add_dataset_arguments(svr, "svr-predictions.parquet")
     svr.add_argument(
@@ -152,11 +164,30 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
     return parser
 
 
-def _add_build_arguments(parser: argparse.ArgumentParser, settings: Settings) -> None:
+def _add_build_arguments(
+    parser: argparse.ArgumentParser,
+    settings: Settings,
+    *,
+    history_start: int | None = None,
+    train_start: int | None = None,
+    test_year: int | None = None,
+) -> None:
     parser.add_argument("--output-dir", type=Path, default=settings.output_dir)
-    parser.add_argument("--history-start", type=int, default=settings.history_start)
-    parser.add_argument("--train-start", type=int, default=settings.train_start)
-    parser.add_argument("--test-year", type=int, default=settings.test_year)
+    parser.add_argument(
+        "--history-start",
+        type=int,
+        default=settings.history_start if history_start is None else history_start,
+    )
+    parser.add_argument(
+        "--train-start",
+        type=int,
+        default=settings.train_start if train_start is None else train_start,
+    )
+    parser.add_argument(
+        "--test-year",
+        type=int,
+        default=settings.test_year if test_year is None else test_year,
+    )
 
 
 def _add_dataset_arguments(
@@ -319,6 +350,26 @@ def _run_build_receiving(
     }
 
 
+def _run_build_idp(
+    options: BuildOptions,
+    provider: NflDataProvider,
+) -> dict[str, object]:
+    manifest = build_idp_datasets(
+        IdpDatasetBuildConfig(
+            output_dir=options.output_dir,
+            history_start=options.history_start,
+            train_start=options.train_start,
+            test_year=options.test_year,
+        ),
+        provider=provider,
+    )
+    return {
+        "manifest": str(options.output_dir / "dataset-manifest.json"),
+        "train_rows": manifest.outputs["train"].rows,
+        "test_rows": manifest.outputs["test"].rows,
+    }
+
+
 def _run_svr(options: SvrOptions) -> dict[str, object]:
     if options.manual_features and options.position != "qb":
         raise FfpredError("--manual-features is only supported for --position qb")
@@ -421,6 +472,11 @@ def main(
         elif args.command == "build-receiving-dataset":
             output = _run_build_receiving(
                 _receiving_build_options(args),
+                provider or _provider(settings),
+            )
+        elif args.command == "build-idp-dataset":
+            output = _run_build_idp(
+                _build_options(args),
                 provider or _provider(settings),
             )
         elif args.command == "train-svr":

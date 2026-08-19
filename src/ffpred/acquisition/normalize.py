@@ -11,6 +11,7 @@ import polars as pl
 from ffpred.acquisition.contracts import (
     DEFAULT_SEASONS,
     DST_TEAM_STATS_CONTRACT,
+    IDP_PLAYER_STATS_CONTRACT,
     KICKER_PLAYER_STATS_CONTRACT,
     PBP_CONTRACT,
     PLAYER_STATS_CONTRACT,
@@ -32,6 +33,9 @@ from ffpred.domain.models import (
     DstHistory,
     GameContext,
     GameKey,
+    IdpGame,
+    IdpGameStats,
+    IdpHistory,
     KickerGame,
     KickerGameStats,
     KickerHistory,
@@ -476,6 +480,57 @@ def acquire_receiving_histories(
                 receiving_touchdowns=_number(row["receiving_tds"]),
                 receiving_two_point_made=_number(row["receiving_2pt_conversions"]),
                 fumbles=_number(row["fumbles_total"]),
+            ),
+        )
+    return histories
+
+
+def acquire_idp_histories(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[PlayerId, IdpHistory]:
+    """Acquire regular-season individual defensive player (IDP) histories.
+
+    Filters to the DL/LB/DB position groups. Like kicker acquisition, this
+    needs no schedule join: no opponent-context feature is computed for IDP
+    in this first release. Callers building a training dataset should
+    restrict ``seasons`` to 2010 or later; nflverse's tackle attribution and
+    advanced defensive charting are less consistently populated before then
+    (see the project README's Positions table).
+    """
+    season_list = sorted(set(seasons))
+    provider = provider or NflReadPyProvider()
+    frame = validate_frame(
+        provider.load_player_stats(season_list), IDP_PLAYER_STATS_CONTRACT
+    ).filter(
+        (pl.col("season_type") == REGULAR_SEASON)
+        & (pl.col("position_group").is_in(["DL", "LB", "DB"]))
+    )
+
+    histories: dict[PlayerId, IdpHistory] = {}
+    for row in frame.iter_rows(named=True):
+        player_id = PlayerId(_required_text(row["player_id"], "player_id"))
+        history = histories.setdefault(
+            player_id,
+            IdpHistory(
+                player_id=player_id,
+                name=_required_text(row["player_display_name"], "player_display_name"),
+                position_group=_required_text(row["position_group"], "position_group"),
+            ),
+        )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history.games[key] = IdpGame(
+            key=key,
+            game_id=GameId(_required_text(row["game_id"], "game_id")),
+            stats=IdpGameStats(
+                solo_tackles=_number(row["def_tackles_solo"]),
+                assisted_tackles=_number(row["def_tackles_with_assist"]),
+                sacks=_number(row["def_sacks"]),
+                interceptions=_number(row["def_interceptions"]),
+                passes_defended=_number(row["def_pass_defended"]),
+                fumbles_forced=_number(row["def_fumbles_forced"]),
+                touchdowns=_number(row["def_tds"]),
             ),
         )
     return histories

@@ -7,6 +7,7 @@ import pytest
 from ffpred.cli.app import main
 from tests.factories import (
     make_dst_provider,
+    make_idp_provider,
     make_kicker_provider,
     make_provider,
     make_receiving_provider,
@@ -268,3 +269,53 @@ def test_receiving_build_train_and_evaluate_round_trip(
     prediction_frame = pl.read_parquet(predictions)
     assert "prediction" in prediction_frame.columns
     assert set(pl.read_parquet(tmp_path / "train.parquet")["position"]) == {"WR"}
+
+
+def test_idp_build_train_and_evaluate_round_trip(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    build_result = main(
+        [
+            "build-idp-dataset",
+            "--output-dir",
+            str(tmp_path),
+            "--history-start",
+            "2020",
+            "--train-start",
+            "2021",
+            "--test-year",
+            "2022",
+        ],
+        provider=make_idp_provider(),
+    )
+    build_output = json.loads(capsys.readouterr().out)
+    predictions = tmp_path / "idp-predictions.parquet"
+
+    train_result = main(
+        [
+            "train-svr",
+            "--position",
+            "idp",
+            "--train",
+            str(tmp_path / "train.parquet"),
+            "--test",
+            str(tmp_path / "test.parquet"),
+            "--predictions",
+            str(predictions),
+        ]
+    )
+    train_output = json.loads(capsys.readouterr().out)
+    evaluation_result = main(["evaluate", str(predictions)])
+    evaluation_output = json.loads(capsys.readouterr().out)
+
+    assert build_result == 0
+    assert train_result == 0
+    assert evaluation_result == 0
+    assert build_output["train_rows"] > 0
+    assert build_output["test_rows"] > 0
+    assert predictions.exists()
+    assert evaluation_output["metrics"] == train_output["metrics"]
+    prediction_frame = pl.read_parquet(predictions)
+    assert "prediction" in prediction_frame.columns
+    assert "position_group" in prediction_frame.columns

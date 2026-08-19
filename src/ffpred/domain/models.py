@@ -216,3 +216,45 @@ class ReceivingHistory:
     name: str
     position: str
     games: dict[GameKey, ReceivingGame] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class IdpGameStats:
+    """An individual defensive player's (IDP) counting statistics for one game.
+
+    Nflverse tackle attribution is known to be less consistently officiated
+    than offensive box scores, and finer defensive charting (e.g. QB hits)
+    is not populated in the earliest seasons; see acquire_idp_histories for
+    the historical-coverage floor this project applies as a result.
+    """
+
+    solo_tackles: float
+    assisted_tackles: float
+    sacks: float
+    interceptions: float
+    passes_defended: float
+    fumbles_forced: float
+    touchdowns: float
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class IdpGame:
+    """An IDP's normalized game record.
+
+    Like the kicker record, this omits opponent context: no opponent-strength
+    feature is computed for IDP in this first release.
+    """
+
+    key: GameKey
+    game_id: GameId
+    stats: IdpGameStats
+
+
+@dataclass(slots=True, kw_only=True)
+class IdpHistory:
+    """An IDP's profile and games indexed by typed chronological keys."""
+
+    player_id: PlayerId
+    name: str
+    position_group: str
+    games: dict[GameKey, IdpGame] = field(default_factory=dict)

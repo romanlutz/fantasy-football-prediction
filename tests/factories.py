@@ -252,3 +252,33 @@ def make_receiving_provider(
         team_stats=pl.DataFrame(team_stats),
         schedules=pl.DataFrame(schedules),
     )
+
+
+def make_idp_provider(seasons: tuple[int, ...] = (2020, 2021, 2022)) -> FakeProvider:
+    """A provider whose player_stats carry the def_* columns and
+    position_group acquire_idp_histories needs, across enough seasons/weeks
+    for leakage-safe rolling features.
+    """
+    player_stats: list[dict[str, object]] = []
+    for index, season in enumerate(seasons):
+        for week in (1, 2):
+            game_id = f"{season}_{week:02d}_GB_SEA"
+            player_stats.append(
+                {
+                    "player_id": "00-IDP",
+                    "player_display_name": "Test Linebacker",
+                    "position_group": "LB",
+                    "season": season,
+                    "week": week,
+                    "season_type": "REG",
+                    "game_id": game_id,
+                    "def_tackles_solo": 5 + index,
+                    "def_tackles_with_assist": 1,
+                    "def_sacks": index % 2,
+                    "def_interceptions": 0,
+                    "def_pass_defended": 1,
+                    "def_fumbles_forced": 0,
+                    "def_tds": 0,
+                }
+            )
+    return FakeProvider(player_stats=pl.DataFrame(player_stats))

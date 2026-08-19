@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from ffpred.domain.models import (
     DstGameStats,
+    IdpGameStats,
     KickerGameStats,
     QuarterbackGameStats,
     ReceivingGameStats,
@@ -176,4 +177,40 @@ def receiving_fantasy_score(
         + (stats.rushing_two_point_made + stats.receiving_two_point_made)
         * config.two_point_conversion
         + stats.fumbles * config.fumble
+    )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class IdpScoringConfig:
+    """Weights for individual defensive player (IDP) fantasy scoring.
+
+    Solo tackles are worth a full point and assisted tackles half a point in
+    the most common IDP convention; both are configurable.
+    """
+
+    solo_tackle: float = 1.0
+    assisted_tackle: float = 0.5
+    sack: float = 4.0
+    interception: float = 6.0
+    pass_defended: float = 2.0
+    fumble_forced: float = 2.0
+    touchdown: float = 6.0
+
+
+DEFAULT_IDP_SCORING = IdpScoringConfig()
+
+
+def idp_fantasy_score(
+    stats: IdpGameStats,
+    config: IdpScoringConfig = DEFAULT_IDP_SCORING,
+) -> float:
+    """Calculate IDP points from game statistics."""
+    return (
+        stats.solo_tackles * config.solo_tackle
+        + stats.assisted_tackles * config.assisted_tackle
+        + stats.sacks * config.sack
+        + stats.interceptions * config.interception
+        + stats.passes_defended * config.pass_defended
+        + stats.fumbles_forced * config.fumble_forced
+        + stats.touchdowns * config.touchdown
     )

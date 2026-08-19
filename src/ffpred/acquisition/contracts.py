@@ -168,3 +168,23 @@ RECEIVING_PLAYER_STATS_CONTRACT = FrameContract(
     },
     non_null=frozenset({"season", "week", "game_id"}),
 )
+IDP_PLAYER_STATS_CONTRACT = FrameContract(
+    name="player_stats",
+    columns={
+        "player_id": ColumnKind.TEXT,
+        "player_display_name": ColumnKind.TEXT,
+        "position_group": ColumnKind.TEXT,
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "def_tackles_solo": ColumnKind.NUMBER,
+        "def_tackles_with_assist": ColumnKind.NUMBER,
+        "def_sacks": ColumnKind.NUMBER,
+        "def_interceptions": ColumnKind.NUMBER,
+        "def_pass_defended": ColumnKind.NUMBER,
+        "def_fumbles_forced": ColumnKind.NUMBER,
+        "def_tds": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"season", "week", "game_id"}),
+)
