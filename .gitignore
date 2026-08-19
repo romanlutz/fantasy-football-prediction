@@ -1,6 +1,8 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.coverage
+.hypothesis/
 *.pyc
 
 absolute_error_distribution.pdf

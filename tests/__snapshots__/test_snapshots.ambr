@@ -1,0 +1,68 @@
+# serializer version: 1
+# name: test_cli_help_snapshot
+  '''
+  usage: ffpred [-h] [-v] {build-dataset,train-svr,train-mlp,evaluate} ...
+  
+  Build and evaluate fantasy-football prediction models
+  
+  positional arguments:
+    {build-dataset,train-svr,train-mlp,evaluate}
+      build-dataset       build train/test datasets
+      train-svr           train an SVR model
+      train-mlp           train an MLP model
+      evaluate            evaluate a prediction Parquet artifact
+  
+  options:
+    -h, --help            show this help message and exit
+    -v, --verbose
+  
+  '''
+# ---
+# name: test_feature_schema_snapshot
+  dict({
+    'age': 'Float64',
+    'defense_history_through_season': 'Int64',
+    'defense_history_through_week': 'Int64',
+    'defense_last_10_passing_yards_allowed': 'Float64',
+    'defense_last_10_points_allowed': 'Float64',
+    'defense_last_10_rushing_yards_allowed': 'Float64',
+    'defense_last_10_turnovers': 'Float64',
+    'defense_last_1_passing_yards_allowed': 'Float64',
+    'defense_last_1_points_allowed': 'Float64',
+    'defense_last_1_rushing_yards_allowed': 'Float64',
+    'defense_last_1_turnovers': 'Float64',
+    'fantasy_points': 'Float64',
+    'player_id': 'String',
+    'player_name': 'String',
+    'qb_history_through_season': 'Int64',
+    'qb_history_through_week': 'Int64',
+    'qb_last_10_fumbles': 'Float64',
+    'qb_last_10_passing_attempts': 'Float64',
+    'qb_last_10_passing_interceptions': 'Float64',
+    'qb_last_10_passing_touchdowns': 'Float64',
+    'qb_last_10_passing_two_point_attempts': 'Float64',
+    'qb_last_10_passing_two_point_made': 'Float64',
+    'qb_last_10_passing_yards': 'Float64',
+    'qb_last_10_rushing_attempts': 'Float64',
+    'qb_last_10_rushing_touchdowns': 'Float64',
+    'qb_last_10_rushing_two_point_attempts': 'Float64',
+    'qb_last_10_rushing_two_point_made': 'Float64',
+    'qb_last_10_rushing_yards': 'Float64',
+    'qb_last_1_fumbles': 'Float64',
+    'qb_last_1_passing_attempts': 'Float64',
+    'qb_last_1_passing_interceptions': 'Float64',
+    'qb_last_1_passing_touchdowns': 'Float64',
+    'qb_last_1_passing_two_point_attempts': 'Float64',
+    'qb_last_1_passing_two_point_made': 'Float64',
+    'qb_last_1_passing_yards': 'Float64',
+    'qb_last_1_rushing_attempts': 'Float64',
+    'qb_last_1_rushing_touchdowns': 'Float64',
+    'qb_last_1_rushing_two_point_attempts': 'Float64',
+    'qb_last_1_rushing_two_point_made': 'Float64',
+    'qb_last_1_rushing_yards': 'Float64',
+    'target_game_id': 'String',
+    'target_season': 'Int64',
+    'target_week': 'Int64',
+    'years_pro': 'Float64',
+  })
+# ---

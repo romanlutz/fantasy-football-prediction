@@ -3,6 +3,15 @@ name: CI
 on:
   pull_request:
   push:
+  schedule:
+    - cron: "17 8 * * 1"
+  workflow_dispatch:
+    inputs:
+      include-slow-live:
+        description: Include the full play-by-play contract smoke test
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -18,9 +27,8 @@ jobs:
       - run: uv sync --all-groups
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - name: Type check (advisory during migration)
-        continue-on-error: true
-        run: uv run ty check
+      - run: uv run ty check
+      - run: uv build
 
   test:
     strategy:
@@ -36,4 +44,20 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
       - run: uv sync --all-groups
-      - run: uv run pytest -m "not live"
+      - run: uv run pytest -m "not live" --cov --cov-report=term-missing
+
+  live-data:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - run: uv sync --all-groups
+      - name: Run live provider contracts
+        run: uv run pytest -m "live and not live_slow" --no-cov
+      - name: Run large play-by-play contract
+        if: inputs.include-slow-live
+        run: uv run pytest -m live_slow --no-cov

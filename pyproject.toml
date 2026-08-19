@@ -35,7 +35,17 @@ dev = [
 addopts = "--strict-config --strict-markers"
 markers = [
     "live: tests that access live nflverse data",
+    "live_slow: large live nflverse downloads run only on demand",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["ffpred"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 target-version = "py311"
