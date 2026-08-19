@@ -19,6 +19,7 @@ from ffpred.acquisition.normalize import (
     acquire_dst_histories,
     acquire_kicker_histories,
     acquire_quarterback_histories,
+    acquire_receiving_histories,
 )
 from ffpred.datasets.io import write_dataset
 from ffpred.datasets.manifest import (
@@ -28,9 +29,11 @@ from ffpred.datasets.manifest import (
 from ffpred.domain.scoring import (
     DEFAULT_DST_SCORING,
     DEFAULT_KICKER_SCORING,
+    DEFAULT_RECEIVING_SCORING,
     DEFAULT_SCORING,
     DstScoringConfig,
     KickerScoringConfig,
+    ReceivingScoringConfig,
     ScoringConfig,
 )
 from ffpred.errors import ConfigurationError
@@ -42,6 +45,11 @@ from ffpred.features.kicker_builder import build_kicker_feature_frame
 from ffpred.features.kicker_schema import FEATURE_SCHEMA as KICKER_FEATURE_SCHEMA
 from ffpred.features.kicker_schema import (
     validate_feature_frame as validate_kicker_frame,
+)
+from ffpred.features.receiving_builder import build_receiving_feature_frame
+from ffpred.features.receiving_schema import FEATURE_SCHEMA as RECEIVING_FEATURE_SCHEMA
+from ffpred.features.receiving_schema import (
+    validate_feature_frame as validate_receiving_frame,
 )
 from ffpred.features.schema import FEATURE_SCHEMA
 from ffpred.logging import configure_logging
@@ -108,6 +116,24 @@ class KickerDatasetBuildConfig:
 
 
 DEFAULT_KICKER_BUILD_CONFIG = KickerDatasetBuildConfig()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReceivingDatasetBuildConfig:
+    """All values that materially determine generated RB/WR/TE datasets."""
+
+    output_dir: Path = Path()
+    history_start: int = 2009
+    train_start: int = 2010
+    test_year: int = 2014
+    positions: tuple[str, ...] = ("RB", "WR", "TE")
+    scoring: ReceivingScoringConfig = DEFAULT_RECEIVING_SCORING
+
+    def __post_init__(self) -> None:
+        _validate_season_range(self.history_start, self.train_start, self.test_year)
+
+
+DEFAULT_RECEIVING_BUILD_CONFIG = ReceivingDatasetBuildConfig()
 
 
 def _feature_schema_sha256(schema: Mapping[str, object]) -> str:
@@ -260,6 +286,61 @@ def build_kicker_datasets(
             scoring=asdict(config.scoring),
         ),
         feature_schema_sha256=_feature_schema_sha256(KICKER_FEATURE_SCHEMA),
+        sources=dict(recording_provider.artifacts),
+        outputs=outputs,
+    )
+    manifest.write(config.output_dir / "dataset-manifest.json")
+    return manifest
+
+
+def build_receiving_datasets(
+    config: ReceivingDatasetBuildConfig = DEFAULT_RECEIVING_BUILD_CONFIG,
+    *,
+    provider: NflDataProvider | None = None,
+) -> DatasetManifest:
+    """Acquire, engineer, split, persist, and describe RB/WR/TE datasets."""
+    seasons = tuple(range(config.history_start, config.test_year + 1))
+    recording_provider = ProvenanceProvider(provider or NflReadPyProvider())
+    receiving_histories = acquire_receiving_histories(
+        seasons, config.positions, provider=recording_provider
+    )
+    defense_histories = acquire_defense_histories(seasons, provider=recording_provider)
+    features = build_receiving_feature_frame(
+        receiving_histories, defense_histories, scoring=config.scoring
+    )
+    train = features.filter(
+        pl.col("target_season").is_between(
+            config.train_start,
+            config.test_year,
+            closed="left",
+        )
+    )
+    test = features.filter(pl.col("target_season") == config.test_year)
+
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    outputs = {
+        "train": write_dataset(
+            config.output_dir / "train.parquet",
+            train,
+            validator=validate_receiving_frame,
+        ),
+        "test": write_dataset(
+            config.output_dir / "test.parquet",
+            test,
+            validator=validate_receiving_frame,
+        ),
+    }
+    manifest = DatasetManifest(
+        generated_at=datetime.now(UTC).isoformat(),
+        package_version=__version__,
+        provider=dict(recording_provider.metadata()),
+        parameters=BuildParameters(
+            history_start=config.history_start,
+            train_start=config.train_start,
+            test_year=config.test_year,
+            scoring=asdict(config.scoring),
+        ),
+        feature_schema_sha256=_feature_schema_sha256(RECEIVING_FEATURE_SCHEMA),
         sources=dict(recording_provider.artifacts),
         outputs=outputs,
     )

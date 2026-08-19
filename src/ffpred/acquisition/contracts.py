@@ -143,3 +143,28 @@ KICKER_PLAYER_STATS_CONTRACT = FrameContract(
     },
     non_null=frozenset({"season", "week", "game_id"}),
 )
+RECEIVING_PLAYER_STATS_CONTRACT = FrameContract(
+    name="player_stats",
+    columns={
+        "player_id": ColumnKind.TEXT,
+        "player_display_name": ColumnKind.TEXT,
+        "position": ColumnKind.TEXT,
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "team": ColumnKind.TEXT,
+        "opponent_team": ColumnKind.TEXT,
+        "carries": ColumnKind.NUMBER,
+        "rushing_yards": ColumnKind.NUMBER,
+        "rushing_tds": ColumnKind.NUMBER,
+        "rushing_2pt_conversions": ColumnKind.NUMBER,
+        "receptions": ColumnKind.NUMBER,
+        "targets": ColumnKind.NUMBER,
+        "receiving_yards": ColumnKind.NUMBER,
+        "receiving_tds": ColumnKind.NUMBER,
+        "receiving_2pt_conversions": ColumnKind.NUMBER,
+        "fumbles_total": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"season", "week", "game_id"}),
+)

@@ -18,6 +18,7 @@ from ffpred.cli.options import (
     BuildOptions,
     EvaluateOptions,
     MlpOptions,
+    ReceivingBuildOptions,
     SvrOptions,
 )
 from ffpred.config import Settings
@@ -25,13 +26,15 @@ from ffpred.datasets.builder import (
     DatasetBuildConfig,
     DstDatasetBuildConfig,
     KickerDatasetBuildConfig,
+    ReceivingDatasetBuildConfig,
     build_datasets,
     build_dst_datasets,
     build_kicker_datasets,
+    build_receiving_datasets,
 )
 from ffpred.errors import FfpredError
 from ffpred.evaluation.metrics import evaluate
-from ffpred.features import dst_schema, kicker_schema
+from ffpred.features import dst_schema, kicker_schema, receiving_schema
 from ffpred.features import schema as qb_schema
 from ffpred.features.schema import TARGET_COLUMN
 from ffpred.logging import configure_logging
@@ -51,21 +54,40 @@ PREDICTION_COLUMN = "prediction"
 #: Positions supported by the generic train-svr/train-mlp/evaluate commands.
 #: Adding a position here only requires a feature-schema module exposing
 #: MODEL_FEATURE_COLUMNS, IDENTITY_COLUMNS, and validate_feature_frame;
-#: TARGET_COLUMN is shared.
+#: TARGET_COLUMN is shared. RB/WR/TE share one feature schema (they differ
+#: only in which players' rows were acquired at build time), so all three
+#: map to the same receiving_schema module.
 POSITION_FEATURE_COLUMNS: dict[str, tuple[str, ...]] = {
     "qb": qb_schema.MODEL_FEATURE_COLUMNS,
     "dst": dst_schema.MODEL_FEATURE_COLUMNS,
     "k": kicker_schema.MODEL_FEATURE_COLUMNS,
+    "rb": receiving_schema.MODEL_FEATURE_COLUMNS,
+    "wr": receiving_schema.MODEL_FEATURE_COLUMNS,
+    "te": receiving_schema.MODEL_FEATURE_COLUMNS,
 }
 POSITION_IDENTITY_COLUMNS: dict[str, tuple[str, ...]] = {
     "qb": qb_schema.IDENTITY_COLUMNS,
     "dst": dst_schema.IDENTITY_COLUMNS,
     "k": kicker_schema.IDENTITY_COLUMNS,
+    "rb": receiving_schema.IDENTITY_COLUMNS,
+    "wr": receiving_schema.IDENTITY_COLUMNS,
+    "te": receiving_schema.IDENTITY_COLUMNS,
 }
 POSITION_VALIDATORS = {
     "qb": qb_schema.validate_feature_frame,
     "dst": dst_schema.validate_feature_frame,
     "k": kicker_schema.validate_feature_frame,
+    "rb": receiving_schema.validate_feature_frame,
+    "wr": receiving_schema.validate_feature_frame,
+    "te": receiving_schema.validate_feature_frame,
+}
+#: Maps the --position value on build-receiving-dataset to the acquired
+#: nflverse position codes.
+RECEIVING_BUILD_POSITIONS: dict[str, tuple[str, ...]] = {
+    "rb": ("RB",),
+    "wr": ("WR",),
+    "te": ("TE",),
+    "all": ("RB", "WR", "TE"),
 }
 
 
@@ -89,6 +111,14 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
         "build-kicker-dataset", help="build kicker train/test datasets"
     )
     _add_build_arguments(build_kicker, settings)
+
+    build_receiving = subparsers.add_parser(
+        "build-receiving-dataset", help="build RB/WR/TE train/test datasets"
+    )
+    _add_build_arguments(build_receiving, settings)
+    build_receiving.add_argument(
+        "--position", choices=tuple(RECEIVING_BUILD_POSITIONS), default="all"
+    )
 
     svr = subparsers.add_parser("train-svr", help="train an SVR model")
     _add_dataset_arguments(svr, "svr-predictions.parquet")
@@ -172,6 +202,16 @@ def _build_options(args: argparse.Namespace) -> BuildOptions:
     )
 
 
+def _receiving_build_options(args: argparse.Namespace) -> ReceivingBuildOptions:
+    return ReceivingBuildOptions(
+        output_dir=args.output_dir,
+        history_start=args.history_start,
+        train_start=args.train_start,
+        test_year=args.test_year,
+        positions=RECEIVING_BUILD_POSITIONS[args.position],
+    )
+
+
 def _svr_options(args: argparse.Namespace) -> SvrOptions:
     return SvrOptions(
         train_path=args.train,
@@ -248,6 +288,27 @@ def _run_build_kicker(
             history_start=options.history_start,
             train_start=options.train_start,
             test_year=options.test_year,
+        ),
+        provider=provider,
+    )
+    return {
+        "manifest": str(options.output_dir / "dataset-manifest.json"),
+        "train_rows": manifest.outputs["train"].rows,
+        "test_rows": manifest.outputs["test"].rows,
+    }
+
+
+def _run_build_receiving(
+    options: ReceivingBuildOptions,
+    provider: NflDataProvider,
+) -> dict[str, object]:
+    manifest = build_receiving_datasets(
+        ReceivingDatasetBuildConfig(
+            output_dir=options.output_dir,
+            history_start=options.history_start,
+            train_start=options.train_start,
+            test_year=options.test_year,
+            positions=options.positions,
         ),
         provider=provider,
     )
@@ -355,6 +416,11 @@ def main(
         elif args.command == "build-kicker-dataset":
             output = _run_build_kicker(
                 _build_options(args),
+                provider or _provider(settings),
+            )
+        elif args.command == "build-receiving-dataset":
+            output = _run_build_receiving(
+                _receiving_build_options(args),
                 provider or _provider(settings),
             )
         elif args.command == "train-svr":

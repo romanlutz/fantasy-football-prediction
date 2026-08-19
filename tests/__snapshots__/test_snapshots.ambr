@@ -2,16 +2,18 @@
 # name: test_cli_help_snapshot
   '''
   usage: ffpred [-h] [-v]
-                {build-dataset,build-dst-dataset,build-kicker-dataset,train-svr,train-mlp,evaluate} ...
+                {build-dataset,build-dst-dataset,build-kicker-dataset,build-receiving-dataset,train-svr,train-mlp,evaluate} ...
   
   Build and evaluate fantasy-football prediction models
   
   positional arguments:
-    {build-dataset,build-dst-dataset,build-kicker-dataset,train-svr,train-mlp,evaluate}
+    {build-dataset,build-dst-dataset,build-kicker-dataset,build-receiving-dataset,train-svr,train-mlp,evaluate}
       build-dataset       build QB train/test datasets
       build-dst-dataset   build team D/ST train/test datasets
       build-kicker-dataset
                           build kicker train/test datasets
+      build-receiving-dataset
+                          build RB/WR/TE train/test datasets
       train-svr           train an SVR model
       train-mlp           train an MLP model
       evaluate            evaluate a prediction Parquet artifact

@@ -175,3 +175,44 @@ class KickerHistory:
     player_id: PlayerId
     name: str
     games: dict[GameKey, KickerGame] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReceivingGameStats:
+    """An RB/WR/TE's rushing and receiving counting statistics for one game.
+
+    Two-point-conversion *attempts* are tracked for the QB record (which
+    needs a play-by-play join to count them at all); receiving positions
+    only need the *made* count for scoring, so this omits attempts and the
+    play-by-play join it would require.
+    """
+
+    rushing_attempts: float
+    rushing_yards: float
+    rushing_touchdowns: float
+    rushing_two_point_made: float
+    receptions: float
+    targets: float
+    receiving_yards: float
+    receiving_touchdowns: float
+    receiving_two_point_made: float
+    fumbles: float
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReceivingGame:
+    """An RB/WR/TE's normalized game record."""
+
+    key: GameKey
+    context: GameContext
+    stats: ReceivingGameStats
+
+
+@dataclass(slots=True, kw_only=True)
+class ReceivingHistory:
+    """An RB/WR/TE's profile and games indexed by typed chronological keys."""
+
+    player_id: PlayerId
+    name: str
+    position: str
+    games: dict[GameKey, ReceivingGame] = field(default_factory=dict)

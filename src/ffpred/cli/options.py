@@ -19,6 +19,17 @@ class BuildOptions:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ReceivingBuildOptions:
+    """RB/WR/TE dataset build command options."""
+
+    output_dir: Path
+    history_start: int
+    train_start: int
+    test_year: int
+    positions: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SvrOptions:
     """SVR command options."""
 

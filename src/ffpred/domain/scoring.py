@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ffpred.domain.models import DstGameStats, KickerGameStats, QuarterbackGameStats
+from ffpred.domain.models import (
+    DstGameStats,
+    KickerGameStats,
+    QuarterbackGameStats,
+    ReceivingGameStats,
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -131,4 +136,44 @@ def kicker_fantasy_score(
         + stats.fg_missed * config.field_goal_missed
         + stats.pat_made * config.extra_point_made
         + stats.pat_missed * config.extra_point_missed
+    )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReceivingScoringConfig:
+    """Weights for RB/WR/TE fantasy scoring.
+
+    ``reception`` is the single knob that expresses standard (0), half-PPR
+    (0.5), or full-PPR (1.0) scoring, and any configurable value in between
+    or beyond.
+    """
+
+    rushing_yards_per_point: float = 10.0
+    rushing_touchdown: float = 6.0
+    receiving_yards_per_point: float = 10.0
+    receiving_touchdown: float = 6.0
+    reception: float = 0.0
+    two_point_conversion: float = 2.0
+    fumble: float = -2.0
+
+
+DEFAULT_RECEIVING_SCORING = ReceivingScoringConfig()
+HALF_PPR_RECEIVING_SCORING = ReceivingScoringConfig(reception=0.5)
+FULL_PPR_RECEIVING_SCORING = ReceivingScoringConfig(reception=1.0)
+
+
+def receiving_fantasy_score(
+    stats: ReceivingGameStats,
+    config: ReceivingScoringConfig = DEFAULT_RECEIVING_SCORING,
+) -> float:
+    """Calculate RB/WR/TE points from game statistics."""
+    return (
+        stats.rushing_yards / config.rushing_yards_per_point
+        + stats.rushing_touchdowns * config.rushing_touchdown
+        + stats.receiving_yards / config.receiving_yards_per_point
+        + stats.receiving_touchdowns * config.receiving_touchdown
+        + stats.receptions * config.reception
+        + (stats.rushing_two_point_made + stats.receiving_two_point_made)
+        * config.two_point_conversion
+        + stats.fumbles * config.fumble
     )

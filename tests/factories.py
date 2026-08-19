@@ -179,3 +179,76 @@ def make_kicker_provider(seasons: tuple[int, ...] = (2020, 2021, 2022)) -> FakeP
                 }
             )
     return FakeProvider(player_stats=pl.DataFrame(player_stats))
+
+
+def make_receiving_provider(
+    seasons: tuple[int, ...] = (2020, 2021, 2022),
+) -> FakeProvider:
+    """A provider whose player_stats/team_stats/schedules carry the columns
+    acquire_receiving_histories and acquire_defense_histories need, across
+    enough seasons/weeks for leakage-safe rolling features.
+    """
+    schedules: list[dict[str, object]] = []
+    player_stats: list[dict[str, object]] = []
+    team_stats: list[dict[str, object]] = []
+    for index, season in enumerate(seasons):
+        for week in (1, 2):
+            game_id = f"{season}_{week:02d}_GB_SEA"
+            schedules.append(
+                {
+                    "game_id": game_id,
+                    "gameday": (
+                        date(season, 9, 1) + timedelta(days=index * 7 + week)
+                    ).isoformat(),
+                    "home_team": "SEA",
+                    "away_team": "GB",
+                    "home_score": 24 + index,
+                    "away_score": 17 + index,
+                }
+            )
+            for player_id, name, position in (
+                ("00-RB", "Test Running Back", "RB"),
+                ("00-WR", "Test Wide Receiver", "WR"),
+            ):
+                player_stats.append(
+                    {
+                        "player_id": player_id,
+                        "player_display_name": name,
+                        "position": position,
+                        "season": season,
+                        "week": week,
+                        "season_type": "REG",
+                        "game_id": game_id,
+                        "team": "GB",
+                        "opponent_team": "SEA",
+                        "carries": 10 + index,
+                        "rushing_yards": 40 + index * 5,
+                        "rushing_tds": 1,
+                        "rushing_2pt_conversions": 0,
+                        "receptions": 3,
+                        "targets": 5,
+                        "receiving_yards": 25 + index,
+                        "receiving_tds": 0,
+                        "receiving_2pt_conversions": 0,
+                        "fumbles_total": 0,
+                    }
+                )
+            team_stats.append(
+                {
+                    "season": season,
+                    "week": week,
+                    "season_type": "REG",
+                    "game_id": game_id,
+                    "team": "GB",
+                    "opponent_team": "SEA",
+                    "passing_yards": 200,
+                    "rushing_yards": 90,
+                    "passing_interceptions": 1,
+                    "fumbles_lost_total": 0,
+                }
+            )
+    return FakeProvider(
+        player_stats=pl.DataFrame(player_stats),
+        team_stats=pl.DataFrame(team_stats),
+        schedules=pl.DataFrame(schedules),
+    )

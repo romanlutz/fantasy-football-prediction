@@ -46,6 +46,13 @@ Build the equivalent kicker dataset:
 uv run ffpred build-kicker-dataset
 ```
 
+Build the equivalent RB/WR/TE dataset (`--position` selects `rb`, `wr`, `te`,
+or `all` for a combined table; default `all`):
+
+```console
+uv run ffpred build-receiving-dataset --position wr
+```
+
 Build a more recent experiment:
 
 ```console
@@ -63,15 +70,17 @@ $env:FFPRED_CACHE_MODE = "filesystem"
 uv run ffpred build-dataset
 ```
 
-Train and evaluate either model. Pass `--position dst` or `--position k` to
-train on a D/ST or kicker dataset instead of the default quarterback dataset
-(`--manual-features` is quarterback-only):
+Train and evaluate either model. Pass `--position dst`, `--position k`,
+`--position rb`, `--position wr`, or `--position te` to train on that
+dataset instead of the default quarterback dataset (`--manual-features` is
+quarterback-only):
 
 ```console
 uv run ffpred train-svr --train train.parquet --test test.parquet
 uv run ffpred train-mlp --train train.parquet --test test.parquet
 uv run ffpred train-svr --position dst --train train.parquet --test test.parquet
 uv run ffpred train-mlp --position k --train train.parquet --test test.parquet
+uv run ffpred train-svr --position wr --train train.parquet --test test.parquet
 uv run ffpred evaluate svr-predictions.parquet
 ```
 
@@ -120,9 +129,9 @@ hashes are necessary to distinguish upstream revisions.
 
 Feature rows include target identity and the latest history period used for
 that row's own group (a quarterback and their upcoming opponent's defense, a
-team's own D/ST unit, or a kicker's own history). Those lineage columns are
-never model inputs; tests assert that every history period strictly precedes
-its target.
+team's own D/ST unit, a kicker's own history, or an RB/WR/TE and their
+upcoming opponent's defense). Those lineage columns are never model inputs;
+tests assert that every history period strictly precedes its target.
 
 ## Positions
 
@@ -131,7 +140,8 @@ its target.
 | QB | Implemented | Standard passing/rushing, configurable via `ScoringConfig` |
 | Team D/ST | Implemented | Sacks, interceptions, fumble recoveries, defensive/ST touchdowns, safeties, blocked kicks, and tiered points-allowed, configurable via `DstScoringConfig` |
 | K | Implemented | Field goals grouped into 0-39/40-49/50+ yard bands, PATs, configurable via `KickerScoringConfig` (kicker's own debut games are dropped rather than backed by a rookie-cohort fallback) |
-| RB / WR / TE, IDP | Not yet implemented | — |
+| RB / WR / TE | Implemented | Rushing/receiving yards and touchdowns, fumbles, and a single configurable `reception` weight that expresses standard (0), half-PPR (0.5), or full-PPR (1.0) scoring via `ReceivingScoringConfig` (debut games are dropped, as with K; two-point conversion *attempts* are not tracked, only makes) |
+| IDP | Not yet implemented | — |
 
 All implemented positions share the same acquisition/features/datasets
 architecture below; adding a position means adding a domain stats type, a

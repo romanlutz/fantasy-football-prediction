@@ -15,6 +15,7 @@ from ffpred.acquisition.contracts import (
     PBP_CONTRACT,
     PLAYER_STATS_CONTRACT,
     PLAYERS_CONTRACT,
+    RECEIVING_PLAYER_STATS_CONTRACT,
     REGULAR_SEASON,
     SCHEDULES_CONTRACT,
     TEAM_STATS_CONTRACT,
@@ -38,6 +39,9 @@ from ffpred.domain.models import (
     QuarterbackGame,
     QuarterbackGameStats,
     QuarterbackHistory,
+    ReceivingGame,
+    ReceivingGameStats,
+    ReceivingHistory,
 )
 from ffpred.errors import DataAcquisitionError
 from ffpred.providers.nflreadpy import NflReadPyProvider
@@ -408,6 +412,70 @@ def acquire_kicker_histories(
                 fg_missed=_number(row["fg_missed"]),
                 pat_made=_number(row["pat_made"]),
                 pat_missed=_number(row["pat_missed"]),
+            ),
+        )
+    return histories
+
+
+def acquire_receiving_histories(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    positions: Iterable[str] = ("RB", "WR", "TE"),
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[PlayerId, ReceivingHistory]:
+    """Acquire regular-season RB/WR/TE histories.
+
+    Reuses the same relocation-safe schedule index as QB/D/ST acquisition,
+    since the opponent context features draw on the existing
+    ``acquire_defense_histories`` output keyed by that same normalized team
+    code.
+    """
+    season_list = sorted(set(seasons))
+    position_list = list(positions)
+    provider = provider or NflReadPyProvider()
+    schedules = _schedule_index(provider.load_schedules(season_list))
+    frame = validate_frame(
+        provider.load_player_stats(season_list), RECEIVING_PLAYER_STATS_CONTRACT
+    ).filter(
+        (pl.col("season_type") == REGULAR_SEASON)
+        & (pl.col("position").is_in(position_list))
+    )
+
+    histories: dict[PlayerId, ReceivingHistory] = {}
+    for row in frame.iter_rows(named=True):
+        player_id = PlayerId(_required_text(row["player_id"], "player_id"))
+        game_id = GameId(_required_text(row["game_id"], "game_id"))
+        if game_id not in schedules:
+            raise DataAcquisitionError(f"No schedule row found for game {game_id}")
+        history = histories.setdefault(
+            player_id,
+            ReceivingHistory(
+                player_id=player_id,
+                name=_required_text(row["player_display_name"], "player_display_name"),
+                position=_required_text(row["position"], "position"),
+            ),
+        )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history.games[key] = ReceivingGame(
+            key=key,
+            context=_game_context(
+                schedules[game_id],
+                team=TeamCode(_required_text(row["team"], "team")),
+                opponent=TeamCode(
+                    _required_text(row["opponent_team"], "opponent_team")
+                ),
+            ),
+            stats=ReceivingGameStats(
+                rushing_attempts=_number(row["carries"]),
+                rushing_yards=_number(row["rushing_yards"]),
+                rushing_touchdowns=_number(row["rushing_tds"]),
+                rushing_two_point_made=_number(row["rushing_2pt_conversions"]),
+                receptions=_number(row["receptions"]),
+                targets=_number(row["targets"]),
+                receiving_yards=_number(row["receiving_yards"]),
+                receiving_touchdowns=_number(row["receiving_tds"]),
+                receiving_two_point_made=_number(row["receiving_2pt_conversions"]),
+                fumbles=_number(row["fumbles_total"]),
             ),
         )
     return histories
