@@ -8,16 +8,80 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
-from importlib.metadata import version
+from collections.abc import Iterable, Mapping
 from typing import Any
 
-import nflreadpy as nfl
 import polars as pl
+
+from ffpred.acquisition.schema import (
+    ColumnKind,
+    FrameContract,
+    validate_frame,
+)
+from ffpred.providers.nflreadpy import NflReadPyProvider
+from ffpred.providers.protocol import NflDataProvider
 
 DEFAULT_SEASONS = tuple(range(2009, 2015))
 REGULAR_SEASON = "REG"
-NFLVERSE_DATA_URL = "https://github.com/nflverse/nflverse-data/releases"
+
+PLAYER_STATS_CONTRACT = FrameContract(
+    name="player_stats",
+    columns={
+        "player_id": ColumnKind.TEXT,
+        "position": ColumnKind.TEXT,
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "team": ColumnKind.TEXT,
+        "opponent_team": ColumnKind.TEXT,
+        "attempts": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"player_id", "season", "week", "game_id"}),
+)
+TEAM_STATS_CONTRACT = FrameContract(
+    name="team_stats",
+    columns={
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "team": ColumnKind.TEXT,
+        "opponent_team": ColumnKind.TEXT,
+    },
+    non_null=frozenset({"season", "week", "game_id"}),
+)
+SCHEDULES_CONTRACT = FrameContract(
+    name="schedules",
+    columns={
+        "game_id": ColumnKind.TEXT,
+        "gameday": ColumnKind.DATE,
+        "home_team": ColumnKind.TEXT,
+        "away_team": ColumnKind.TEXT,
+        "home_score": ColumnKind.NUMBER,
+        "away_score": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"game_id", "gameday", "home_team", "away_team"}),
+)
+PLAYERS_CONTRACT = FrameContract(
+    name="players",
+    columns={
+        "gsis_id": ColumnKind.TEXT,
+        "display_name": ColumnKind.TEXT,
+        "birth_date": ColumnKind.DATE,
+        "rookie_season": ColumnKind.INTEGER,
+    },
+)
+PBP_CONTRACT = FrameContract(
+    name="play_by_play",
+    columns={
+        "game_id": ColumnKind.TEXT,
+        "season_type": ColumnKind.TEXT,
+        "two_point_attempt": ColumnKind.NUMBER,
+        "passer_player_id": ColumnKind.TEXT,
+        "rusher_player_id": ColumnKind.TEXT,
+    },
+)
 
 
 def create_empty_entry(
@@ -57,8 +121,9 @@ def _player_index(players: pl.DataFrame) -> dict[str, dict[str, Any]]:
 
 def load_two_point_attempts(
     seasons: Iterable[int],
-    load_pbp: Callable[[int], pl.DataFrame] = nfl.load_pbp,
+    provider: NflDataProvider | None = None,
 ) -> dict[tuple[str, str], dict[str, int]]:
+    provider = provider or NflReadPyProvider()
     attempts: dict[tuple[str, str], dict[str, int]] = {}
     columns = [
         "game_id",
@@ -69,7 +134,7 @@ def load_two_point_attempts(
     ]
 
     for season in seasons:
-        plays = load_pbp(season).select(columns)
+        plays = validate_frame(provider.load_pbp(season), PBP_CONTRACT).select(columns)
         plays = plays.filter(
             (pl.col("season_type") == REGULAR_SEASON)
             & (pl.col("two_point_attempt") == 1)
@@ -95,20 +160,18 @@ def fetch_qb_stats(
     seasons: Iterable[int] = DEFAULT_SEASONS,
     min_attempts: int = 5,
     *,
-    player_stats: pl.DataFrame | None = None,
-    players: pl.DataFrame | None = None,
-    schedules: pl.DataFrame | None = None,
+    provider: NflDataProvider | None = None,
     two_point_attempts: Mapping[tuple[str, str], Mapping[str, int]] | None = None,
-    load_pbp: Callable[[int], pl.DataFrame] = nfl.load_pbp,
 ) -> dict[str, dict[str, Any]]:
     season_list = sorted(set(seasons))
-    player_stats = (
-        nfl.load_player_stats(season_list) if player_stats is None else player_stats
+    provider = provider or NflReadPyProvider()
+    player_stats = validate_frame(
+        provider.load_player_stats(season_list), PLAYER_STATS_CONTRACT
     )
-    players = nfl.load_players() if players is None else players
-    schedules = nfl.load_schedules(season_list) if schedules is None else schedules
+    players = validate_frame(provider.load_players(), PLAYERS_CONTRACT)
+    schedules = validate_frame(provider.load_schedules(season_list), SCHEDULES_CONTRACT)
     if two_point_attempts is None:
-        two_point_attempts = load_two_point_attempts(season_list, load_pbp)
+        two_point_attempts = load_two_point_attempts(season_list, provider)
 
     games = _schedule_index(schedules)
     player_details = _player_index(players)
@@ -168,12 +231,14 @@ def fetch_qb_stats(
 def fetch_defense_stats(
     seasons: Iterable[int] = DEFAULT_SEASONS,
     *,
-    team_stats: pl.DataFrame | None = None,
-    schedules: pl.DataFrame | None = None,
+    provider: NflDataProvider | None = None,
 ) -> dict[str, dict[str, Any]]:
     season_list = sorted(set(seasons))
-    team_stats = nfl.load_team_stats(season_list) if team_stats is None else team_stats
-    schedules = nfl.load_schedules(season_list) if schedules is None else schedules
+    provider = provider or NflReadPyProvider()
+    team_stats = validate_frame(
+        provider.load_team_stats(season_list), TEAM_STATS_CONTRACT
+    )
+    schedules = validate_frame(provider.load_schedules(season_list), SCHEDULES_CONTRACT)
     games = _schedule_index(schedules)
     regular_stats = _regular_season(team_stats)
 
@@ -220,12 +285,8 @@ def fetch_defense_stats(
     return statistics
 
 
-def source_metadata() -> dict[str, str]:
-    return {
-        "client": "nflreadpy",
-        "client_version": version("nflreadpy"),
-        "data_source": NFLVERSE_DATA_URL,
-    }
+def source_metadata(provider: NflDataProvider | None = None) -> dict[str, str]:
+    return dict((provider or NflReadPyProvider()).metadata())
 
 
 test_players = {

@@ -1,6 +1,7 @@
 import polars as pl
 
 from ffpred.acquisition.nflverse import fetch_defense_stats, fetch_qb_stats
+from ffpred.providers.fakes import FakeProvider
 
 
 def test_fetch_qb_stats_maps_nflverse_fields() -> None:
@@ -53,11 +54,15 @@ def test_fetch_qb_stats_maps_nflverse_fields() -> None:
         ]
     )
 
-    result = fetch_qb_stats(
-        [2014],
+    provider = FakeProvider(
         player_stats=player_stats,
         players=players,
         schedules=schedules,
+    )
+
+    result = fetch_qb_stats(
+        [2014],
+        provider=provider,
         two_point_attempts={
             ("2014_01_GB_SEA", "00-TEST"): {"passing": 2, "rushing": 1}
         },
@@ -115,7 +120,10 @@ def test_fetch_defense_stats_uses_opponent_offense() -> None:
         ]
     )
 
-    result = fetch_defense_stats([2014], team_stats=team_stats, schedules=schedules)
+    result = fetch_defense_stats(
+        [2014],
+        provider=FakeProvider(team_stats=team_stats, schedules=schedules),
+    )
 
     seattle = result["SEA"]["2014"]["1"]
     assert seattle["points_allowed"] == 16
