@@ -7,7 +7,7 @@ on:
     - cron: "17 8 * * 1"
   workflow_dispatch:
     inputs:
-      include-slow-live:
+      include_slow_live:
         description: Include the full play-by-play contract smoke test
         required: false
         default: false
@@ -62,7 +62,7 @@ jobs:
       - name: Run live provider contracts
         run: uv run pytest -m "live and not live_slow" --no-cov
       - name: Run large play-by-play contract
-        if: inputs.include-slow-live
+        if: inputs.include_slow_live
         run: uv run pytest -m live_slow --no-cov
       - name: Report scheduled live-data failures
         if: failure() && github.event_name == 'schedule'
@@ -76,7 +76,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: "open",
-              labels: "live-data",
+              per_page: 100,
             });
             const existing = issues.find(issue => issue.title === title);
             if (existing) {
@@ -92,6 +92,5 @@ jobs:
                 repo: context.repo.repo,
                 title,
                 body,
-                labels: ["live-data"],
               });
             }
