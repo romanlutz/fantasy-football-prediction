@@ -11,6 +11,7 @@ repos:
       - id: check-toml
       - id: end-of-file-fixer
       - id: trailing-whitespace
+        exclude: ^tests/__snapshots__/
   - repo: local
     hooks:
       - id: ty
