@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from ffpred.domain.scoring import DEFAULT_SCORING, ScoringConfig
 from ffpred.errors import ConfigurationError
@@ -19,6 +20,7 @@ class Settings:
     train_start: int = 2010
     test_year: int = 2014
     cache_dir: Path | None = None
+    cache_mode: Literal["none", "filesystem"] = "none"
     log_level: str = "INFO"
     scoring: ScoringConfig = field(default=DEFAULT_SCORING)
 
@@ -38,5 +40,13 @@ class Settings:
             train_start=int(os.getenv("FFPRED_TRAIN_START", "2010")),
             test_year=int(os.getenv("FFPRED_TEST_YEAR", "2014")),
             cache_dir=Path(cache_value) if cache_value else None,
+            cache_mode=_cache_mode(os.getenv("FFPRED_CACHE_MODE", "none")),
             log_level=os.getenv("FFPRED_LOG_LEVEL", "INFO").upper(),
         )
+
+
+def _cache_mode(value: str) -> Literal["none", "filesystem"]:
+    normalized = value.lower()
+    if normalized not in {"none", "filesystem"}:
+        raise ConfigurationError("FFPRED_CACHE_MODE must be 'none' or 'filesystem'")
+    return normalized

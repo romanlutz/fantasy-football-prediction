@@ -10,6 +10,9 @@ dependencies = [
     "scikit-learn>=1.5",
 ]
 
+[project.scripts]
+ffpred = "ffpred.cli.app:run"
+
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
