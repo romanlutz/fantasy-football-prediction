@@ -12,6 +12,9 @@ from ffpred.acquisition.contracts import (
     DEFAULT_SEASONS,
     DST_TEAM_STATS_CONTRACT,
     IDP_PLAYER_STATS_CONTRACT,
+    INJURY_REPORTS_CONTRACT,
+    INJURY_REPORTS_MAX_SEASON,
+    INJURY_REPORTS_MIN_SEASON,
     KICKER_PLAYER_STATS_CONTRACT,
     PBP_CONTRACT,
     PLAYER_STATS_CONTRACT,
@@ -25,6 +28,7 @@ from ffpred.acquisition.contracts import (
 from ffpred.acquisition.schema import validate_frame
 from ffpred.domain.identifiers import GameId, PlayerId, Season, TeamCode, Week
 from ffpred.domain.models import (
+    INJURY_STATUS_BY_REPORT_TEXT,
     DefenseGame,
     DefenseGameStats,
     DefenseHistory,
@@ -36,6 +40,8 @@ from ffpred.domain.models import (
     IdpGame,
     IdpGameStats,
     IdpHistory,
+    InjuryHistory,
+    InjuryReport,
     KickerGame,
     KickerGameStats,
     KickerHistory,
@@ -532,5 +538,62 @@ def acquire_idp_histories(
                 fumbles_forced=_number(row["def_fumbles_forced"]),
                 touchdowns=_number(row["def_tds"]),
             ),
+        )
+    return histories
+
+
+def acquire_injury_reports(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[PlayerId, InjuryHistory]:
+    """Acquire official weekly injury-report designations.
+
+    Only rows with a recognized ``report_status`` (Questionable, Doubtful, or
+    Out) become an ``InjuryReport``; a null or unrecognized status (e.g. a
+    practice-only listing with no game designation) carries no game-impact
+    information and is skipped, matching how this data is used downstream --
+    to explain an *actual* game absence or a pace change, not practice
+    participation. Seasons outside nflverse's coverage window
+    (``INJURY_REPORTS_MIN_SEASON``-``INJURY_REPORTS_MAX_SEASON``) are
+    dropped rather than raising, since the source was retired after the 2024
+    season with no replacement announced.
+    """
+    season_list = [
+        season
+        for season in sorted(set(seasons))
+        if INJURY_REPORTS_MIN_SEASON <= season <= INJURY_REPORTS_MAX_SEASON
+    ]
+    histories: dict[PlayerId, InjuryHistory] = {}
+    if not season_list:
+        return histories
+
+    provider = provider or NflReadPyProvider()
+    frame = validate_frame(
+        provider.load_injuries(season_list), INJURY_REPORTS_CONTRACT
+    ).filter(
+        (pl.col("game_type") == REGULAR_SEASON)
+        & pl.col("gsis_id").is_not_null()
+        & pl.col("report_status").is_not_null()
+    )
+
+    for row in frame.iter_rows(named=True):
+        status = INJURY_STATUS_BY_REPORT_TEXT.get(row["report_status"])
+        if status is None:
+            continue
+        player_id = PlayerId(_required_text(row["gsis_id"], "gsis_id"))
+        history = histories.setdefault(
+            player_id,
+            InjuryHistory(
+                player_id=player_id,
+                name=row["full_name"] or "",
+            ),
+        )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history.reports[key] = InjuryReport(
+            key=key,
+            team=TeamCode(_required_text(row["team"], "team")),
+            status=status,
+            primary_injury=row["report_primary_injury"],
         )
     return histories

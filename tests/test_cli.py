@@ -8,6 +8,7 @@ from ffpred.cli.app import main
 from tests.factories import (
     make_dst_provider,
     make_idp_provider,
+    make_injury_report_provider,
     make_kicker_provider,
     make_provider,
     make_receiving_provider,
@@ -407,3 +408,66 @@ def test_idp_build_train_and_evaluate_round_trip(
     prediction_frame = pl.read_parquet(predictions)
     assert "prediction" in prediction_frame.columns
     assert "position_group" in prediction_frame.columns
+
+
+def test_injury_report_command_writes_pace_comparison_csv(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_path = tmp_path / "injuries.csv"
+
+    result = main(
+        [
+            "injury-report",
+            "--output",
+            str(output_path),
+            "--start-season",
+            "2023",
+            "--end-season",
+            "2023",
+            "--positions",
+            "qb",
+        ],
+        provider=make_injury_report_provider(season=2023),
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert output["events"] == 2
+    assert output["missed_games"] == 1
+    assert output["played_while_reported"] == 1
+    assert output_path.exists()
+
+    frame = pl.read_csv(output_path)
+    assert frame.height == 2
+    assert set(frame["report_status"]) == {"Out", "Questionable"}
+    # The player's return week should show a real, negative delta versus
+    # their pre-injury pace (see make_injury_report_provider).
+    returned = frame.filter(pl.col("played"))
+    assert returned["delta_vs_pace"][0] < 0
+
+
+def test_injury_report_command_defaults_to_all_positions(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_path = tmp_path / "injuries.csv"
+
+    result = main(
+        [
+            "injury-report",
+            "--output",
+            str(output_path),
+            "--start-season",
+            "2023",
+            "--end-season",
+            "2023",
+        ],
+        provider=make_injury_report_provider(season=2023),
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert result == 0
+    # No RB/WR/TE data exists in this provider, so only the QB's two
+    # reported weeks should appear even though every position was requested.
+    assert output["events"] == 2

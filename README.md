@@ -78,6 +78,28 @@ $env:FFPRED_CACHE_MODE = "filesystem"
 uv run ffpred build-dataset
 ```
 
+## See when a player got injured, and how it affected their stats
+
+`injury-report` compares what a player was **on pace for** (their trailing
+average fantasy score over recent games they actually played) against what
+actually happened for every week they appeared on the official NFL injury
+report -- whether they sat out entirely, and if they played, how their score
+compared to their pre-injury pace. It also tracks how many consecutive games
+they had already missed, so a multi-week absence and eventual return are both
+visible:
+
+```console
+uv run ffpred injury-report --output injuries.csv --start-season 2022 --end-season 2023 --positions rb
+```
+
+`--positions` accepts `qb`, `rb`, `wr`, `te`, or `all` (default). This means a
+prediction that looks wrong for a given week can be checked against whether
+the player was actually injured rather than a modeling failure, and their
+eventual return can be compared against their own pre-injury trajectory.
+Injury-report data is only available for the 2009-2024 seasons (nflverse's
+source was retired after the 2024 season with no replacement announced);
+requests outside that range return no events rather than raising.
+
 Train and evaluate any model. Pass `--position dst`, `--position k`,
 `--position rb`, `--position wr`, `--position te`, or `--position idp` to
 train on that dataset instead of the default quarterback dataset
@@ -142,7 +164,8 @@ cli -> training/evaluation -> datasets -> features -> acquisition -> providers
 - `features`: named, typed, rolling features with explicit history lineage.
 - `datasets`: atomic Parquet IO and versioned provenance manifests.
 - `training`: deterministic SVR, MLP, and explainable EBM library APIs.
-- `evaluation`: shared metrics, chronological splits, cohorts, and plots.
+- `evaluation`: shared metrics, chronological splits, cohorts, plots, and the
+  `injury_impact` pace-versus-actual report.
 - `cli`: the composition root; provider choice and process behavior stay here.
 
 Only the nflreadpy adapter imports `nflreadpy`. Polars DataFrames are validated
@@ -187,6 +210,12 @@ schema/builder module pair, and a dataset-build function, then registering
 the new position's feature columns/identity columns/validator with the CLI's
 `POSITION_FEATURE_COLUMNS`/`POSITION_IDENTITY_COLUMNS`/`POSITION_VALIDATORS`
 maps in `cli/app.py`.
+
+Injury-report data (used by `injury-report`, not by any `build-*-dataset`
+feature schema above) is acquired the same way, via
+`acquire_injury_reports`, but is only available for the 2009-2024 seasons;
+nflverse retired the source after the 2024 season with no replacement
+announced.
 
 ## Quality checks
 

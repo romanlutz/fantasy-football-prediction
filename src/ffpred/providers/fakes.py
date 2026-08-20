@@ -17,6 +17,7 @@ class FakeProvider:
     schedules: pl.DataFrame = field(default_factory=pl.DataFrame)
     players: pl.DataFrame = field(default_factory=pl.DataFrame)
     pbp_by_season: dict[int, pl.DataFrame] = field(default_factory=dict)
+    injuries: pl.DataFrame = field(default_factory=pl.DataFrame)
     source_metadata: dict[str, str] = field(
         default_factory=lambda: {
             "client": "fake",
@@ -42,6 +43,10 @@ class FakeProvider:
 
     def load_pbp(self, season: int) -> pl.DataFrame:
         return self.pbp_by_season[season]
+
+    def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame:
+        del seasons
+        return self.injuries
 
     def metadata(self) -> Mapping[str, str]:
         return self.source_metadata

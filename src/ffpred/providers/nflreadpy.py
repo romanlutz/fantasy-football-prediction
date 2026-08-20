@@ -46,6 +46,9 @@ class NflReadPyProvider:
     def load_pbp(self, season: int) -> pl.DataFrame:
         return nfl.load_pbp(season)
 
+    def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame:
+        return nfl.load_injuries(list(seasons))
+
     def metadata(self) -> Mapping[str, str]:
         return {
             "client": "nflreadpy",

@@ -72,5 +72,9 @@ class ProvenanceProvider:
         name = f"play_by_play:{season}"
         return self._record(name, self._provider.load_pbp(season))
 
+    def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame:
+        name = f"injuries:{self._season_key(seasons)}"
+        return self._record(name, self._provider.load_injuries(seasons))
+
     def metadata(self) -> Mapping[str, str]:
         return self._provider.metadata()

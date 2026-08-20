@@ -3,6 +3,7 @@ import pytest
 from ffpred.acquisition.contracts import (
     DST_TEAM_STATS_CONTRACT,
     IDP_PLAYER_STATS_CONTRACT,
+    INJURY_REPORTS_CONTRACT,
     KICKER_PLAYER_STATS_CONTRACT,
     PBP_CONTRACT,
     PLAYER_STATS_CONTRACT,
@@ -15,6 +16,7 @@ from ffpred.acquisition.normalize import (
     acquire_defense_histories,
     acquire_dst_histories,
     acquire_idp_histories,
+    acquire_injury_reports,
     acquire_kicker_histories,
     acquire_quarterback_histories,
     acquire_receiving_histories,
@@ -23,6 +25,9 @@ from ffpred.acquisition.schema import validate_frame
 from ffpred.providers.nflreadpy import NflReadPyProvider
 
 COMPLETED_SEASON = 2025
+#: Latest season nflverse's injury-report source covers; it was retired
+#: after the 2024 season with no replacement announced.
+LAST_INJURY_REPORT_SEASON = 2024
 
 
 @pytest.mark.live
@@ -128,3 +133,37 @@ def test_live_new_position_acquisition() -> None:
     )
     assert {history.position for history in receivers.values()} <= {"RB", "WR", "TE"}
     assert {history.position_group for history in idp.values()} <= {"DL", "LB", "DB"}
+
+
+@pytest.mark.live
+def test_live_injury_reports_contract_and_acquisition() -> None:
+    """Validate the injury-report contract and acquisition against the last
+    season nflverse's injury source covers. Unlike the other live acquisition
+    tests, this deliberately does not use COMPLETED_SEASON: nflverse's injury
+    source was retired after the 2024 season, so a 2025 request would return
+    no data at all by design (see acquire_injury_reports).
+    """
+    provider = NflReadPyProvider(cache_mode="filesystem")
+
+    injuries = provider.load_injuries((LAST_INJURY_REPORT_SEASON,))
+    assert not validate_frame(injuries, INJURY_REPORTS_CONTRACT).is_empty()
+
+    histories = acquire_injury_reports((LAST_INJURY_REPORT_SEASON,), provider=provider)
+    assert histories
+    assert all(
+        report.key.season == LAST_INJURY_REPORT_SEASON
+        for history in histories.values()
+        for report in history.reports.values()
+    )
+
+
+@pytest.mark.live
+def test_live_injury_reports_outside_coverage_window_return_no_data() -> None:
+    """acquire_injury_reports should degrade gracefully -- not raise -- once
+    seasons roll past nflverse's injury-source retirement after 2024.
+    """
+    histories = acquire_injury_reports(
+        (COMPLETED_SEASON,), provider=NflReadPyProvider(cache_mode="filesystem")
+    )
+
+    assert histories == {}

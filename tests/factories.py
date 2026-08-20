@@ -254,6 +254,111 @@ def make_receiving_provider(
     )
 
 
+def make_injury_report_provider(season: int = 2023) -> FakeProvider:
+    """A provider whose player_stats/schedules/pbp carry a quarterback who
+    plays weeks 1, 2, and 4 (skipping week 3 entirely, as if inactive), plus
+    an injuries frame reporting that quarterback as Out in week 3 and
+    Questionable in week 4 -- enough to exercise both a missed-game event and
+    a played-while-reported event with a real pace/delta comparison.
+    """
+    played_weeks = (1, 2, 4)
+    schedules: list[dict[str, object]] = []
+    player_stats: list[dict[str, object]] = []
+    for week in played_weeks:
+        game_id = f"{season}_{week:02d}_GB_SEA"
+        schedules.append(
+            {
+                "game_id": game_id,
+                "gameday": (date(season, 9, 1) + timedelta(days=week * 7)).isoformat(),
+                "home_team": "SEA",
+                "away_team": "GB",
+                "home_score": 24,
+                "away_score": 17,
+            }
+        )
+        player_stats.append(
+            {
+                "player_id": "00-QB",
+                "player_display_name": "Test Quarterback",
+                "position": "QB",
+                "season": season,
+                "week": week,
+                "season_type": "REG",
+                "game_id": game_id,
+                "team": "GB",
+                "opponent_team": "SEA",
+                "attempts": 30,
+                # Week 4's much lower output than weeks 1-2 is what creates a
+                # meaningful negative delta-vs-pace after the week 3 absence.
+                "passing_yards": 300 if week != 4 else 50,
+                "passing_tds": 3 if week != 4 else 0,
+                "passing_interceptions": 0,
+                "passing_2pt_conversions": 0,
+                "carries": 0,
+                "rushing_yards": 0,
+                "rushing_tds": 0,
+                "rushing_2pt_conversions": 0,
+                "fumbles_total": 0,
+                # Present so RECEIVING_PLAYER_STATS_CONTRACT still validates
+                # when --positions all is requested against a QB-only frame
+                # (no RB/WR/TE rows survive the position filter either way).
+                "receptions": 0,
+                "targets": 0,
+                "receiving_yards": 0,
+                "receiving_tds": 0,
+                "receiving_2pt_conversions": 0,
+            }
+        )
+    injuries = pl.DataFrame(
+        [
+            {
+                "season": season,
+                "week": 3,
+                "game_type": "REG",
+                "team": "GB",
+                "gsis_id": "00-QB",
+                "full_name": "Test Quarterback",
+                "report_status": "Out",
+                "report_primary_injury": "Ankle",
+            },
+            {
+                "season": season,
+                "week": 4,
+                "game_type": "REG",
+                "team": "GB",
+                "gsis_id": "00-QB",
+                "full_name": "Test Quarterback",
+                "report_status": "Questionable",
+                "report_primary_injury": "Ankle",
+            },
+        ]
+    )
+    return FakeProvider(
+        player_stats=pl.DataFrame(player_stats),
+        schedules=pl.DataFrame(schedules),
+        players=pl.DataFrame(
+            {
+                "gsis_id": ["00-QB"],
+                "display_name": ["Test Quarterback"],
+                "birth_date": ["1990-01-01"],
+                "rookie_season": [2018],
+            }
+        ),
+        pbp_by_season={
+            season: pl.DataFrame(
+                {
+                    "game_id": [f"{season}_{week:02d}_GB_SEA" for week in played_weeks],
+                    "season_type": ["REG"] * len(played_weeks),
+                    "two_point_attempt": [0] * len(played_weeks),
+                    "passer_player_id": [None] * len(played_weeks),
+                    "rusher_player_id": [None] * len(played_weeks),
+                }
+            )
+        },
+        injuries=injuries,
+    )
+
+
 def make_idp_provider(seasons: tuple[int, ...] = (2020, 2021, 2022)) -> FakeProvider:
     """A provider whose player_stats carry the def_* columns and
     position_group acquire_idp_histories needs, across enough seasons/weeks

@@ -98,3 +98,14 @@ class EvaluateOptions:
     """Prediction evaluation command options."""
 
     predictions_path: Path
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class InjuryReportOptions:
+    """Injury-impact report command options."""
+
+    output_path: Path
+    start_season: int
+    end_season: int
+    positions: tuple[str, ...]
+    trailing_window: int

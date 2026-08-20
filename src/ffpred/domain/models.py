@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from enum import IntEnum
 
 from ffpred.domain.identifiers import GameId, PlayerId, Season, TeamCode, Week
 
@@ -258,3 +259,58 @@ class IdpHistory:
     name: str
     position_group: str
     games: dict[GameKey, IdpGame] = field(default_factory=dict)
+
+
+class InjuryStatus(IntEnum):
+    """Official NFL injury-report game designation, ordered by severity.
+
+    A player who does not appear on a given week's official report has no
+    ``InjuryReport`` at all for that (player, week); ``NONE`` is only used as
+    a fallback value for callers that need a severity for an unreported week
+    (e.g. a rolling feature default), never persisted from a real report row.
+    """
+
+    NONE = 0
+    QUESTIONABLE = 1
+    DOUBTFUL = 2
+    OUT = 3
+
+
+#: Maps nflverse's ``report_status`` text values to ``InjuryStatus``. Rows
+#: with a null/unrecognized status carry no game-impact information (e.g. a
+#: practice-only listing) and are not converted into a report at all -- see
+#: ``acquire_injury_reports``.
+INJURY_STATUS_BY_REPORT_TEXT: dict[str, InjuryStatus] = {
+    "Questionable": InjuryStatus.QUESTIONABLE,
+    "Doubtful": InjuryStatus.DOUBTFUL,
+    "Out": InjuryStatus.OUT,
+}
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class InjuryReport:
+    """One player's official injury-report designation for one game week.
+
+    This reflects the final report published before kickoff (by rule, no
+    later than the Friday before a Sunday/Monday game), so unlike a player's
+    own game stats, ``status`` is knowable *before* the game it names and is
+    safe to use as a pregame feature, not just a retrospective one.
+    """
+
+    key: GameKey
+    team: TeamCode
+    status: InjuryStatus
+    primary_injury: str | None
+
+
+@dataclass(slots=True, kw_only=True)
+class InjuryHistory:
+    """A player's injury reports indexed by typed chronological keys.
+
+    Sparse by construction: most (player, week) combinations have no entry
+    at all, since most players are never listed on an injury report.
+    """
+
+    player_id: PlayerId
+    name: str
+    reports: dict[GameKey, InjuryReport] = field(default_factory=dict)

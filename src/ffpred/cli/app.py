@@ -14,11 +14,21 @@ import numpy as np
 import polars as pl
 from numpy.typing import NDArray
 
+from ffpred.acquisition.contracts import (
+    INJURY_REPORTS_MAX_SEASON,
+    INJURY_REPORTS_MIN_SEASON,
+)
+from ffpred.acquisition.normalize import (
+    acquire_injury_reports,
+    acquire_quarterback_histories,
+    acquire_receiving_histories,
+)
 from ffpred.cli.options import (
     BuildOptions,
     EbmOptions,
     EvaluateOptions,
     ExplainabilityOptions,
+    InjuryReportOptions,
     MlpOptions,
     ReceivingBuildOptions,
     SvrOptions,
@@ -43,6 +53,11 @@ from ffpred.evaluation.explainability import (
     accumulated_local_effects,
     model_agnostic_shap_values,
     temporal_permutation_importance,
+)
+from ffpred.evaluation.injury_impact import (
+    build_quarterback_injury_impact,
+    build_receiving_injury_impact,
+    injury_impact_frame,
 )
 from ffpred.evaluation.metrics import evaluate
 from ffpred.features import dst_schema, idp_schema, kicker_schema, receiving_schema
@@ -108,6 +123,17 @@ RECEIVING_BUILD_POSITIONS: dict[str, tuple[str, ...]] = {
     "wr": ("WR",),
     "te": ("TE",),
     "all": ("RB", "WR", "TE"),
+}
+#: Positions supported by injury-report. "all" covers every position an
+#: injury report can be meaningfully compared against a pace: QB and the
+#: three receiving positions. Team D/ST, kicker, and IDP have no comparable
+#: "on pace for" fantasy trajectory tied to an individual injury report.
+INJURY_REPORT_POSITIONS: dict[str, tuple[str, ...]] = {
+    "qb": ("QB",),
+    "rb": ("RB",),
+    "wr": ("WR",),
+    "te": ("TE",),
+    "all": ("QB", "RB", "WR", "TE"),
 }
 
 
@@ -200,7 +226,24 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
         help="evaluate a prediction Parquet artifact",
     )
     evaluation.add_argument("predictions", type=Path)
+
+    injury_report = subparsers.add_parser(
+        "injury-report",
+        help="report when players were on the injury report and how it "
+        "affected their fantasy score versus their pre-injury pace",
+    )
+    _add_injury_report_arguments(injury_report)
     return parser
+
+
+def _add_injury_report_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--output", type=Path, default=Path("injury-report.csv"))
+    parser.add_argument("--start-season", type=int, default=2018)
+    parser.add_argument("--end-season", type=int, default=2023)
+    parser.add_argument(
+        "--positions", choices=tuple(INJURY_REPORT_POSITIONS), default="all"
+    )
+    parser.add_argument("--trailing-window", type=int, default=4)
 
 
 def _add_build_arguments(
@@ -299,6 +342,16 @@ def _receiving_build_options(args: argparse.Namespace) -> ReceivingBuildOptions:
         train_start=args.train_start,
         test_year=args.test_year,
         positions=RECEIVING_BUILD_POSITIONS[args.position],
+    )
+
+
+def _injury_report_options(args: argparse.Namespace) -> InjuryReportOptions:
+    return InjuryReportOptions(
+        output_path=args.output,
+        start_season=args.start_season,
+        end_season=args.end_season,
+        positions=INJURY_REPORT_POSITIONS[args.positions],
+        trailing_window=args.trailing_window,
     )
 
 
@@ -735,6 +788,56 @@ def _run_evaluate(options: EvaluateOptions) -> dict[str, object]:
     return {"metrics": asdict(evaluate(frame[TARGET_COLUMN], frame[PREDICTION_COLUMN]))}
 
 
+def _run_injury_report(
+    options: InjuryReportOptions,
+    provider: NflDataProvider,
+) -> dict[str, object]:
+    seasons = tuple(range(options.start_season, options.end_season + 1))
+    injury_histories = acquire_injury_reports(seasons, provider=provider)
+
+    events = ()
+    if "QB" in options.positions:
+        quarterback_histories = acquire_quarterback_histories(
+            seasons, provider=provider
+        )
+        events += build_quarterback_injury_impact(
+            quarterback_histories,
+            injury_histories,
+            trailing_window=options.trailing_window,
+        )
+    receiving_positions = tuple(
+        position for position in options.positions if position != "QB"
+    )
+    if receiving_positions:
+        receiving_histories = acquire_receiving_histories(
+            seasons, receiving_positions, provider=provider
+        )
+        events += build_receiving_injury_impact(
+            receiving_histories,
+            injury_histories,
+            trailing_window=options.trailing_window,
+        )
+
+    frame = injury_impact_frame(events)
+    options.output_path.parent.mkdir(parents=True, exist_ok=True)
+    frame.write_csv(options.output_path)
+
+    played = frame.filter(pl.col("played"))
+    missed = frame.filter(~pl.col("played"))
+    return {
+        "output": str(options.output_path),
+        "events": frame.height,
+        "played_while_reported": played.height,
+        "missed_games": missed.height,
+        "seasons": {"start": options.start_season, "end": options.end_season},
+        "note": (
+            "Injury report data is only available for the "
+            f"{INJURY_REPORTS_MIN_SEASON}-{INJURY_REPORTS_MAX_SEASON} seasons; "
+            "requests outside that range silently return no events."
+        ),
+    }
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -776,6 +879,11 @@ def main(
             output = _run_mlp(_mlp_options(args))
         elif args.command == "train-ebm":
             output = _run_ebm(_ebm_options(args))
+        elif args.command == "injury-report":
+            output = _run_injury_report(
+                _injury_report_options(args),
+                provider or _provider(settings),
+            )
         else:
             output = _run_evaluate(EvaluateOptions(predictions_path=args.predictions))
     except FfpredError as error:

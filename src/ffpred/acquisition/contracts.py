@@ -188,3 +188,28 @@ IDP_PLAYER_STATS_CONTRACT = FrameContract(
     },
     non_null=frozenset({"season", "week", "game_id"}),
 )
+#: nflverse's injury-report source is only populated for these seasons: it
+#: was retired after the 2024 season with no replacement announced (verified
+#: against https://nflreadr.nflverse.com/articles/nflverse_data_schedule.html).
+#: acquire_injury_reports silently skips seasons outside this range rather
+#: than raising, so a normal multi-season history build degrades gracefully
+#: instead of failing outright once new seasons roll past the floor.
+INJURY_REPORTS_MIN_SEASON = 2009
+INJURY_REPORTS_MAX_SEASON = 2024
+#: Unlike every other nflverse frame contract in this module, the injuries
+#: table's regular/postseason indicator column is named ``game_type``, not
+#: ``season_type`` (verified live against nflreadpy 0.1.5).
+INJURY_REPORTS_CONTRACT = FrameContract(
+    name="injuries",
+    columns={
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "game_type": ColumnKind.TEXT,
+        "team": ColumnKind.TEXT,
+        "gsis_id": ColumnKind.TEXT,
+        "full_name": ColumnKind.TEXT,
+        "report_status": ColumnKind.TEXT,
+        "report_primary_injury": ColumnKind.TEXT,
+    },
+    non_null=frozenset({"season", "week"}),
+)
