@@ -556,38 +556,23 @@ def _draft_view(
         st.warning("Choose at least one position to build the draft board.")
         return
 
-    controls = st.columns([1.25, 1, 1, 1])
+    controls = st.columns([2, 1])
     search = controls[0].text_input("Find player", placeholder="Search the board")
-    minimum_games = controls[1].number_input(
-        "Minimum projected games",
-        min_value=1,
-        max_value=18,
-        value=8,
-    )
-    top_n = controls[2].selectbox("Board depth", [12, 24, 50, 100], index=1)
-    hide_drafted = controls[3].toggle("Hide drafted", value=True)
+    top_n = controls[1].selectbox("Board depth", [12, 24, 50, 100], index=1)
 
     board = draft_board(
         frame,
         season=season,
         positions=positions,
-        minimum_games=minimum_games,
     )
     if search:
         board = board.filter(
             pl.col("player_name").str.contains(search, literal=True, strict=False)
         )
-    drafted = st.multiselect(
-        "Drafted players",
-        board["player_name"].to_list(),
-        help="Mark players as the room takes them. Hidden players remain selected.",
-    )
-    if hide_drafted and drafted:
-        board = board.filter(~pl.col("player_name").is_in(drafted))
     display = board.head(top_n)
 
     if display.is_empty():
-        st.warning("No players match these draft-board controls.")
+        st.warning("No players match this search.")
         return
 
     chart_frame = display.head(18).sort("projected_points").to_pandas()

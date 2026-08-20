@@ -96,7 +96,6 @@ def test_draft_and_weekly_boards_rank_the_selected_horizon() -> None:
         prepared,
         season=2025,
         positions=["QB"],
-        minimum_games=2,
     )
     weekly = weekly_board(
         prepared,
@@ -129,7 +128,6 @@ def test_draft_board_adds_injury_adjusted_actual() -> None:
         prepared,
         season=2025,
         positions=["QB"],
-        minimum_games=2,
     ).filter(pl.col("player_id") == "a")
 
     assert player["projected_points"][0] == 40.0
@@ -180,6 +178,8 @@ def test_dashboard_app_renders_all_workspaces(
 
     assert not app.exception
     assert not app.file_uploader
+    assert not app.number_input
+    assert [widget.label for widget in app.multiselect] == ["Position"]
     assert next(widget for widget in app.selectbox if widget.label == "Target season")
     assert app.radio[0].options == [
         "Draft Board",

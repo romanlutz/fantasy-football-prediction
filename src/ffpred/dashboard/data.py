@@ -173,7 +173,6 @@ def draft_board(
     *,
     season: int,
     positions: Sequence[str],
-    minimum_games: int,
 ) -> pl.DataFrame:
     """Aggregate weekly predictions into a season-long draft board."""
     selected = frame.filter(
@@ -192,7 +191,6 @@ def draft_board(
             pl.col(ACTUAL_COLUMN).sum().alias("actual_points"),
             pl.col(INJURY_MISSED_COLUMN).sum().cast(pl.Int64).alias("injury_games"),
         )
-        .filter(pl.col("projected_games") >= minimum_games)
         .with_columns(
             pl.when(
                 pl.lit(season_has_results)
