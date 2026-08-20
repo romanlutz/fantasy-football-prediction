@@ -156,11 +156,12 @@ Player scoring is standard non-PPR. Kicker scoring awards 3 points through 39
 yards, 4 from 40–49, 5 from 50+, and 1 per extra point. DST scoring includes
 sacks, takeaways, touchdowns, safeties, blocked kicks, and points allowed.
 
-The dashboard places projected and actual season totals side by side. Its
-availability-adjusted result is `actual points + injury games missed x projected
-points per game`; the adjusted gap and percentage show how close that estimate
-lands to the original preseason projection. Questionable, healthy-inactive,
-suspended, and otherwise unclassified absences are not counted as injury misses.
+The dashboard places projected and actual season totals side by side. It shows
+two availability-adjusted results: `actual points + injury games missed x
+projected points per game` and `actual points + injury games missed x actual
+points per game`. Their gap percentages show how close each estimate lands to
+the original preseason projection. Questionable, healthy-inactive, suspended,
+and otherwise unclassified absences are not counted as injury misses.
 
 Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as

@@ -115,7 +115,7 @@ def test_draft_and_weekly_boards_rank_the_selected_horizon() -> None:
 def test_draft_board_adds_injury_adjusted_actual() -> None:
     prepared = prepare_predictions(
         _predictions().with_columns(
-            pl.Series("fantasy_points", [20.0, None, 18.0, 16.0]),
+            pl.Series("fantasy_points", [12.0, None, 18.0, 16.0]),
             pl.Series("injury_missed_game", [False, True, False, False]),
             pl.Series("injury_status", [None, "Out", None, None]),
         ),
@@ -133,11 +133,13 @@ def test_draft_board_adds_injury_adjusted_actual() -> None:
     ).filter(pl.col("player_id") == "a")
 
     assert player["projected_points"][0] == 40.0
-    assert player["actual_points"][0] == 20.0
+    assert player["actual_points"][0] == 12.0
     assert player["injury_games"][0] == 1
-    assert player["injury_estimated_points"][0] == 20.0
-    assert player["availability_adjusted_actual"][0] == 40.0
-    assert player["adjusted_delta_percent"][0] == 0.0
+    assert player["actual_points_per_game"][0] == 12.0
+    assert player["projected_pace_adjusted_actual"][0] == 32.0
+    assert player["projected_pace_adjusted_delta_percent"][0] == -20.0
+    assert player["actual_pace_adjusted_actual"][0] == 24.0
+    assert player["actual_pace_adjusted_delta_percent"][0] == -40.0
 
 
 def test_model_scorecard_includes_consensus() -> None:

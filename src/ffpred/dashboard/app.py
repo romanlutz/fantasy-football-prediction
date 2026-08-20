@@ -574,9 +574,9 @@ def _draft_view(
 ) -> None:
     st.header("Draft board")
     st.write(
-        "Projected and actual totals sit together. For completed seasons, the "
-        "availability-adjusted result adds projected points per game for each "
-        "source-backed injury absence."
+        "Projected and actual totals sit together. Two availability-adjusted "
+        "scores fill each source-backed injury absence at either the preseason "
+        "projected pace or the player's actual scoring pace."
     )
     if not positions:
         st.warning("Choose at least one position to build the draft board.")
@@ -659,23 +659,45 @@ def _draft_view(
             ],
         )
     )
-    adjusted = (
-        alt.Chart(chart_frame.dropna(subset=["availability_adjusted_actual"]))
+    projected_pace_adjusted = (
+        alt.Chart(chart_frame.dropna(subset=["projected_pace_adjusted_actual"]))
         .mark_point(color=CYAN, filled=True, shape="diamond", size=80)
         .encode(
-            x=alt.X("availability_adjusted_actual:Q"),
+            x=alt.X("projected_pace_adjusted_actual:Q"),
             y=alt.Y("player_name:N", sort=None),
             tooltip=[
                 alt.Tooltip("player_name:N", title="Player"),
                 alt.Tooltip(
-                    "availability_adjusted_actual:Q",
-                    title="Adjusted actual",
+                    "projected_pace_adjusted_actual:Q",
+                    title="Adjusted at projected PPG",
                     format=".1f",
                 ),
                 alt.Tooltip("injury_games:Q", title="Injury misses"),
                 alt.Tooltip(
-                    "injury_estimated_points:Q",
-                    title="Injury estimate",
+                    "projected_pace_injury_points:Q",
+                    title="Projected-pace addition",
+                    format=".1f",
+                ),
+            ],
+        )
+    )
+    actual_pace_adjusted = (
+        alt.Chart(chart_frame.dropna(subset=["actual_pace_adjusted_actual"]))
+        .mark_point(color=CORAL, filled=True, shape="circle", size=70)
+        .encode(
+            x=alt.X("actual_pace_adjusted_actual:Q"),
+            y=alt.Y("player_name:N", sort=None),
+            tooltip=[
+                alt.Tooltip("player_name:N", title="Player"),
+                alt.Tooltip(
+                    "actual_pace_adjusted_actual:Q",
+                    title="Adjusted at actual PPG",
+                    format=".1f",
+                ),
+                alt.Tooltip("injury_games:Q", title="Injury misses"),
+                alt.Tooltip(
+                    "actual_pace_injury_points:Q",
+                    title="Actual-pace addition",
                     format=".1f",
                 ),
             ],
@@ -683,13 +705,16 @@ def _draft_view(
     )
     st.altair_chart(
         _chart_theme(
-            (bars + adjusted).properties(height=max(360, len(chart_frame) * 32))
+            (bars + projected_pace_adjusted + actual_pace_adjusted).properties(
+                height=max(360, len(chart_frame) * 32)
+            )
         ),
         width="stretch",
     )
     st.caption(
-        "Green: projected. Amber: actual. Cyan diamond: actual + injury misses "
-        "x projected points per game. Only Out and reserve-list absences count."
+        "Green: projected. Amber: actual. Cyan diamond: injury games filled at "
+        "projected PPG. Coral circle: injury games filled at actual PPG. Only "
+        "Out and reserve-list absences count."
     )
 
     table = display.select(
@@ -699,11 +724,12 @@ def _draft_view(
         pl.col("projected_points").alias("Projected"),
         pl.col("actual_points").alias("Actual"),
         pl.col("injury_games").alias("Inj. missed"),
-        pl.col("injury_estimated_points").alias("Injury estimate"),
-        pl.col("availability_adjusted_actual").alias("Adjusted actual"),
-        pl.col("adjusted_delta").alias("Adjusted gap"),
-        pl.col("adjusted_delta_percent").alias("Adjusted gap %"),
-        pl.col("points_per_game").alias("Per game"),
+        pl.col("projected_pace_adjusted_actual").alias("Adj. at proj. PPG"),
+        pl.col("projected_pace_adjusted_delta_percent").alias("Proj. pace gap %"),
+        pl.col("actual_pace_adjusted_actual").alias("Adj. at actual PPG"),
+        pl.col("actual_pace_adjusted_delta_percent").alias("Actual pace gap %"),
+        pl.col("points_per_game").alias("Projected PPG"),
+        pl.col("actual_points_per_game").alias("Actual PPG"),
         pl.col("actual_games").alias("Played"),
         pl.col("projected_games").alias("Scheduled"),
         pl.col("volatility").alias("Weekly swing"),
@@ -721,24 +747,26 @@ def _draft_view(
                 help="Scheduled games missed with an Out injury report or "
                 "reserve-list roster status.",
             ),
-            "Injury estimate": st.column_config.NumberColumn(
+            "Adj. at proj. PPG": st.column_config.NumberColumn(
                 format="%.1f",
-                help="Injury misses multiplied by preseason projected points per game.",
+                help="Actual points plus injury misses multiplied by preseason "
+                "projected points per game.",
             ),
-            "Adjusted actual": st.column_config.NumberColumn(
-                format="%.1f",
-                help="Actual points plus the injury estimate.",
-            ),
-            "Adjusted gap": st.column_config.NumberColumn(
-                format="%+.1f",
-                help="Adjusted actual minus projected points. Values near zero were "
-                "closest to the original projection.",
-            ),
-            "Adjusted gap %": st.column_config.NumberColumn(
+            "Proj. pace gap %": st.column_config.NumberColumn(
                 format="%+.1f%%",
-                help="Adjusted gap as a percentage of projected points.",
+                help="Projected-pace adjusted total versus the original projection.",
             ),
-            "Per game": st.column_config.NumberColumn(format="%.1f"),
+            "Adj. at actual PPG": st.column_config.NumberColumn(
+                format="%.1f",
+                help="Actual points plus injury misses multiplied by actual points "
+                "per game in games played.",
+            ),
+            "Actual pace gap %": st.column_config.NumberColumn(
+                format="%+.1f%%",
+                help="Actual-pace adjusted total versus the original projection.",
+            ),
+            "Projected PPG": st.column_config.NumberColumn(format="%.1f"),
+            "Actual PPG": st.column_config.NumberColumn(format="%.1f"),
             "Weekly swing": st.column_config.NumberColumn(format="%.1f"),
             "Model spread": st.column_config.NumberColumn(format="%.1f"),
         },

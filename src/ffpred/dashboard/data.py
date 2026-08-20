@@ -216,27 +216,47 @@ def draft_board(
             .alias("position_rank"),
         )
         .with_columns(
-            (pl.col("injury_games") * pl.col("points_per_game")).alias(
-                "injury_estimated_points"
-            ),
+            pl.when(pl.col("actual_games") > 0)
+            .then(pl.col("actual_points") / pl.col("actual_games"))
+            .otherwise(None)
+            .alias("actual_points_per_game"),
             (pl.col("actual_points") - pl.col("projected_points")).alias(
                 "projection_delta"
             ),
         )
         .with_columns(
-            (pl.col("actual_points") + pl.col("injury_estimated_points")).alias(
-                "availability_adjusted_actual"
-            )
+            (pl.col("injury_games") * pl.col("points_per_game")).alias(
+                "projected_pace_injury_points"
+            ),
+            (pl.col("injury_games") * pl.col("actual_points_per_game")).alias(
+                "actual_pace_injury_points"
+            ),
         )
         .with_columns(
-            (pl.col("availability_adjusted_actual") - pl.col("projected_points")).alias(
-                "adjusted_delta"
+            (pl.col("actual_points") + pl.col("projected_pace_injury_points")).alias(
+                "projected_pace_adjusted_actual"
             ),
+            (pl.col("actual_points") + pl.col("actual_pace_injury_points")).alias(
+                "actual_pace_adjusted_actual"
+            ),
+        )
+        .with_columns(
             (
-                (pl.col("availability_adjusted_actual") - pl.col("projected_points"))
+                pl.col("projected_pace_adjusted_actual") - pl.col("projected_points")
+            ).alias("projected_pace_adjusted_delta"),
+            (
+                (pl.col("projected_pace_adjusted_actual") - pl.col("projected_points"))
                 / pl.col("projected_points")
                 * 100.0
-            ).alias("adjusted_delta_percent"),
+            ).alias("projected_pace_adjusted_delta_percent"),
+            (pl.col("actual_pace_adjusted_actual") - pl.col("projected_points")).alias(
+                "actual_pace_adjusted_delta"
+            ),
+            (
+                (pl.col("actual_pace_adjusted_actual") - pl.col("projected_points"))
+                / pl.col("projected_points")
+                * 100.0
+            ).alias("actual_pace_adjusted_delta_percent"),
         )
         .sort("projected_points", descending=True)
     )
