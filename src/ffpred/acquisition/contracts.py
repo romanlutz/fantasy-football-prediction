@@ -82,6 +82,41 @@ SCHEDULES_CONTRACT = FrameContract(
     },
     non_null=frozenset({"game_id", "gameday", "home_team", "away_team"}),
 )
+FORECAST_SCHEDULES_CONTRACT = FrameContract(
+    name="forecast_schedules",
+    columns={
+        "game_id": ColumnKind.TEXT,
+        "season": ColumnKind.INTEGER,
+        "game_type": ColumnKind.TEXT,
+        "week": ColumnKind.INTEGER,
+        "gameday": ColumnKind.DATE,
+        "home_team": ColumnKind.TEXT,
+        "away_team": ColumnKind.TEXT,
+    },
+    non_null=frozenset(
+        {
+            "game_id",
+            "season",
+            "game_type",
+            "week",
+            "gameday",
+            "home_team",
+            "away_team",
+        }
+    ),
+)
+DEPTH_CHARTS_CONTRACT = FrameContract(
+    name="depth_charts",
+    columns={
+        "dt": ColumnKind.DATE,
+        "team": ColumnKind.TEXT,
+        "player_name": ColumnKind.TEXT,
+        "gsis_id": ColumnKind.TEXT,
+        "pos_abb": ColumnKind.TEXT,
+        "pos_rank": ColumnKind.INTEGER,
+    },
+    non_null=frozenset({"dt", "team", "pos_abb", "pos_rank"}),
+)
 PLAYERS_CONTRACT = FrameContract(
     name="players",
     columns={

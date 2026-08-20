@@ -76,6 +76,46 @@ only QB in the position filter. Artifacts with a `position` column automatically
 add their positions to the interface. Historical artifacts include completed
 game outcomes and are labeled as backtests, not live future projections.
 
+Build a point-in-time season forecast without using any target-season game
+statistics:
+
+```console
+# Historical replay: 2025 predictions frozen before the season, with actuals
+# attached afterward for evaluation.
+uv run ffpred build-forecast \
+  --history-start 2018 \
+  --train-start 2019 \
+  --history-through 2024 \
+  --target-year 2025 \
+  --include-actuals \
+  --output-dir artifacts/2025
+
+# Upcoming season: 2026 schedule and preseason QB1 depth charts, with all model
+# features frozen after the completed 2025 season.
+uv run ffpred build-forecast \
+  --history-start 2018 \
+  --train-start 2019 \
+  --history-through 2025 \
+  --target-year 2026 \
+  --output-dir artifacts/2026
+
+uv run ffpred project-svr \
+  --train artifacts/2026/training.parquet \
+  --forecast artifacts/2026/forecast.parquet \
+  --predictions artifacts/2026/svr-predictions.parquet
+uv run ffpred project-mlp \
+  --train artifacts/2026/training.parquet \
+  --forecast artifacts/2026/forecast.parquet \
+  --predictions artifacts/2026/mlp-predictions.parquet
+```
+
+Forecast builds use the latest QB1 depth-chart snapshot available no later than
+the forecast date. A historical replay defaults to the last depth chart before
+that season's first regular-season game; an upcoming forecast defaults to the
+current date. The generated manifest records the cutoff, as-of date, source
+hashes, and output hashes. Changing a team's projected starter requires
+rebuilding after nflverse publishes an updated depth chart.
+
 Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as
 `FFPRED_OUTPUT_DIR`, `FFPRED_HISTORY_START`, `FFPRED_TRAIN_START`,

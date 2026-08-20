@@ -9,7 +9,7 @@ import polars as pl
 
 from ffpred.datasets.manifest import DatasetArtifact
 from ffpred.errors import DatasetIntegrityError, EmptyDatasetError
-from ffpred.features.schema import validate_feature_frame
+from ffpred.features.schema import validate_feature_frame, validate_forecast_frame
 
 
 def file_sha256(path: Path) -> str:
@@ -52,3 +52,8 @@ def read_dataset(
                 f"expected {expected_sha256}, got {actual}"
             )
     return validate_feature_frame(pl.read_parquet(path))
+
+
+def read_forecast(path: Path) -> pl.DataFrame:
+    """Read and validate a persisted point-in-time forecast table."""
+    return validate_forecast_frame(pl.read_parquet(path))

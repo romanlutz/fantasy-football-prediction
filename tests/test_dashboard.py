@@ -69,6 +69,23 @@ def test_consensus_averages_models_and_preserves_actuals() -> None:
     assert consensus["model_spread"].min() == pytest.approx(2**0.5)
 
 
+def test_consensus_preserves_forecast_provenance() -> None:
+    frame = pl.concat(
+        [
+            prepare_predictions(_predictions(), model_name="SVR"),
+            prepare_predictions(_predictions(2.0), model_name="MLP"),
+        ]
+    ).with_columns(
+        pl.lit("2025-09-03").alias("forecast_as_of"),
+        pl.lit(2024).alias("history_through_season"),
+    )
+
+    consensus = select_model(frame, CONSENSUS_MODEL)
+
+    assert consensus["forecast_as_of"].unique().to_list() == ["2025-09-03"]
+    assert consensus["history_through_season"].unique().to_list() == [2024]
+
+
 def test_draft_and_weekly_boards_rank_the_selected_horizon() -> None:
     prepared = select_model(
         prepare_predictions(_predictions(), model_name="SVR"),

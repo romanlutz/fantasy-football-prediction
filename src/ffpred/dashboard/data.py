@@ -120,6 +120,8 @@ def select_model(frame: pl.DataFrame, model: str) -> pl.DataFrame:
             "target_season",
             "target_week",
             "target_game_id",
+            "forecast_as_of",
+            "history_through_season",
         )
         if column in frame.columns
     ]

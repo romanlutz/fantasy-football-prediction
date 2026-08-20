@@ -31,14 +31,9 @@ class MlpConfig:
 DEFAULT_MLP_CONFIG = MlpConfig()
 
 
-def train_mlp(
-    train: TrainingData,
-    test: TrainingData,
-    *,
-    config: MlpConfig = DEFAULT_MLP_CONFIG,
-) -> TrainingResult:
-    """Fit and evaluate a scaled deterministic MLP."""
-    estimator = Pipeline(
+def create_estimator(config: MlpConfig) -> Pipeline:
+    """Create a deterministic scaled MLP pipeline."""
+    return Pipeline(
         [
             ("scaler", StandardScaler()),
             (
@@ -53,6 +48,16 @@ def train_mlp(
             ),
         ]
     )
+
+
+def train_mlp(
+    train: TrainingData,
+    test: TrainingData,
+    *,
+    config: MlpConfig = DEFAULT_MLP_CONFIG,
+) -> TrainingResult:
+    """Fit and evaluate a scaled deterministic MLP."""
+    estimator = create_estimator(config)
     prediction = np.asarray(
         estimator.fit(train.features, train.target).predict(test.features),
         dtype=np.float64,

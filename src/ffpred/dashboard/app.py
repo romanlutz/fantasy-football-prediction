@@ -16,6 +16,7 @@ from streamlit.web import cli as streamlit_cli
 
 from ffpred.dashboard.data import (
     ACTUAL_COLUMN,
+    CONSENSUS_MODEL,
     DashboardDataError,
     draft_board,
     load_prediction_files,
@@ -240,7 +241,8 @@ def _arguments() -> argparse.Namespace:
 
 
 def _discover_prediction_files() -> list[Path]:
-    candidates = [
+    forecast_candidates = list(Path.cwd().glob("artifacts/*/*-predictions.parquet"))
+    candidates = forecast_candidates or [
         *Path.cwd().glob("*-predictions.parquet"),
         *Path.cwd().glob("artifacts/*-predictions.parquet"),
     ]
@@ -331,7 +333,21 @@ def _global_filters(frame: pl.DataFrame) -> tuple[pl.DataFrame, int, list[str], 
 def _masthead(frame: pl.DataFrame, model: str) -> None:
     positions = ", ".join(sorted(frame["position"].unique().to_list()))
     actual_rows = frame[ACTUAL_COLUMN].count()
-    artifact_mode = "Historical backtest" if actual_rows else "Forward projection"
+    is_frozen_forecast = "history_through_season" in frame.columns
+    if is_frozen_forecast and actual_rows:
+        artifact_mode = "Point-in-time replay"
+    elif is_frozen_forecast:
+        artifact_mode = "Upcoming forecast"
+    else:
+        artifact_mode = "Rolling backtest"
+    provenance_items = ""
+    if is_frozen_forecast:
+        history_through = int(frame["history_through_season"][0])
+        forecast_as_of = str(frame["forecast_as_of"][0])
+        provenance_items = (
+            f"<span>History thru <strong>{history_through}</strong></span>"
+            f"<span>As of <strong>{forecast_as_of}</strong></span>"
+        )
     st.html(
         f"""
         <section class="war-masthead">
@@ -345,6 +361,7 @@ def _masthead(frame: pl.DataFrame, model: str) -> None:
           <span>Rows <strong>{frame.height:,}</strong></span>
           <span>Positions <strong>{positions}</strong></span>
           <span>Mode <strong>{artifact_mode}</strong></span>
+          {provenance_items}
         </div>
         """
     )
@@ -355,10 +372,25 @@ def _masthead(frame: pl.DataFrame, model: str) -> None:
                 "The position control expands automatically when future artifacts "
                 "include other positions."
             )
-    if actual_rows:
+    if is_frozen_forecast and actual_rows:
         st.caption(
-            "This sheet includes completed-game outcomes, so ranks shown here are "
-            "a model backtest, not a live upcoming-season forecast."
+            "This historical forecast is frozen before the target season. "
+            "Actual results are shown only for comparison."
+        )
+    elif is_frozen_forecast:
+        st.caption(
+            "This upcoming forecast uses only completed seasons through the "
+            "history cutoff shown above."
+        )
+    elif actual_rows:
+        st.caption(
+            "This rolling backtest updates player history during the selected "
+            "season; it is not a preseason projection."
+        )
+    if model == CONSENSUS_MODEL:
+        st.caption(
+            "Consensus is the per-game average of the loaded SVR and MLP "
+            "predictions. Choose either model sheet in the sidebar to view it alone."
         )
 
 
@@ -371,8 +403,9 @@ def _draft_view(
 ) -> None:
     st.header("Draft board")
     st.write(
-        "Rank total season value here. Weekly volatility and model disagreement "
-        "stay visible, but they do not replace projected points."
+        "Projected season total is the sum of the selected sheet's weekly matchup "
+        "predictions. Volatility and model disagreement stay visible, but they do "
+        "not replace projected points."
     )
     if not positions:
         st.warning("Choose at least one position to build the draft board.")
@@ -696,7 +729,8 @@ def render() -> None:
         st.stop()
 
     selected, season, positions, model = _global_filters(source)
-    _masthead(selected, model)
+    selected_season = selected.filter(pl.col("target_season") == season)
+    _masthead(selected_season, model)
     workspace = st.radio(
         "Workspace",
         ["Draft Board", "Weekly Decisions", "Model Room"],
@@ -713,7 +747,7 @@ def render() -> None:
     elif workspace == "Weekly Decisions":
         _weekly_view(selected, season=season, positions=positions)
     else:
-        _model_room(source)
+        _model_room(source.filter(pl.col("target_season") == season))
 
 
 def run() -> Never:

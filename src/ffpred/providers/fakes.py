@@ -15,6 +15,7 @@ class FakeProvider:
     player_stats: pl.DataFrame = field(default_factory=pl.DataFrame)
     team_stats: pl.DataFrame = field(default_factory=pl.DataFrame)
     schedules: pl.DataFrame = field(default_factory=pl.DataFrame)
+    depth_charts: pl.DataFrame = field(default_factory=pl.DataFrame)
     players: pl.DataFrame = field(default_factory=pl.DataFrame)
     pbp_by_season: dict[int, pl.DataFrame] = field(default_factory=dict)
     source_metadata: dict[str, str] = field(
@@ -36,6 +37,10 @@ class FakeProvider:
     def load_schedules(self, seasons: Sequence[int]) -> pl.DataFrame:
         del seasons
         return self.schedules
+
+    def load_depth_charts(self, seasons: Sequence[int]) -> pl.DataFrame:
+        del seasons
+        return self.depth_charts
 
     def load_players(self) -> pl.DataFrame:
         return self.players

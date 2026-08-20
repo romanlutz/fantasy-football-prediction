@@ -36,6 +36,10 @@ narrow the field for roster decisions.
 - Support filtering by position and other useful player, team, season, week, and
   performance attributes when those fields are present in an artifact.
 - Work with the project's Parquet datasets and prediction artifacts.
+- Preserve point-in-time provenance: a target season's features may use only
+  completed game statistics through the recorded prior-season cutoff.
+- Use preseason schedule and QB1 depth-chart assignments for upcoming seasons,
+  and keep historical outcomes separate from the features used to predict them.
 - The current prediction pipeline is quarterback-focused. The interface must
   communicate unavailable positions honestly while remaining compatible with
   future multi-position artifacts.

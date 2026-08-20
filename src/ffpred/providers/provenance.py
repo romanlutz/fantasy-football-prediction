@@ -65,6 +65,10 @@ class ProvenanceProvider:
         name = f"schedules:{self._season_key(seasons)}"
         return self._record(name, self._provider.load_schedules(seasons))
 
+    def load_depth_charts(self, seasons: Sequence[int]) -> pl.DataFrame:
+        name = f"depth_charts:{self._season_key(seasons)}"
+        return self._record(name, self._provider.load_depth_charts(seasons))
+
     def load_players(self) -> pl.DataFrame:
         return self._record("players", self._provider.load_players())
 
