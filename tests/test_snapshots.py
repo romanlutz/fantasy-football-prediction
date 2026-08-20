@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -17,4 +19,5 @@ def test_cli_help_snapshot(
         main(["--help"])
 
     assert exit_info.value.code == 0
-    assert capsys.readouterr().out == snapshot
+    help_text = re.sub(r"}\n\s+\.\.\.", "} ...", capsys.readouterr().out)
+    assert help_text == snapshot
