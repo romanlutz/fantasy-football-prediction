@@ -112,6 +112,34 @@ def test_draft_and_weekly_boards_rank_the_selected_horizon() -> None:
     assert weekly["model_agreement"].unique().to_list() == ["Single model"]
 
 
+def test_draft_board_adds_injury_adjusted_actual() -> None:
+    prepared = prepare_predictions(
+        _predictions().with_columns(
+            pl.Series("fantasy_points", [20.0, None, 18.0, 16.0]),
+            pl.Series("injury_missed_game", [False, True, False, False]),
+            pl.Series("injury_status", [None, "Out", None, None]),
+        ),
+        model_name="SVR",
+    ).with_columns(
+        pl.lit(0.0).alias("model_spread"),
+        pl.lit(1).alias("model_count"),
+    )
+
+    player = draft_board(
+        prepared,
+        season=2025,
+        positions=["QB"],
+        minimum_games=2,
+    ).filter(pl.col("player_id") == "a")
+
+    assert player["projected_points"][0] == 40.0
+    assert player["actual_points"][0] == 20.0
+    assert player["injury_games"][0] == 1
+    assert player["injury_estimated_points"][0] == 20.0
+    assert player["availability_adjusted_actual"][0] == 40.0
+    assert player["adjusted_delta_percent"][0] == 0.0
+
+
 def test_model_scorecard_includes_consensus() -> None:
     frame = pl.concat(
         [

@@ -9,6 +9,10 @@ from pathlib import Path
 import polars as pl
 
 from ffpred.errors import FfpredError
+from ffpred.features.all_positions import (
+    INJURY_MISSED_COLUMN,
+    INJURY_STATUS_COLUMN,
+)
 
 PREDICTION_COLUMN = "prediction"
 ACTUAL_COLUMN = "fantasy_points"
@@ -59,6 +63,19 @@ def prepare_predictions(frame: pl.DataFrame, *, model_name: str) -> pl.DataFrame
         expressions.append(pl.col(ACTUAL_COLUMN).cast(pl.Float64))
     else:
         expressions.append(pl.lit(None, dtype=pl.Float64).alias(ACTUAL_COLUMN))
+    if INJURY_MISSED_COLUMN in frame.columns:
+        expressions.append(
+            pl.col(INJURY_MISSED_COLUMN)
+            .cast(pl.Boolean)
+            .fill_null(False)
+            .alias(INJURY_MISSED_COLUMN)
+        )
+    else:
+        expressions.append(pl.lit(False).alias(INJURY_MISSED_COLUMN))
+    if INJURY_STATUS_COLUMN in frame.columns:
+        expressions.append(pl.col(INJURY_STATUS_COLUMN).cast(pl.String))
+    else:
+        expressions.append(pl.lit(None, dtype=pl.String).alias(INJURY_STATUS_COLUMN))
 
     defaults = {"position": "QB", "team": "N/A", "opponent": "N/A"}
     for column, default in defaults.items():
@@ -122,6 +139,8 @@ def select_model(frame: pl.DataFrame, model: str) -> pl.DataFrame:
             "target_game_id",
             "forecast_as_of",
             "history_through_season",
+            INJURY_STATUS_COLUMN,
+            INJURY_MISSED_COLUMN,
         )
         if column in frame.columns
     ]
@@ -160,6 +179,7 @@ def draft_board(
     selected = frame.filter(
         (pl.col("target_season") == season) & pl.col("position").is_in(list(positions))
     )
+    season_has_results = selected[ACTUAL_COLUMN].count() > 0
     board = (
         selected.group_by("player_id", "player_name", "position")
         .agg(
@@ -170,13 +190,25 @@ def draft_board(
             pl.len().alias("projected_games"),
             pl.col(ACTUAL_COLUMN).count().alias("actual_games"),
             pl.col(ACTUAL_COLUMN).sum().alias("actual_points"),
+            pl.col(INJURY_MISSED_COLUMN).sum().cast(pl.Int64).alias("injury_games"),
         )
         .filter(pl.col("projected_games") >= minimum_games)
         .with_columns(
-            pl.when(pl.col("actual_games") > 0)
-            .then(pl.col("actual_points"))
+            pl.when(
+                pl.lit(season_has_results)
+                & ((pl.col("actual_games") > 0) | (pl.col("injury_games") > 0))
+            )
+            .then(pl.col("actual_points").fill_null(0.0))
             .otherwise(None)
             .alias("actual_points"),
+            pl.when(pl.lit(season_has_results))
+            .then(pl.col("injury_games"))
+            .otherwise(None)
+            .alias("injury_games"),
+            pl.when(pl.lit(season_has_results))
+            .then(pl.col("actual_games"))
+            .otherwise(None)
+            .alias("actual_games"),
             pl.col("projected_points")
             .rank(method="ordinal", descending=True)
             .over("position")
@@ -184,9 +216,27 @@ def draft_board(
             .alias("position_rank"),
         )
         .with_columns(
+            (pl.col("injury_games") * pl.col("points_per_game")).alias(
+                "injury_estimated_points"
+            ),
             (pl.col("actual_points") - pl.col("projected_points")).alias(
                 "projection_delta"
+            ),
+        )
+        .with_columns(
+            (pl.col("actual_points") + pl.col("injury_estimated_points")).alias(
+                "availability_adjusted_actual"
             )
+        )
+        .with_columns(
+            (pl.col("availability_adjusted_actual") - pl.col("projected_points")).alias(
+                "adjusted_delta"
+            ),
+            (
+                (pl.col("availability_adjusted_actual") - pl.col("projected_points"))
+                / pl.col("projected_points")
+                * 100.0
+            ).alias("adjusted_delta_percent"),
         )
         .sort("projected_points", descending=True)
     )

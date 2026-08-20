@@ -574,9 +574,9 @@ def _draft_view(
 ) -> None:
     st.header("Draft board")
     st.write(
-        "Projected season total is the sum of the selected sheet's weekly matchup "
-        "predictions. Volatility and model disagreement stay visible, but they do "
-        "not replace projected points."
+        "Projected and actual totals sit together. For completed seasons, the "
+        "availability-adjusted result adds projected points per game for each "
+        "source-backed injury absence."
     )
     if not positions:
         st.warning("Choose at least one position to build the draft board.")
@@ -617,51 +617,97 @@ def _draft_view(
         return
 
     chart_frame = display.head(18).sort("projected_points").to_pandas()
+    comparison = (
+        chart_frame[["player_name", "projected_points", "actual_points"]]
+        .melt(
+            id_vars="player_name",
+            value_vars=["projected_points", "actual_points"],
+            var_name="measure",
+            value_name="points",
+        )
+        .dropna(subset=["points"])
+    )
+    comparison["measure"] = comparison["measure"].replace(
+        {
+            "projected_points": "Projected",
+            "actual_points": "Actual",
+        }
+    )
     bars = (
-        alt.Chart(chart_frame)
-        .mark_bar(color=GREEN, cornerRadiusEnd=3)
+        alt.Chart(comparison)
+        .mark_bar(cornerRadiusEnd=3)
         .encode(
-            x=alt.X("projected_points:Q", title="Projected season points"),
+            x=alt.X("points:Q", title="Season points"),
             y=alt.Y("player_name:N", sort=None, title=None),
+            yOffset=alt.YOffset(
+                "measure:N",
+                sort=["Projected", "Actual"],
+                title=None,
+            ),
+            color=alt.Color(
+                "measure:N",
+                scale=alt.Scale(
+                    domain=["Projected", "Actual"],
+                    range=[GREEN, AMBER],
+                ),
+                title=None,
+            ),
             tooltip=[
                 alt.Tooltip("player_name:N", title="Player"),
-                alt.Tooltip("projected_points:Q", title="Projected", format=".1f"),
-                alt.Tooltip("points_per_game:Q", title="Per game", format=".1f"),
-                alt.Tooltip("volatility:Q", title="Weekly swing", format=".1f"),
+                alt.Tooltip("measure:N", title="Measure"),
+                alt.Tooltip("points:Q", title="Points", format=".1f"),
             ],
         )
     )
-    labels = bars.mark_text(
-        align="left",
-        baseline="middle",
-        dx=5,
-        color=TEXT,
-        font="Segoe UI",
-        fontWeight=600,
-    ).encode(text=alt.Text("projected_points:Q", format=".0f"))
-    actual = (
-        alt.Chart(chart_frame.dropna(subset=["actual_points"]))
-        .mark_tick(color=AMBER, thickness=3, size=18)
-        .encode(x="actual_points:Q", y=alt.Y("player_name:N", sort=None))
+    adjusted = (
+        alt.Chart(chart_frame.dropna(subset=["availability_adjusted_actual"]))
+        .mark_point(color=CYAN, filled=True, shape="diamond", size=80)
+        .encode(
+            x=alt.X("availability_adjusted_actual:Q"),
+            y=alt.Y("player_name:N", sort=None),
+            tooltip=[
+                alt.Tooltip("player_name:N", title="Player"),
+                alt.Tooltip(
+                    "availability_adjusted_actual:Q",
+                    title="Adjusted actual",
+                    format=".1f",
+                ),
+                alt.Tooltip("injury_games:Q", title="Injury misses"),
+                alt.Tooltip(
+                    "injury_estimated_points:Q",
+                    title="Injury estimate",
+                    format=".1f",
+                ),
+            ],
+        )
     )
     st.altair_chart(
         _chart_theme(
-            (bars + labels + actual).properties(height=max(360, len(chart_frame) * 28))
+            (bars + adjusted).properties(height=max(360, len(chart_frame) * 32))
         ),
         width="stretch",
     )
-    st.caption("Field green: projection. Amber marker: actual total when available.")
+    st.caption(
+        "Green: projected. Amber: actual. Cyan diamond: actual + injury misses "
+        "x projected points per game. Only Out and reserve-list absences count."
+    )
 
     table = display.select(
         pl.col("position_rank").alias("Rank"),
         pl.col("position").alias("Pos"),
         pl.col("player_name").alias("Player"),
         pl.col("projected_points").alias("Projected"),
+        pl.col("actual_points").alias("Actual"),
+        pl.col("injury_games").alias("Inj. missed"),
+        pl.col("injury_estimated_points").alias("Injury estimate"),
+        pl.col("availability_adjusted_actual").alias("Adjusted actual"),
+        pl.col("adjusted_delta").alias("Adjusted gap"),
+        pl.col("adjusted_delta_percent").alias("Adjusted gap %"),
         pl.col("points_per_game").alias("Per game"),
-        pl.col("projected_games").alias("Games"),
+        pl.col("actual_games").alias("Played"),
+        pl.col("projected_games").alias("Scheduled"),
         pl.col("volatility").alias("Weekly swing"),
         pl.col("model_spread").alias("Model spread"),
-        pl.col("actual_points").alias("Actual"),
     )
     st.dataframe(
         table,
@@ -669,10 +715,32 @@ def _draft_view(
         width="stretch",
         column_config={
             "Projected": st.column_config.NumberColumn(format="%.1f"),
+            "Actual": st.column_config.NumberColumn(format="%.1f"),
+            "Inj. missed": st.column_config.NumberColumn(
+                format="%d",
+                help="Scheduled games missed with an Out injury report or "
+                "reserve-list roster status.",
+            ),
+            "Injury estimate": st.column_config.NumberColumn(
+                format="%.1f",
+                help="Injury misses multiplied by preseason projected points per game.",
+            ),
+            "Adjusted actual": st.column_config.NumberColumn(
+                format="%.1f",
+                help="Actual points plus the injury estimate.",
+            ),
+            "Adjusted gap": st.column_config.NumberColumn(
+                format="%+.1f",
+                help="Adjusted actual minus projected points. Values near zero were "
+                "closest to the original projection.",
+            ),
+            "Adjusted gap %": st.column_config.NumberColumn(
+                format="%+.1f%%",
+                help="Adjusted gap as a percentage of projected points.",
+            ),
             "Per game": st.column_config.NumberColumn(format="%.1f"),
             "Weekly swing": st.column_config.NumberColumn(format="%.1f"),
             "Model spread": st.column_config.NumberColumn(format="%.1f"),
-            "Actual": st.column_config.NumberColumn(format="%.1f"),
         },
     )
     st.download_button(

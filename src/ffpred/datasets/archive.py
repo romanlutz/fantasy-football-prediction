@@ -16,6 +16,7 @@ from ffpred.errors import ConfigurationError, EmptyDatasetError
 from ffpred.features.all_positions import (
     ALL_POSITION_MODEL_FEATURE_COLUMNS,
     FANTASY_POSITIONS,
+    ForecastFrameConfig,
     build_actual_frame,
     build_all_position_forecast_frame,
     build_all_position_training_frame,
@@ -25,7 +26,7 @@ from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
 from ffpred.providers.provenance import ProvenanceProvider
 
-ARCHIVE_MANIFEST_SCHEMA_VERSION = 1
+ARCHIVE_MANIFEST_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -111,8 +112,13 @@ def _write_manifest(
     relevant_sources = {
         name: asdict(artifact)
         for name, artifact in sorted(provider.artifacts.items())
-        if not name.startswith("depth_charts:")
-        or name == f"depth_charts:{result.target_year}"
+        if not name.startswith(("depth_charts:", "injuries:", "rosters_weekly:"))
+        or name
+        in {
+            f"depth_charts:{result.target_year}",
+            f"injuries:{result.target_year}",
+            f"rosters_weekly:{result.target_year}",
+        }
     }
     manifest = {
         "schema_version": ARCHIVE_MANIFEST_SCHEMA_VERSION,
@@ -129,6 +135,10 @@ def _write_manifest(
             "positions": list(FANTASY_POSITIONS),
             "scoring": "standard_non_ppr",
             "model_features": list(ALL_POSITION_MODEL_FEATURE_COLUMNS),
+            "injury_absence_rule": (
+                "scheduled game with no fantasy result and either an Out injury "
+                "report or reserve-list weekly roster status"
+            ),
         },
         "sources": relevant_sources,
         "outputs": {
@@ -194,12 +204,22 @@ def build_forecast_archive(
     ):
         season_dir = config.output_dir / str(target_year)
         training_frame = all_training.filter(pl.col("target_season") < target_year)
+        if target_year <= completed_through:
+            injuries = recording_provider.load_injuries((target_year,))
+            rosters_weekly = recording_provider.load_rosters_weekly((target_year,))
+        else:
+            injuries = pl.DataFrame()
+            rosters_weekly = pl.DataFrame()
         forecast_frame = build_all_position_forecast_frame(
             actuals,
             schedules,
             recording_provider.load_depth_charts((target_year,)),
-            target_year=target_year,
-            as_of=config.as_of,
+            config=ForecastFrameConfig(
+                target_year=target_year,
+                as_of=config.as_of,
+                injuries=injuries,
+                rosters_weekly=rosters_weekly,
+            ),
         )
         training = _write_frame(
             season_dir / "training.parquet",

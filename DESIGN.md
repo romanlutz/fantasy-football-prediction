@@ -112,10 +112,10 @@ A charcoal, night-game palette where nearly all of the interface is dark neutral
 - **Green Deep** (`#214c34`): Field Green's recessed low-light variant — the fill for primary/download buttons and the active workspace pill, so controls read as illuminated turf rather than a flat color chip.
 
 ### Secondary
-- **Comparison Cyan** (`#62b9c8`): The weekly-comparison bar chart, `code` text, and the button `focus-visible` outline — a color-independent focus cue kept deliberately distinct from the green hover state.
+- **Comparison Cyan** (`#62b9c8`): The availability-adjusted marker on the draft board, the weekly-comparison bar chart, `code` text, and the button `focus-visible` outline — a color-independent focus cue kept deliberately distinct from the green hover state.
 
 ### Tertiary
-- **Actual Amber** (`#d4af63`): The confirmed/actual-value marker — the draft-board's actual-points tick marks and the "actual" line in the weekly trend chart. Never used for a projection.
+- **Actual Amber** (`#d4af63`): The confirmed/actual-value marker — the draft-board's actual-points bars and the "actual" line in the weekly trend chart. Never used for a projection.
 - **Evidence Coral** (`#d98578`): The model-room mean-absolute-error bar chart, and the fourth line in the multi-player trend comparison.
 - **Evidence Violet** (`#9b91c9`): Reserved for the fifth compared player's trend line only — the rarest color in the system.
 
@@ -132,7 +132,7 @@ A charcoal, night-game palette where nearly all of the interface is dark neutral
 ### Named Rules
 **The Field Signal Rule.** Field Green (and its Green Deep variant) is reserved for state and action chrome — the status dot, the forecast-state badge, the active workspace pill, buttons, the slider thumb, and the active toggle. It never appears as a comparison or actual-value color inside a chart.
 
-**The Confirmed-Fact Amber Rule.** Actual Amber marks only confirmed, already-happened values — the draft-board's actual-points tick and the trend chart's actual line. A projection is never drawn in amber.
+**The Confirmed-Fact Amber Rule.** Actual Amber marks only confirmed, already-happened values — the draft-board's actual-points bar and the trend chart's actual line. A projection is never drawn in amber. Comparison Cyan marks the derived availability-adjusted total, never the confirmed actual.
 
 **The Evidence Palette Order Rule.** When the weekly trend chart compares more than one player, added lines take colors from a fixed five-step sequence — Field Green, Comparison Cyan, Actual Amber, Evidence Coral, Evidence Violet — always in that order, never reshuffled or reassigned per player.
 

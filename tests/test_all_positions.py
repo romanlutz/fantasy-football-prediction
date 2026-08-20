@@ -14,6 +14,7 @@ from ffpred.features.all_positions import (
     ALL_POSITION_MODEL_FEATURE_COLUMNS,
     FANTASY_POSITIONS,
     build_actual_frame,
+    build_injury_absence_frame,
 )
 from ffpred.providers.fakes import FakeProvider
 from ffpred.training.data import load_training_data
@@ -194,6 +195,76 @@ def test_standard_scoring_includes_kickers_and_defenses() -> None:
 
     assert kicker["fantasy_points"][0] == 14.0
     assert defense["fantasy_points"][0] == 17.0
+
+
+def test_injury_absences_require_out_or_reserve_status() -> None:
+    injuries = pl.DataFrame(
+        {
+            "season": [2010.0, 2010.0],
+            "game_type": ["REG", "REG"],
+            "week": [1.0, 1.0],
+            "gsis_id": ["out-player", "questionable-player"],
+            "report_status": ["Out", "Questionable"],
+        }
+    )
+    rosters = pl.DataFrame(
+        {
+            "season": [2010, 2010],
+            "game_type": ["REG", "REG"],
+            "week": [1, 1],
+            "gsis_id": ["reserve-player", "inactive-player"],
+            "status": ["RES", "INA"],
+        }
+    )
+
+    absences = build_injury_absence_frame(injuries, rosters)
+
+    assert set(absences["player_id"]) == {"out-player", "reserve-player"}
+    assert absences.schema["season"] == pl.Int64
+    assert absences.schema["week"] == pl.Int64
+
+
+def test_archive_persists_source_backed_injury_absence(tmp_path: Path) -> None:
+    provider = _provider()
+    provider.player_stats = provider.player_stats.filter(
+        ~((pl.col("season") == 2010) & (pl.col("player_id") == "GB-RB"))
+    )
+    provider.injuries = pl.DataFrame(
+        {
+            "season": [2010],
+            "game_type": ["REG"],
+            "week": [1],
+            "gsis_id": ["GB-RB"],
+            "report_status": ["Out"],
+        }
+    )
+    provider.rosters_weekly = pl.DataFrame(
+        schema={
+            "season": pl.Int64,
+            "game_type": pl.String,
+            "week": pl.Int64,
+            "gsis_id": pl.String,
+            "status": pl.String,
+        }
+    )
+
+    season = build_forecast_archive(
+        ForecastArchiveConfig(
+            output_dir=tmp_path,
+            history_start=2008,
+            first_target_year=2010,
+            last_target_year=2010,
+        ),
+        provider=provider,
+    ).seasons[0]
+    forecast = pl.read_parquet(season.forecast.path)
+    player = forecast.filter(pl.col("player_id") == "GB-RB")
+    manifest = json.loads(season.manifest_path.read_text())
+
+    assert player["injury_missed_game"].to_list() == [True]
+    assert player["injury_status"].to_list() == ["Out"]
+    assert "injuries:2010" in manifest["sources"]
+    assert "rosters_weekly:2010" in manifest["sources"]
 
 
 def test_archive_fills_missing_depth_position_from_prior_season(

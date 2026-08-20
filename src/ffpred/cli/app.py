@@ -30,7 +30,11 @@ from ffpred.datasets.builder import DatasetBuildConfig, build_datasets
 from ffpred.datasets.forecast import ForecastBuildConfig, build_forecast_datasets
 from ffpred.errors import FfpredError
 from ffpred.evaluation.metrics import evaluate
-from ffpred.features.all_positions import ALL_POSITION_MODEL_FEATURE_COLUMNS
+from ffpred.features.all_positions import (
+    ALL_POSITION_MODEL_FEATURE_COLUMNS,
+    INJURY_MISSED_COLUMN,
+    INJURY_STATUS_COLUMN,
+)
 from ffpred.features.schema import IDENTITY_COLUMNS, TARGET_COLUMN
 from ffpred.logging import configure_logging
 from ffpred.providers.nflreadpy import NflReadPyProvider
@@ -188,6 +192,8 @@ def _write_predictions(
             "opponent",
             "forecast_as_of",
             "history_through_season",
+            INJURY_STATUS_COLUMN,
+            INJURY_MISSED_COLUMN,
             TARGET_COLUMN,
         )
         if column in test_frame.columns

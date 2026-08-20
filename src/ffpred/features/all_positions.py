@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 import polars as pl
@@ -23,6 +24,17 @@ POSITION_DEPTH_LIMITS: Mapping[str, int] = {
     "K": 1,
 }
 DST_POINTS_ALLOWED_LIMITS = (0, 6, 13, 20, 27, 34)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ForecastFrameConfig:
+    """Target and outcome metadata used to assemble one forecast frame."""
+
+    target_year: int
+    as_of: date | None = None
+    injuries: pl.DataFrame | None = None
+    rosters_weekly: pl.DataFrame | None = None
+
 
 ALL_POSITION_MODEL_FEATURE_COLUMNS = (
     "player_last_1_points",
@@ -50,12 +62,16 @@ ALL_POSITION_IDENTITY_COLUMNS = (
     "forecast_as_of",
     "history_through_season",
 )
+INJURY_STATUS_COLUMN = "injury_status"
+INJURY_MISSED_COLUMN = "injury_missed_game"
 ALL_POSITION_LINEAGE_COLUMNS = (
     "player_history_through_season",
     "opponent_history_through_season",
 )
 ALL_POSITION_COLUMNS = (
     *ALL_POSITION_IDENTITY_COLUMNS,
+    INJURY_STATUS_COLUMN,
+    INJURY_MISSED_COLUMN,
     *ALL_POSITION_LINEAGE_COLUMNS,
     *ALL_POSITION_MODEL_FEATURE_COLUMNS,
     TARGET_COLUMN,
@@ -71,6 +87,8 @@ ALL_POSITION_SCHEMA = {
     "target_game_id": pl.String,
     "forecast_as_of": pl.String,
     "history_through_season": pl.Int64,
+    INJURY_STATUS_COLUMN: pl.String,
+    INJURY_MISSED_COLUMN: pl.Boolean,
     "player_history_through_season": pl.Int64,
     "opponent_history_through_season": pl.Int64,
     **dict.fromkeys(ALL_POSITION_MODEL_FEATURE_COLUMNS, pl.Float64),
@@ -337,6 +355,73 @@ def build_actual_frame(
         )
         .select(_ACTUAL_COLUMNS)
         .sort("season", "week", "game_id", "position", "player_id")
+    )
+
+
+def build_injury_absence_frame(
+    injuries: pl.DataFrame,
+    rosters_weekly: pl.DataFrame,
+) -> pl.DataFrame:
+    """Identify source-backed weekly absences due to injury."""
+    schema = {
+        "player_id": pl.String,
+        "season": pl.Int64,
+        "week": pl.Int64,
+        INJURY_STATUS_COLUMN: pl.String,
+    }
+    sources: list[pl.DataFrame] = []
+    if not injuries.is_empty():
+        _require_columns(
+            injuries,
+            ("season", "game_type", "week", "gsis_id", "report_status"),
+            source="injuries",
+        )
+        sources.append(
+            injuries.filter(
+                (pl.col("game_type") == REGULAR_SEASON)
+                & (pl.col("report_status").str.to_lowercase() == "out")
+                & pl.col("gsis_id").is_not_null()
+                & (pl.col("gsis_id") != "")
+            ).select(
+                pl.col("gsis_id").cast(pl.String).alias("player_id"),
+                pl.col("season").cast(pl.Int64),
+                pl.col("week").cast(pl.Int64),
+                pl.lit("Out").alias(INJURY_STATUS_COLUMN),
+            )
+        )
+    if not rosters_weekly.is_empty():
+        _require_columns(
+            rosters_weekly,
+            ("season", "game_type", "week", "gsis_id", "status"),
+            source="rosters_weekly",
+        )
+        sources.append(
+            rosters_weekly.filter(
+                (pl.col("game_type") == REGULAR_SEASON)
+                & (pl.col("status") == "RES")
+                & pl.col("gsis_id").is_not_null()
+                & (pl.col("gsis_id") != "")
+            ).select(
+                pl.col("gsis_id").cast(pl.String).alias("player_id"),
+                pl.col("season").cast(pl.Int64),
+                pl.col("week").cast(pl.Int64),
+                pl.lit("Reserve list").alias(INJURY_STATUS_COLUMN),
+            )
+        )
+    if not sources:
+        return pl.DataFrame(schema=schema)
+    return (
+        pl.concat(sources, how="vertical")
+        .unique()
+        .group_by("player_id", "season", "week")
+        .agg(
+            pl.col(INJURY_STATUS_COLUMN)
+            .unique()
+            .sort()
+            .str.join(" / ")
+            .alias(INJURY_STATUS_COLUMN)
+        )
+        .sort("season", "week", "player_id")
     )
 
 
@@ -607,6 +692,12 @@ def _feature_rows(
     target_year: int,
     forecast_as_of: date,
 ) -> pl.DataFrame:
+    if INJURY_STATUS_COLUMN not in base.columns:
+        base = base.with_columns(
+            pl.lit(None, dtype=pl.String).alias(INJURY_STATUS_COLUMN)
+        )
+    if INJURY_MISSED_COLUMN not in base.columns:
+        base = base.with_columns(pl.lit(False).alias(INJURY_MISSED_COLUMN))
     history = actuals.filter(pl.col("season") < target_year)
     if history.is_empty():
         raise DataAcquisitionError(
@@ -674,6 +765,8 @@ def _feature_rows(
             pl.col("game_id").cast(pl.String).alias("target_game_id"),
             "forecast_as_of",
             "history_through_season",
+            pl.col(INJURY_STATUS_COLUMN).cast(pl.String),
+            pl.col(INJURY_MISSED_COLUMN).cast(pl.Boolean),
             "player_history_through_season",
             "opponent_history_through_season",
             *ALL_POSITION_MODEL_FEATURE_COLUMNS,
@@ -738,11 +831,11 @@ def build_all_position_forecast_frame(
     schedules: pl.DataFrame,
     depth_charts: pl.DataFrame,
     *,
-    target_year: int,
-    as_of: date | None = None,
+    config: ForecastFrameConfig,
 ) -> pl.DataFrame:
     """Build one frozen all-position forecast frame for a target season."""
-    forecast_as_of = _forecast_date(schedules, target_year, as_of)
+    target_year = config.target_year
+    forecast_as_of = _forecast_date(schedules, target_year, config.as_of)
     candidates = _depth_candidates(
         depth_charts,
         target_year=target_year,
@@ -765,6 +858,14 @@ def build_all_position_forecast_frame(
         )
     )
     roster = pl.concat([candidates, dst], how="vertical")
+    injury_absences = build_injury_absence_frame(
+        config.injuries if config.injuries is not None else pl.DataFrame(),
+        (
+            config.rosters_weekly
+            if config.rosters_weekly is not None
+            else pl.DataFrame()
+        ),
+    )
     base = (
         matchups.join(roster, on="team", how="inner")
         # Historical outcomes are attached only after every model feature has
@@ -778,6 +879,17 @@ def build_all_position_forecast_frame(
             on=["player_id", "game_id"],
             how="left",
         )
+        .join(
+            injury_absences,
+            on=["player_id", "season", "week"],
+            how="left",
+        )
+        .with_columns(
+            (
+                pl.col(TARGET_COLUMN).is_null()
+                & pl.col(INJURY_STATUS_COLUMN).is_not_null()
+            ).alias(INJURY_MISSED_COLUMN)
+        )
         .select(
             "player_id",
             "player_name",
@@ -788,6 +900,8 @@ def build_all_position_forecast_frame(
             "week",
             "game_id",
             "is_home",
+            INJURY_STATUS_COLUMN,
+            INJURY_MISSED_COLUMN,
             TARGET_COLUMN,
         )
     )
@@ -815,7 +929,10 @@ def validate_all_position_frame(
             problems.append(
                 f"{column!r} is {frame.schema[column]}, expected {expected}"
             )
-        if (target_required or column != TARGET_COLUMN) and frame[column].null_count():
+        null_allowed = column == INJURY_STATUS_COLUMN or (
+            column == TARGET_COLUMN and not target_required
+        )
+        if not null_allowed and frame[column].null_count():
             problems.append(f"{column!r} contains null values")
     unsupported = (
         set(frame["position"].unique().to_list()) - set(FANTASY_POSITIONS)
