@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import Never
@@ -16,7 +16,9 @@ from numpy.typing import NDArray
 
 from ffpred.cli.options import (
     BuildOptions,
+    EbmOptions,
     EvaluateOptions,
+    ExplainabilityOptions,
     MlpOptions,
     ReceivingBuildOptions,
     SvrOptions,
@@ -35,6 +37,13 @@ from ffpred.datasets.builder import (
     build_receiving_datasets,
 )
 from ffpred.errors import FfpredError
+from ffpred.evaluation.cohorts import residual_cohorts
+from ffpred.evaluation.explainability import (
+    ConformalPredictionInterval,
+    accumulated_local_effects,
+    model_agnostic_shap_values,
+    temporal_permutation_importance,
+)
 from ffpred.evaluation.metrics import evaluate
 from ffpred.features import dst_schema, idp_schema, kicker_schema, receiving_schema
 from ffpred.features import schema as qb_schema
@@ -42,8 +51,14 @@ from ffpred.features.schema import TARGET_COLUMN
 from ffpred.logging import configure_logging
 from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
-from ffpred.training.data import load_training_data
+from ffpred.training.data import TrainingData, load_training_data
+from ffpred.training.ebm import (
+    EbmConfig,
+    train_ebm,
+    write_ebm_explanations,
+)
 from ffpred.training.mlp import MlpConfig, train_mlp
+from ffpred.training.result import TrainingResult
 from ffpred.training.svr import (
     candidate_configs,
     select_config,
@@ -53,7 +68,7 @@ from ffpred.training.svr import (
 
 LOGGER = logging.getLogger(__name__)
 PREDICTION_COLUMN = "prediction"
-#: Positions supported by the generic train-svr/train-mlp/evaluate commands.
+#: Positions supported by the generic training and evaluation commands.
 #: Adding a position here only requires a feature-schema module exposing
 #: MODEL_FEATURE_COLUMNS, IDENTITY_COLUMNS, and validate_feature_frame;
 #: TARGET_COLUMN is shared. RB/WR/TE share one feature schema (they differ
@@ -140,6 +155,8 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
     svr.add_argument("--manual-features", action="store_true")
     svr.add_argument("--select-hyperparameters", action="store_true")
     svr.add_argument("--folds", type=int, default=5)
+    svr.add_argument("--random-state", type=int, default=42)
+    _add_explainability_arguments(svr)
 
     mlp = subparsers.add_parser("train-mlp", help="train an MLP model")
     _add_dataset_arguments(mlp, "mlp-predictions.parquet")
@@ -155,6 +172,28 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
     mlp.add_argument("--iterations", type=int, default=1000)
     mlp.add_argument("--learning-rate", type=float, default=0.001)
     mlp.add_argument("--random-state", type=int, default=42)
+    _add_explainability_arguments(mlp)
+
+    ebm = subparsers.add_parser(
+        "train-ebm",
+        help="train an Explainable Boosting Machine",
+    )
+    _add_dataset_arguments(ebm, "ebm-predictions.parquet")
+    ebm.add_argument(
+        "--position", choices=tuple(POSITION_FEATURE_COLUMNS), default="qb"
+    )
+    ebm.add_argument("--max-bins", type=int, default=256)
+    ebm.add_argument("--interactions", type=int, default=10)
+    ebm.add_argument("--max-rounds", type=int, default=5_000)
+    ebm.add_argument("--learning-rate", type=float, default=0.04)
+    ebm.add_argument("--min-samples-leaf", type=int, default=4)
+    ebm.add_argument("--outer-bags", type=int, default=8)
+    ebm.add_argument("--validation-size", type=float, default=0.15)
+    ebm.add_argument("--calibration-fraction", type=float, default=0.2)
+    ebm.add_argument("--interval-coverage", type=float, default=0.9)
+    ebm.add_argument("--random-state", type=int, default=42)
+    ebm.add_argument("--jobs", type=int, default=-2)
+    _add_explainability_arguments(ebm, default=Path("ebm-explanations.json"))
 
     evaluation = subparsers.add_parser(
         "evaluate",
@@ -203,6 +242,18 @@ def _add_dataset_arguments(
     )
 
 
+def _add_explainability_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    default: Path | None = None,
+) -> None:
+    parser.add_argument("--explanations", type=Path, default=default)
+    parser.add_argument("--ale-bins", type=int, default=10)
+    parser.add_argument("--permutation-repeats", type=int, default=5)
+    parser.add_argument("--shap-background", type=int, default=100)
+    parser.add_argument("--shap-samples", type=int, default=25)
+
+
 def _provider(settings: Settings) -> NflDataProvider:
     return NflReadPyProvider(
         cache_mode=("filesystem" if settings.cache_mode == "filesystem" else "off"),
@@ -216,11 +267,19 @@ def _write_predictions(
     predictions: NDArray[np.float64],
     *,
     identity_columns: tuple[str, ...],
+    additional_columns: Mapping[str, NDArray[np.float64]] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame = test_frame.select(*identity_columns, TARGET_COLUMN).with_columns(
         pl.Series(PREDICTION_COLUMN, predictions, dtype=pl.Float64)
     )
+    if additional_columns:
+        frame = frame.with_columns(
+            *(
+                pl.Series(name, values, dtype=pl.Float64)
+                for name, values in additional_columns.items()
+            )
+        )
     frame.write_parquet(path, compression="zstd", statistics=True)
 
 
@@ -249,6 +308,7 @@ def _svr_options(args: argparse.Namespace) -> SvrOptions:
         test_path=args.test,
         predictions_path=args.predictions,
         position=args.position,
+        explainability=_explainability_options(args),
         manual_features=args.manual_features,
         select_hyperparameters=args.select_hyperparameters,
         folds=args.folds,
@@ -261,10 +321,43 @@ def _mlp_options(args: argparse.Namespace) -> MlpOptions:
         test_path=args.test,
         predictions_path=args.predictions,
         position=args.position,
+        explainability=_explainability_options(args),
         hidden_units=args.hidden_units,
         activation=args.activation,
         iterations=args.iterations,
         learning_rate=args.learning_rate,
+        random_state=args.random_state,
+    )
+
+
+def _ebm_options(args: argparse.Namespace) -> EbmOptions:
+    return EbmOptions(
+        train_path=args.train,
+        test_path=args.test,
+        predictions_path=args.predictions,
+        position=args.position,
+        explainability=_explainability_options(args),
+        max_bins=args.max_bins,
+        interactions=args.interactions,
+        max_rounds=args.max_rounds,
+        learning_rate=args.learning_rate,
+        min_samples_leaf=args.min_samples_leaf,
+        outer_bags=args.outer_bags,
+        validation_size=args.validation_size,
+        calibration_fraction=args.calibration_fraction,
+        interval_coverage=args.interval_coverage,
+        random_state=args.random_state,
+        n_jobs=args.jobs,
+    )
+
+
+def _explainability_options(args: argparse.Namespace) -> ExplainabilityOptions:
+    return ExplainabilityOptions(
+        path=args.explanations,
+        ale_bins=args.ale_bins,
+        permutation_repeats=args.permutation_repeats,
+        shap_background=args.shap_background,
+        shap_samples=args.shap_samples,
         random_state=args.random_state,
     )
 
@@ -397,10 +490,24 @@ def _run_svr(options: SvrOptions) -> dict[str, object]:
         result.predictions,
         identity_columns=identity_columns,
     )
+    explanations_path = options.explainability.path
+    if explanations_path is not None:
+        _write_diagnostics(
+            explanations_path,
+            "SVR",
+            _model_diagnostics(
+                result,
+                train,
+                test,
+                identity_columns,
+                options.explainability,
+            ),
+        )
     return {
         "metrics": asdict(result.metrics),
         "features": list(result.feature_names),
         "predictions": str(options.predictions_path),
+        "explanations": str(explanations_path) if explanations_path else None,
         "config": asdict(config) if config else None,
     }
 
@@ -425,12 +532,196 @@ def _run_mlp(options: MlpOptions) -> dict[str, object]:
         result.predictions,
         identity_columns=identity_columns,
     )
+    explanations_path = options.explainability.path
+    if explanations_path is not None:
+        _write_diagnostics(
+            explanations_path,
+            "MLPRegressor",
+            _model_diagnostics(
+                result,
+                train,
+                test,
+                identity_columns,
+                options.explainability,
+            ),
+        )
     return {
         "metrics": asdict(result.metrics),
         "features": list(result.feature_names),
         "predictions": str(options.predictions_path),
+        "explanations": str(explanations_path) if explanations_path else None,
         "config": asdict(config),
     }
+
+
+def _run_ebm(options: EbmOptions) -> dict[str, object]:
+    feature_names = POSITION_FEATURE_COLUMNS[options.position]
+    identity_columns = POSITION_IDENTITY_COLUMNS[options.position]
+    validator = POSITION_VALIDATORS[options.position]
+    train = load_training_data(options.train_path, feature_names, validator=validator)
+    test = load_training_data(options.test_path, feature_names, validator=validator)
+    config = EbmConfig(
+        max_bins=options.max_bins,
+        interactions=options.interactions,
+        max_rounds=options.max_rounds,
+        learning_rate=options.learning_rate,
+        min_samples_leaf=options.min_samples_leaf,
+        outer_bags=options.outer_bags,
+        validation_size=options.validation_size,
+        calibration_fraction=options.calibration_fraction,
+        interval_coverage=options.interval_coverage,
+        random_state=options.random_state,
+        n_jobs=options.n_jobs,
+    )
+    result = train_ebm(train, test, config=config)
+    interval_columns = (
+        {
+            "prediction_lower": result.prediction_interval.lower,
+            "prediction_upper": result.prediction_interval.upper,
+        }
+        if result.prediction_interval is not None
+        else None
+    )
+    _write_predictions(
+        options.predictions_path,
+        test.frame,
+        result.predictions,
+        identity_columns=identity_columns,
+        additional_columns=interval_columns,
+    )
+    diagnostics = _model_diagnostics(
+        result,
+        train,
+        test,
+        identity_columns,
+        options.explainability,
+        prediction_interval=result.prediction_interval,
+    )
+    explanations_path = options.explainability.path
+    if explanations_path is None:
+        raise ValueError("EBM explanations require an output path")
+    write_ebm_explanations(
+        explanations_path,
+        result.explanations,
+        identities=test.frame.select(identity_columns).to_dicts(),
+        diagnostics=diagnostics,
+    )
+    return {
+        "metrics": asdict(result.metrics),
+        "features": list(result.feature_names),
+        "predictions": str(options.predictions_path),
+        "explanations": str(explanations_path),
+        "config": asdict(config),
+    }
+
+
+def _model_diagnostics(  # noqa: PLR0913
+    result: TrainingResult,
+    train: TrainingData,
+    test: TrainingData,
+    identity_columns: tuple[str, ...],
+    options: ExplainabilityOptions,
+    *,
+    prediction_interval: ConformalPredictionInterval | None = None,
+) -> dict[str, object]:
+    ale = tuple(
+        accumulated_local_effects(
+            result.estimator,
+            train.features,
+            index,
+            name,
+            bins=options.ale_bins,
+        )
+        for index, name in enumerate(train.feature_names)
+    )
+    permutation = temporal_permutation_importance(
+        result.estimator,
+        test.features,
+        test.target,
+        test.frame["target_season"],
+        test.feature_names,
+        repeats=options.permutation_repeats,
+        random_state=options.random_state,
+    )
+    shap_values = model_agnostic_shap_values(
+        result.estimator,
+        train.features,
+        test.features,
+        test.feature_names,
+        max_background=options.shap_background,
+        max_samples=options.shap_samples,
+        random_state=options.random_state,
+    )
+    categorical_cohorts = tuple(
+        column
+        for column in ("position", "position_group", "target_week")
+        if column in test.frame
+    )
+    opponent_strength = tuple(
+        name
+        for name in test.feature_names
+        if name.endswith("defense_last_10_points_allowed")
+    )
+    numeric_cohorts = tuple(
+        column for column in ("years_pro", *opponent_strength) if column in test.frame
+    )
+    cohorts = residual_cohorts(
+        test.frame,
+        test.target,
+        result.predictions,
+        categorical_columns=categorical_cohorts,
+        quantile_columns=numeric_cohorts,
+    )
+    return {
+        "conformal_interval": (
+            {
+                "coverage": prediction_interval.coverage,
+                "radius": prediction_interval.radius,
+                "calibration_samples": prediction_interval.calibration_samples,
+            }
+            if prediction_interval is not None
+            else None
+        ),
+        "ale": [asdict(curve) for curve in ale],
+        "temporal_permutation_importance": [
+            asdict(importance) for importance in permutation
+        ],
+        "shap": {
+            "feature_names": list(shap_values.feature_names),
+            "values": shap_values.values.tolist(),
+            "base_values": shap_values.base_values.tolist(),
+            "data": shap_values.data.tolist(),
+            "sample_indices": list(shap_values.sample_indices),
+            "identities": test.frame[list(shap_values.sample_indices)]
+            .select(identity_columns)
+            .to_dicts(),
+        },
+        "residual_cohorts": [asdict(cohort) for cohort in cohorts],
+    }
+
+
+def _write_diagnostics(
+    path: Path,
+    model: str,
+    diagnostics: Mapping[str, object],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    temporary.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "model": model,
+                "diagnostics": diagnostics,
+            },
+            allow_nan=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _run_evaluate(options: EvaluateOptions) -> dict[str, object]:
@@ -483,6 +774,8 @@ def main(
             output = _run_svr(_svr_options(args))
         elif args.command == "train-mlp":
             output = _run_mlp(_mlp_options(args))
+        elif args.command == "train-ebm":
+            output = _run_ebm(_ebm_options(args))
         else:
             output = _run_evaluate(EvaluateOptions(predictions_path=args.predictions))
     except FfpredError as error:

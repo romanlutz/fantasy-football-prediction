@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from ffpred.errors import ModelTrainingError
 
 MINIMUM_FOLDS = 2
+MINIMUM_CALIBRATION_PERIODS = 2
 
 
 def chronological_folds(
@@ -47,3 +48,35 @@ def chronological_folds(
             np.flatnonzero(train_mask).astype(np.int64),
             np.flatnonzero(validation_mask).astype(np.int64),
         )
+
+
+def chronological_calibration_split(
+    frame: pl.DataFrame,
+    calibration_fraction: float,
+) -> tuple[NDArray[np.int64], NDArray[np.int64]]:
+    """Reserve the latest whole periods for conformal calibration."""
+    if not 0 < calibration_fraction < 1:
+        raise ModelTrainingError("Calibration fraction must be between zero and one")
+    periods = sorted(set(frame.select("target_season", "target_week").iter_rows()))
+    if len(periods) < MINIMUM_CALIBRATION_PERIODS:
+        raise ModelTrainingError(
+            "Conformal calibration requires at least two distinct periods"
+        )
+    calibration_periods = min(
+        len(periods) - 1,
+        max(1, int(np.ceil(len(periods) * calibration_fraction))),
+    )
+    first_calibration = periods[-calibration_periods]
+    season = frame["target_season"].to_numpy()
+    week = frame["target_week"].to_numpy()
+    training_mask = np.array(
+        [
+            (row_season, row_week) < first_calibration
+            for row_season, row_week in zip(season, week, strict=True)
+        ]
+    )
+    calibration_mask = ~training_mask
+    return (
+        np.flatnonzero(training_mask).astype(np.int64),
+        np.flatnonzero(calibration_mask).astype(np.int64),
+    )

@@ -12,9 +12,10 @@ tag.
 
 This project builds reproducible, leakage-safe fantasy-football datasets from
 [nflverse](https://github.com/nflverse/nflverse-data), then trains support-
-vector and multilayer-perceptron regressors. QB, team defense/special-teams
-(D/ST), kicker, RB/WR/TE, and individual defensive player (IDP) prediction
-are all implemented; see the Positions table below for scope and caveats.
+vector, multilayer-perceptron, and Explainable Boosting Machine regressors. QB,
+team defense/special-teams (D/ST), kicker, RB/WR/TE, and individual defensive
+player (IDP) prediction are all implemented; see the Positions table below for
+scope and caveats.
 
 ## Requirements and setup
 
@@ -77,7 +78,7 @@ $env:FFPRED_CACHE_MODE = "filesystem"
 uv run ffpred build-dataset
 ```
 
-Train and evaluate either model. Pass `--position dst`, `--position k`,
+Train and evaluate any model. Pass `--position dst`, `--position k`,
 `--position rb`, `--position wr`, `--position te`, or `--position idp` to
 train on that dataset instead of the default quarterback dataset
 (`--manual-features` is quarterback-only):
@@ -85,11 +86,39 @@ train on that dataset instead of the default quarterback dataset
 ```console
 uv run ffpred train-svr --train train.parquet --test test.parquet
 uv run ffpred train-mlp --train train.parquet --test test.parquet
+uv run ffpred train-ebm --train train.parquet --test test.parquet
+uv run ffpred train-svr --explanations svr-explanations.json
+uv run ffpred train-mlp --explanations mlp-explanations.json
 uv run ffpred train-svr --position dst --train train.parquet --test test.parquet
 uv run ffpred train-mlp --position k --train train.parquet --test test.parquet
-uv run ffpred train-svr --position wr --train train.parquet --test test.parquet
+uv run ffpred train-ebm --position wr --train train.parquet --test test.parquet
 uv run ffpred evaluate svr-predictions.parquet
 ```
+
+`train-ebm` writes `ebm-explanations.json` and calibrated
+`prediction_lower`/`prediction_upper` columns by default. Its versioned
+artifact contains native EBM term importance, learned main-effect and
+interaction shapes with uncertainty bounds, and a complete additive
+decomposition of every test prediction. It also includes:
+
+- finite-sample split-conformal interval metadata, calibrated only on the
+  latest held-out training periods;
+- accumulated local effects (ALE) curves for every numeric feature;
+- held-out permutation importance that shuffles within seasons;
+- model-agnostic permutation SHAP values; and
+- residual cohorts for week, position, experience, and rolling opponent
+  points allowed when those columns exist for the selected position.
+
+Each local explanation includes the row's player or team identity, so future
+visualizations can link model behavior back to a concrete fantasy projection.
+Use `--explanations` to choose a different path, `--interactions 0` to fit main
+effects only, and `--interval-coverage` to change interval coverage.
+
+SVR and MLP expose the same ALE, temporal permutation, SHAP, and cohort report
+when `--explanations PATH` is supplied, making their diagnostics directly
+comparable with EBM. Their existing training behavior is unchanged when the
+option is omitted. Controls such as `--ale-bins`, `--permutation-repeats`,
+`--shap-background`, and `--shap-samples` bound diagnostic cost.
 
 Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as
@@ -112,7 +141,7 @@ cli -> training/evaluation -> datasets -> features -> acquisition -> providers
 - `acquisition`: runtime-validated Polars schemas and normalized domain records.
 - `features`: named, typed, rolling features with explicit history lineage.
 - `datasets`: atomic Parquet IO and versioned provenance manifests.
-- `training`: deterministic, scaled SVR and MLP library APIs.
+- `training`: deterministic SVR, MLP, and explainable EBM library APIs.
 - `evaluation`: shared metrics, chronological splits, cohorts, and plots.
 - `cli`: the composition root; provider choice and process behavior stay here.
 

@@ -59,6 +59,7 @@ def test_train_and_evaluate_commands_write_parquet(
     )
     capsys.readouterr()
     predictions = tmp_path / "predictions.parquet"
+    explanations = tmp_path / "svr-explanations.json"
 
     train_result = main(
         [
@@ -69,6 +70,14 @@ def test_train_and_evaluate_commands_write_parquet(
             str(tmp_path / "test.parquet"),
             "--predictions",
             str(predictions),
+            "--explanations",
+            str(explanations),
+            "--shap-samples",
+            "1",
+            "--shap-background",
+            "1",
+            "--permutation-repeats",
+            "1",
         ]
     )
     train_output = json.loads(capsys.readouterr().out)
@@ -78,9 +87,88 @@ def test_train_and_evaluate_commands_write_parquet(
     assert train_result == 0
     assert evaluation_result == 0
     assert predictions.exists()
+    assert explanations.exists()
+    explanation_data = json.loads(explanations.read_text(encoding="utf-8"))
     assert train_output["metrics"]["samples"] == 1
+    assert train_output["explanations"] == str(explanations)
+    assert explanation_data["model"] == "SVR"
+    assert explanation_data["diagnostics"]["shap"]["identities"][0]["player_id"]
     assert evaluation_output["metrics"] == train_output["metrics"]
     assert "prediction" in pl.read_parquet(predictions).columns
+
+
+def test_train_ebm_writes_predictions_and_explanations(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    main(
+        [
+            "build-dataset",
+            "--output-dir",
+            str(tmp_path),
+            "--history-start",
+            "2020",
+            "--train-start",
+            "2021",
+            "--test-year",
+            "2022",
+        ],
+        provider=make_provider(),
+    )
+    capsys.readouterr()
+    predictions = tmp_path / "ebm-predictions.parquet"
+    explanations = tmp_path / "ebm-explanations.json"
+
+    result = main(
+        [
+            "train-ebm",
+            "--train",
+            str(tmp_path / "train.parquet"),
+            "--test",
+            str(tmp_path / "test.parquet"),
+            "--predictions",
+            str(predictions),
+            "--explanations",
+            str(explanations),
+            "--interactions",
+            "0",
+            "--max-rounds",
+            "5",
+            "--min-samples-leaf",
+            "1",
+            "--outer-bags",
+            "1",
+            "--validation-size",
+            "0",
+            "--calibration-fraction",
+            "0",
+            "--jobs",
+            "1",
+        ]
+    )
+    output = json.loads(capsys.readouterr().out)
+    explanation_data = json.loads(explanations.read_text(encoding="utf-8"))
+
+    assert result == 0
+    assert predictions.exists()
+    assert output["explanations"] == str(explanations)
+    assert explanation_data["schema_version"] == 1
+    assert set(explanation_data["diagnostics"]) == {
+        "ale",
+        "conformal_interval",
+        "residual_cohorts",
+        "shap",
+        "temporal_permutation_importance",
+    }
+    assert (
+        explanation_data["diagnostics"]["shap"]["identities"][0]["player_id"]
+        == explanation_data["local"][0]["identity"]["player_id"]
+    )
+    prediction_frame = pl.read_parquet(predictions)
+    assert (
+        explanation_data["local"][0]["identity"]["player_id"]
+        == prediction_frame["player_id"][0]
+    )
 
 
 def test_dst_build_train_and_evaluate_round_trip(

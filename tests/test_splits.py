@@ -2,7 +2,10 @@ import polars as pl
 import pytest
 
 from ffpred.errors import ModelTrainingError
-from ffpred.evaluation.splits import chronological_folds
+from ffpred.evaluation.splits import (
+    chronological_calibration_split,
+    chronological_folds,
+)
 from ffpred.training.data import training_data_from_frame
 from ffpred.training.svr import (
     MANUAL_FEATURE_COLUMNS,
@@ -45,6 +48,20 @@ def test_chronological_folds_reject_insufficient_periods() -> None:
                 2,
             )
         )
+
+
+def test_chronological_calibration_split_reserves_latest_whole_periods() -> None:
+    frame = pl.DataFrame(
+        {
+            "target_season": [2024, 2024, 2024, 2024, 2024, 2024],
+            "target_week": [1, 1, 2, 2, 3, 3],
+        }
+    )
+
+    training, calibration = chronological_calibration_split(frame, 0.34)
+
+    assert training.tolist() == [0, 1]
+    assert calibration.tolist() == [2, 3, 4, 5]
 
 
 def test_svr_search_space_and_manual_features_are_stable() -> None:
