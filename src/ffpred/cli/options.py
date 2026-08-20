@@ -109,3 +109,10 @@ class InjuryReportOptions:
     end_season: int
     positions: tuple[str, ...]
     trailing_window: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CurrentInjuriesOptions:
+    """Current (ESPN-sourced) injury snapshot command options."""
+
+    output_path: Path

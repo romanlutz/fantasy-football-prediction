@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import Never
@@ -25,6 +25,7 @@ from ffpred.acquisition.normalize import (
 )
 from ffpred.cli.options import (
     BuildOptions,
+    CurrentInjuriesOptions,
     EbmOptions,
     EvaluateOptions,
     ExplainabilityOptions,
@@ -64,6 +65,11 @@ from ffpred.features import dst_schema, idp_schema, kicker_schema, receiving_sch
 from ffpred.features import schema as qb_schema
 from ffpred.features.schema import TARGET_COLUMN
 from ffpred.logging import configure_logging
+from ffpred.providers.espn import (
+    build_espn_injury_snapshot,
+    espn_injury_snapshot_frame,
+    fetch_espn_injuries,
+)
 from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
 from ffpred.training.data import TrainingData, load_training_data
@@ -174,52 +180,16 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
     )
 
     svr = subparsers.add_parser("train-svr", help="train an SVR model")
-    _add_dataset_arguments(svr, "svr-predictions.parquet")
-    svr.add_argument(
-        "--position", choices=tuple(POSITION_FEATURE_COLUMNS), default="qb"
-    )
-    svr.add_argument("--manual-features", action="store_true")
-    svr.add_argument("--select-hyperparameters", action="store_true")
-    svr.add_argument("--folds", type=int, default=5)
-    svr.add_argument("--random-state", type=int, default=42)
-    _add_explainability_arguments(svr)
+    _add_svr_arguments(svr)
 
     mlp = subparsers.add_parser("train-mlp", help="train an MLP model")
-    _add_dataset_arguments(mlp, "mlp-predictions.parquet")
-    mlp.add_argument(
-        "--position", choices=tuple(POSITION_FEATURE_COLUMNS), default="qb"
-    )
-    mlp.add_argument("--hidden-units", type=int, default=50)
-    mlp.add_argument(
-        "--activation",
-        choices=("identity", "logistic", "tanh", "relu"),
-        default="relu",
-    )
-    mlp.add_argument("--iterations", type=int, default=1000)
-    mlp.add_argument("--learning-rate", type=float, default=0.001)
-    mlp.add_argument("--random-state", type=int, default=42)
-    _add_explainability_arguments(mlp)
+    _add_mlp_arguments(mlp)
 
     ebm = subparsers.add_parser(
         "train-ebm",
         help="train an Explainable Boosting Machine",
     )
-    _add_dataset_arguments(ebm, "ebm-predictions.parquet")
-    ebm.add_argument(
-        "--position", choices=tuple(POSITION_FEATURE_COLUMNS), default="qb"
-    )
-    ebm.add_argument("--max-bins", type=int, default=256)
-    ebm.add_argument("--interactions", type=int, default=10)
-    ebm.add_argument("--max-rounds", type=int, default=5_000)
-    ebm.add_argument("--learning-rate", type=float, default=0.04)
-    ebm.add_argument("--min-samples-leaf", type=int, default=4)
-    ebm.add_argument("--outer-bags", type=int, default=8)
-    ebm.add_argument("--validation-size", type=float, default=0.15)
-    ebm.add_argument("--calibration-fraction", type=float, default=0.2)
-    ebm.add_argument("--interval-coverage", type=float, default=0.9)
-    ebm.add_argument("--random-state", type=int, default=42)
-    ebm.add_argument("--jobs", type=int, default=-2)
-    _add_explainability_arguments(ebm, default=Path("ebm-explanations.json"))
+    _add_ebm_arguments(ebm)
 
     evaluation = subparsers.add_parser(
         "evaluate",
@@ -233,7 +203,20 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
         "affected their fantasy score versus their pre-injury pace",
     )
     _add_injury_report_arguments(injury_report)
+
+    current_injuries = subparsers.add_parser(
+        "current-injuries",
+        help="fetch today's injury report from ESPN's public (unofficial) "
+        "endpoint -- an operational supplement for seasons nflverse's own "
+        "injury-report source no longer covers; not part of the "
+        "leakage-safe historical feature pipeline",
+    )
+    _add_current_injuries_arguments(current_injuries)
     return parser
+
+
+def _add_current_injuries_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--output", type=Path, default=Path("current-injuries.csv"))
 
 
 def _add_injury_report_arguments(parser: argparse.ArgumentParser) -> None:
@@ -244,6 +227,54 @@ def _add_injury_report_arguments(parser: argparse.ArgumentParser) -> None:
         "--positions", choices=tuple(INJURY_REPORT_POSITIONS), default="all"
     )
     parser.add_argument("--trailing-window", type=int, default=4)
+
+
+def _add_svr_arguments(parser: argparse.ArgumentParser) -> None:
+    _add_dataset_arguments(parser, "svr-predictions.parquet")
+    parser.add_argument(
+        "--position", choices=tuple(POSITION_FEATURE_COLUMNS), default="qb"
+    )
+    parser.add_argument("--manual-features", action="store_true")
+    parser.add_argument("--select-hyperparameters", action="store_true")
+    parser.add_argument("--folds", type=int, default=5)
+    parser.add_argument("--random-state", type=int, default=42)
+    _add_explainability_arguments(parser)
+
+
+def _add_mlp_arguments(parser: argparse.ArgumentParser) -> None:
+    _add_dataset_arguments(parser, "mlp-predictions.parquet")
+    parser.add_argument(
+        "--position", choices=tuple(POSITION_FEATURE_COLUMNS), default="qb"
+    )
+    parser.add_argument("--hidden-units", type=int, default=50)
+    parser.add_argument(
+        "--activation",
+        choices=("identity", "logistic", "tanh", "relu"),
+        default="relu",
+    )
+    parser.add_argument("--iterations", type=int, default=1000)
+    parser.add_argument("--learning-rate", type=float, default=0.001)
+    parser.add_argument("--random-state", type=int, default=42)
+    _add_explainability_arguments(parser)
+
+
+def _add_ebm_arguments(parser: argparse.ArgumentParser) -> None:
+    _add_dataset_arguments(parser, "ebm-predictions.parquet")
+    parser.add_argument(
+        "--position", choices=tuple(POSITION_FEATURE_COLUMNS), default="qb"
+    )
+    parser.add_argument("--max-bins", type=int, default=256)
+    parser.add_argument("--interactions", type=int, default=10)
+    parser.add_argument("--max-rounds", type=int, default=5_000)
+    parser.add_argument("--learning-rate", type=float, default=0.04)
+    parser.add_argument("--min-samples-leaf", type=int, default=4)
+    parser.add_argument("--outer-bags", type=int, default=8)
+    parser.add_argument("--validation-size", type=float, default=0.15)
+    parser.add_argument("--calibration-fraction", type=float, default=0.2)
+    parser.add_argument("--interval-coverage", type=float, default=0.9)
+    parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--jobs", type=int, default=-2)
+    _add_explainability_arguments(parser, default=Path("ebm-explanations.json"))
 
 
 def _add_build_arguments(
@@ -353,6 +384,10 @@ def _injury_report_options(args: argparse.Namespace) -> InjuryReportOptions:
         positions=INJURY_REPORT_POSITIONS[args.positions],
         trailing_window=args.trailing_window,
     )
+
+
+def _current_injuries_options(args: argparse.Namespace) -> CurrentInjuriesOptions:
+    return CurrentInjuriesOptions(output_path=args.output)
 
 
 def _svr_options(args: argparse.Namespace) -> SvrOptions:
@@ -838,10 +873,45 @@ def _run_injury_report(
     }
 
 
+def _run_current_injuries(
+    options: CurrentInjuriesOptions,
+    provider: NflDataProvider,
+    fetch: Callable[[], dict[str, object]] | None,
+) -> dict[str, object]:
+    records = fetch_espn_injuries() if fetch is None else fetch_espn_injuries(fetch)
+    players = provider.load_players()
+    snapshots = build_espn_injury_snapshot(records, players)
+
+    frame = espn_injury_snapshot_frame(snapshots)
+    options.output_path.parent.mkdir(parents=True, exist_ok=True)
+    frame.write_csv(options.output_path)
+
+    status_counts = (
+        frame.group_by("status").len().sort("status").to_dict(as_series=False)
+        if frame.height
+        else {"status": [], "len": []}
+    )
+    by_status = dict(zip(status_counts["status"], status_counts["len"], strict=True))
+    return {
+        "output": str(options.output_path),
+        "players": frame.height,
+        "espn_records_seen": len(records),
+        "by_status": by_status,
+        "note": (
+            "ESPN's injuries endpoint is unofficial and undocumented, and only "
+            "exposes a current snapshot -- it is a live operational supplement "
+            "for seasons after nflverse's own injury-report source stopped "
+            "updating (see 'injury-report'), not a source of historical "
+            "leakage-safe training features."
+        ),
+    }
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     provider: NflDataProvider | None = None,
+    espn_fetch: Callable[[], dict[str, object]] | None = None,
 ) -> int:
     """Execute one command and return a process exit code."""
     settings = Settings.from_env()
@@ -883,6 +953,12 @@ def main(
             output = _run_injury_report(
                 _injury_report_options(args),
                 provider or _provider(settings),
+            )
+        elif args.command == "current-injuries":
+            output = _run_current_injuries(
+                _current_injuries_options(args),
+                provider or _provider(settings),
+                espn_fetch,
             )
         else:
             output = _run_evaluate(EvaluateOptions(predictions_path=args.predictions))

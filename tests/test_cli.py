@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from ffpred.cli.app import main
+from ffpred.providers.fakes import FakeProvider
 from tests.factories import (
     make_dst_provider,
     make_idp_provider,
@@ -471,3 +472,123 @@ def test_injury_report_command_defaults_to_all_positions(
     # No RB/WR/TE data exists in this provider, so only the QB's two
     # reported weeks should appear even though every position was requested.
     assert output["events"] == 2
+
+
+def test_current_injuries_command_writes_espn_snapshot_csv(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_path = tmp_path / "current.csv"
+    payload: dict[str, object] = {
+        "injuries": [
+            {
+                "id": "22",
+                "displayName": "Test Team",
+                "abbreviation": "KC",
+                "injuries": [
+                    {
+                        "status": "Questionable",
+                        "shortComment": "Limited in practice.",
+                        "date": "2025-09-10T12:00Z",
+                        "details": {"type": "Hamstring"},
+                        "athlete": {
+                            "displayName": "Test Player",
+                            "links": [
+                                {
+                                    "href": "https://www.espn.com/nfl/player/_/id/999123/test-player"
+                                }
+                            ],
+                            "team": {"abbreviation": "KC"},
+                        },
+                    }
+                ],
+            }
+        ]
+    }
+    # Unlike make_injury_report_provider's players frame (built for the
+    # unrelated injury-report tests), this needs an espn_id column so the
+    # command's GSIS crosswalk can actually match the fixture's athlete ID.
+    provider = FakeProvider(
+        players=pl.DataFrame(
+            {"gsis_id": ["00-TEST"], "espn_id": ["999123"]},
+        )
+    )
+
+    result = main(
+        ["current-injuries", "--output", str(output_path)],
+        provider=provider,
+        espn_fetch=lambda: payload,
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert output_path.exists()
+    assert output["espn_records_seen"] == 1
+    assert output["players"] == 1
+    assert output["by_status"] == {"Questionable": 1}
+    frame = pl.read_csv(output_path)
+    assert frame.height == 1
+    assert frame["player_id"][0] == "00-TEST"
+    assert frame["status"][0] == "Questionable"
+
+
+def test_current_injuries_command_reports_zero_matches_without_crosswalk(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An ESPN athlete ID with no matching espn_id in the players frame is
+    fetched but not crosswalked to a known player -- this still exercises
+    the full command path end to end without a network call, rather than
+    erroring.
+    """
+    output_path = tmp_path / "current.csv"
+    payload: dict[str, object] = {
+        "injuries": [
+            {
+                "id": "22",
+                "displayName": "Test Team",
+                "abbreviation": "KC",
+                "injuries": [
+                    {
+                        "status": "Questionable",
+                        "shortComment": None,
+                        "date": None,
+                        "details": {},
+                        "athlete": {
+                            "displayName": "Unmatched Player",
+                            "links": [
+                                {
+                                    "href": "https://www.espn.com/nfl/player/_/id/000000/unmatched-player"
+                                }
+                            ],
+                            "team": {"abbreviation": "KC"},
+                        },
+                    }
+                ],
+            }
+        ]
+    }
+    provider = FakeProvider(
+        players=pl.DataFrame({"gsis_id": ["00-TEST"], "espn_id": ["999123"]})
+    )
+
+    result = main(
+        ["current-injuries", "--output", str(output_path)],
+        provider=provider,
+        espn_fetch=lambda: payload,
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert output["espn_records_seen"] == 1
+    assert output["players"] == 0
+    frame = pl.read_csv(output_path)
+    assert frame.is_empty()
+    assert "status" in frame.columns
+    # make_injury_report_provider's players frame, so the record is fetched
+    # but not crosswalked to a known player -- this still exercises the
+    # full command path end to end without a network call.
+    assert output["players"] == 0
+    frame = pl.read_csv(output_path)
+    assert frame.is_empty()
+    assert "status" in frame.columns

@@ -9,6 +9,7 @@ dependencies = [
     "nflreadpy==0.1.5",
     "numpy>=2.0",
     "polars>=1.30",
+    "requests>=2.31",
     "scikit-learn>=1.5",
     "shap>=0.51,<0.52",
 ]

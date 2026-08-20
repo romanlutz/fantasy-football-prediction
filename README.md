@@ -100,6 +100,21 @@ Injury-report data is only available for the 2009-2024 seasons (nflverse's
 source was retired after the 2024 season with no replacement announced);
 requests outside that range return no events rather than raising.
 
+For seasons after that -- where the pace comparison above has no historical
+data to draw on -- `current-injuries` fetches **today's** report from ESPN's
+public (unofficial) injuries endpoint as an operational supplement, and
+crosswalks it to GSIS player IDs:
+
+```console
+uv run ffpred current-injuries --output current-injuries.csv
+```
+
+This is a live snapshot only, not a source of historical training features:
+ESPN's endpoint is undocumented, unofficial, and exposes no reliable way to
+query a past week or season, so it cannot backfill the leakage-safe
+`injury-report`/dataset pipeline above -- it's meant for sanity-checking a
+prediction for an upcoming game against today's actual report.
+
 Train and evaluate any model. Pass `--position dst`, `--position k`,
 `--position rb`, `--position wr`, `--position te`, or `--position idp` to
 train on that dataset instead of the default quarterback dataset
@@ -159,7 +174,8 @@ cli -> training/evaluation -> datasets -> features -> acquisition -> providers
 ```
 
 - `domain`: immutable identifiers, game records, histories, and scoring rules.
-- `providers`: the `NflDataProvider` protocol plus real and in-memory adapters.
+- `providers`: the `NflDataProvider` protocol plus real and in-memory adapters,
+  and a standalone ESPN injuries client outside that protocol (see below).
 - `acquisition`: runtime-validated Polars schemas and normalized domain records.
 - `features`: named, typed, rolling features with explicit history lineage.
 - `datasets`: atomic Parquet IO and versioned provenance manifests.
@@ -172,6 +188,12 @@ Only the nflreadpy adapter imports `nflreadpy`. Polars DataFrames are validated
 at acquisition and feature boundaries because static type checkers cannot track
 column-level schemas. Internal domain state uses typed dataclasses and strong
 identifier types instead of heterogeneous dictionaries.
+
+`providers/espn.py` is deliberately *not* an `NflDataProvider` implementation:
+it fetches a different shape of data (a live JSON snapshot, not a seasonal
+Parquet/CSV release) from a different, unofficial service, and is consumed
+directly by the `current-injuries` CLI command rather than by the
+acquisition/features/datasets chain.
 
 ## Artifacts and reproducibility
 
@@ -215,7 +237,11 @@ Injury-report data (used by `injury-report`, not by any `build-*-dataset`
 feature schema above) is acquired the same way, via
 `acquire_injury_reports`, but is only available for the 2009-2024 seasons;
 nflverse retired the source after the 2024 season with no replacement
-announced.
+announced. `current-injuries` supplements this for later seasons via
+ESPN's public (unofficial) endpoint (`providers/espn.py`), deliberately kept
+outside the acquisition/features/datasets chain: it only exposes a current
+snapshot, not queryable historical weeks, so it cannot produce leakage-safe
+training rows the way `acquire_injury_reports` does.
 
 ## Quality checks
 
@@ -242,10 +268,16 @@ uv run pytest -m live_slow --no-cov
 
 The second command includes the larger play-by-play download (only needed by
 QB acquisition, for two-point attempts). CI runs the core live contracts
-weekly and allows the play-by-play tier through manual dispatch.
+weekly and allows the play-by-play tier through manual dispatch. The same
+`live` tier also includes a check against ESPN's public injuries endpoint
+(`tests/live/test_espn_live.py`); being unofficial and undocumented, it may
+change shape or become unavailable without notice, independent of nflverse's
+own release schedule.
 
 ## Data licensing
 
 `nflreadpy` is MIT-licensed. Most nflverse data is CC BY 4.0; specialized FTN
 data uses CC BY-SA 4.0. This project uses standard player, team, schedule,
-roster, and play-by-play datasets rather than FTN charting.
+roster, and play-by-play datasets rather than FTN charting. ESPN's injuries
+endpoint (used only by `current-injuries`) is an unofficial, undocumented
+public API with no stated license terms; use it accordingly.

@@ -429,6 +429,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "polars" },
+    { name = "requests" },
     { name = "scikit-learn" },
     { name = "shap" },
 ]
@@ -451,6 +452,7 @@ requires-dist = [
     { name = "nflreadpy", specifier = "==0.1.5" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "polars", specifier = ">=1.30" },
+    { name = "requests", specifier = ">=2.31" },
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "shap", specifier = ">=0.51,<0.52" },
 ]
