@@ -70,7 +70,8 @@ The **Draft Board** aggregates weekly rows into season totals. **Weekly
 Decisions** keeps single-game comparisons separate, and **Model Room** shows
 error and bias when actual results are present. The dashboard automatically
 discovers `*-predictions.parquet` files in the current directory and
-`artifacts/`; files can also be uploaded in the browser.
+`artifacts/`. Prediction-file selection stays out of the interface; use repeated
+`--predictions` arguments when launching against explicit artifacts.
 
 The dashboard reads the complete point-in-time archive from `artifacts/`, so the
 season selector covers 2010 through the upcoming season and the position filter

@@ -179,6 +179,8 @@ def test_dashboard_app_renders_all_workspaces(
     app = AppTest.from_file(app_path, default_timeout=30).run()
 
     assert not app.exception
+    assert not app.file_uploader
+    assert next(widget for widget in app.selectbox if widget.label == "Target season")
     assert app.radio[0].options == [
         "Draft Board",
         "Weekly Decisions",
@@ -220,7 +222,7 @@ def test_dashboard_exposes_all_artifact_seasons_and_positions(
     monkeypatch.chdir(tmp_path)
 
     app = AppTest.from_file(app_path, default_timeout=30).run()
-    season = next(widget for widget in app.selectbox if widget.label == "Season")
+    season = next(widget for widget in app.selectbox if widget.label == "Target season")
     position = next(widget for widget in app.multiselect if widget.label == "Position")
 
     assert not app.exception

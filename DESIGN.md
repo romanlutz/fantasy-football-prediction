@@ -53,10 +53,6 @@ components:
   button-primary-hover:
     backgroundColor: "#2a6140"
     textColor: "#eef8ef"
-  button-upload:
-    backgroundColor: "{colors.surface-high}"
-    textColor: "{colors.broadcast-text}"
-    rounded: "{rounded.sm}"
   workspace-tab:
     backgroundColor: "transparent"
     textColor: "{colors.broadcast-text}"
@@ -74,9 +70,6 @@ components:
     rounded: "{rounded.md}"
   dataframe-container:
     rounded: "{rounded.md}"
-  sidebar-panel:
-    backgroundColor: "{colors.panel-deep}"
-    textColor: "{colors.broadcast-text}"
   input-field:
     backgroundColor: "{colors.field-surface}"
     textColor: "{colors.broadcast-text}"
@@ -155,11 +148,11 @@ A charcoal, night-game palette where nearly all of the interface is dark neutral
 
 ## Layout
 
-The container is capped at 1440px with 2rem of top padding and 4.5rem of bottom padding, sitting on the charcoal canvas's faint two-axis 40px green grid. The first viewport stacks, in order: a command header (title and description beside a bordered forecast-state badge, with an animated Field Green underline growing along its bottom edge), a telemetry rail of stat cells directly beneath it, a three-cell equal-width workspace selector, then the active workspace's full-width content and ranking table.
+The container is capped at 1440px with 2rem of top padding and 4.5rem of bottom padding, sitting on the charcoal canvas's faint two-axis 40px green grid. The first viewport stacks, in order: a command header (title and description beside a bordered forecast-state badge, with an animated Field Green underline growing along its bottom edge), an attached mission-control rail for target season, position, and model, a compact provenance rail, a three-cell equal-width workspace selector, then the active workspace's full-width content and ranking table.
 
-A permanent Panel Deep sidebar (bordered `1px solid` Grid Line) holds two labeled sections — "Data feeds" (the Parquet uploader and the active feed list) and "Mission controls" (season, position, and model filters) — one step darker than the main canvas, though only by a single tonal step rather than a hard color break.
+Prediction artifacts are discovered and loaded in the background; their file-level mechanics never occupy the decision surface. The three mission controls sit directly beneath the command header in a Panel Deep rail so users can change the forecast context before entering a workspace.
 
-At the 760px breakpoint, container padding becomes `3.35rem .8rem 3rem`, the command header collapses to a single column (the forecast-state badge drops below the title and description instead of sitting beside them), the telemetry rail reflows from `auto-fit, minmax(125px, 1fr)` into a fixed 2-column grid with alternating border removal, and workspace-pill labels shrink to `.74rem` — but the selector's underlying CSS grid stays `repeat(3, minmax(0, 1fr))` at every width, so the three destinations never stack or collapse into a dropdown.
+At the 760px breakpoint, container padding becomes `3.35rem .8rem 3rem`, the command header collapses to a single column (the forecast-state badge drops below the title and description instead of sitting beside them), mission controls wrap into full-width groups as needed, the three compact provenance cells remain in one row, and workspace-pill labels shrink to `.74rem` — but the selector's underlying CSS grid stays `repeat(3, minmax(0, 1fr))` at every width, so the three destinations never stack or collapse into a dropdown.
 
 ### Named Rules
 **The Equal Three Rule.** The workspace selector is a real CSS grid of `repeat(3, minmax(0, 1fr))` — Draft Board, Weekly Decisions, Model Room always render as one equal-width row, at every viewport width, with only label size and padding shrinking below 760px.
@@ -189,7 +182,6 @@ Every interactive surface carries a small radius instead of a square or clipped 
 - **Shape:** 7px radius, `1px solid rgba(119, 213, 132, .48)` border.
 - **Primary:** Green Deep (`#214c34`) background, `#e5f3e7` text, weight 650, with the Button Rest shadow at rest.
 - **Hover / Focus:** Hover lightens the background to `#2a6140`, solidifies the border to Field Green, brightens the text to `#eef8ef`, and lifts the button (`translateY(-1px)`) into the Button Hover shadow. `focus-visible` gets a distinct `2px solid` Comparison Cyan outline with 2px offset — deliberately not green, so focus is never confused with hover.
-- **Secondary (file uploader):** Surface High (`#1b2b2f`) background, Grid Line Strong border, Broadcast Text color, the same 7px radius — no `clip-path`, no shadow; visually quieter than the primary action.
 
 ### Cards / Containers
 - **Corner Style:** 8px radius on dataframes, alerts, and the expander.
@@ -199,7 +191,7 @@ Every interactive surface carries a small radius instead of a square or clipped 
 - **Internal Padding:** Telemetry items use `.8rem 1rem .9rem`; the forecast-state badge uses `.75rem .9rem`.
 
 ### Inputs / Fields
-- **Style:** 7px radius, Field Surface background, Grid Line Strong border. Inside the sidebar, the same controls fill with Surface High instead, so they read one step lighter than the panel behind them.
+- **Style:** 7px radius, Field Surface background, Grid Line Strong border. Inside the mission-control rail, controls fill with Surface High so they read one step lighter than the panel behind them.
 - **Focus:** Buttons carry an explicit Comparison Cyan `focus-visible` outline; other controls use BaseWeb/Streamlit's default focus treatment.
 
 ### Navigation (Workspace Selector)
@@ -210,10 +202,10 @@ Every interactive surface carries a small radius instead of a square or clipped 
 A `112deg` gradient panel (Surface High → Panel Deep, 10px top radius) holding the masthead title and description on the left, and a bordered Forecast State badge — status dot, "Forecast state" label, and the live artifact mode ("Point-in-time replay" / "Upcoming forecast" / "Rolling backtest") — on the right. Its bottom edge carries the `field-lock` animated Field Green underline, growing from 4% to 18% width on load.
 
 ### Telemetry Rail (signature component)
-A dense horizontal strip of stat cells directly under the command header (`auto-fit, minmax(125px, 1fr)`), each pairing an uppercase muted-text label with a bold value: target season, model view, matchup rows, positions, and — for frozen forecasts — history-through-season and forecast-lock date. It is the live telemetry the system promises: provenance facts sit at the same visual weight as the ranking data below them.
+A dense horizontal strip of stat cells directly under the mission controls (`auto-fit, minmax(125px, 1fr)`), each pairing an uppercase muted-text label with a bold value: matchup rows and — for frozen forecasts — history-through-season and forecast-lock date. It is the live telemetry the system promises without repeating editable context.
 
-### Sidebar (signature component)
-A permanent Panel Deep filing panel split into two labeled sections — "Data feeds" (the Parquet uploader plus the active feed list, shown as `st.code` chips) and "Mission controls" (season, position, and model filters) — one step darker than the main canvas, bordered by a single `1px solid` Grid Line rule rather than a hard color break.
+### Mission-Control Rail (signature component)
+An attached Panel Deep control strip directly below the command header. Target season, position, and model view are editable in one responsive row, using persistent uppercase labels and Surface High fields. On narrow screens the controls wrap into usable full-width groups rather than moving into hidden navigation.
 
 ## Do's and Don'ts
 

@@ -5,14 +5,13 @@ from __future__ import annotations
 import argparse
 import sys
 from html import escape
-from io import BytesIO
 from pathlib import Path
 from typing import Never
 
 import altair as alt
 import polars as pl
 import streamlit as st
-from streamlit.runtime.uploaded_file_manager import UploadedFile
+from streamlit.delta_generator import DeltaGenerator
 from streamlit.web import cli as streamlit_cli
 
 from ffpred.dashboard.data import (
@@ -24,7 +23,6 @@ from ffpred.dashboard.data import (
     model_choices,
     model_scorecard,
     player_history,
-    prepare_predictions,
     select_model,
     weekly_board,
 )
@@ -83,27 +81,6 @@ def _inject_styles() -> None:
         [data-testid="stHeader"] {
             background: rgba(13, 21, 23, .92);
             border-bottom: 1px solid rgba(60, 91, 96, .45);
-        }
-        [data-testid="stSidebar"] {
-            background: var(--panel);
-            border-right: 1px solid var(--line);
-        }
-        [data-testid="stSidebar"] * { color: var(--text); }
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
-            border-bottom: 1px solid var(--line);
-            color: var(--text) !important;
-            font-size: .82rem !important;
-            letter-spacing: .11em !important;
-            margin: 1.45rem 0 .85rem !important;
-            padding-bottom: .65rem;
-            text-transform: uppercase;
-        }
-        [data-testid="stSidebar"] [data-baseweb="select"] > div,
-        [data-testid="stSidebar"] [data-baseweb="input"] > div,
-        [data-testid="stSidebar"] [data-baseweb="base-input"],
-        [data-testid="stSidebar"] [data-baseweb="tag"] {
-            background: var(--surface-high);
-            border-color: var(--line-strong);
         }
         .block-container {
             box-sizing: border-box;
@@ -215,6 +192,22 @@ def _inject_styles() -> None:
             grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
             margin-bottom: 1.35rem;
         }
+        .st-key-mission-controls {
+            background: var(--panel);
+            border-left: 1px solid var(--line);
+            border-right: 1px solid var(--line);
+            padding: .78rem 1rem .9rem;
+        }
+        .st-key-mission-controls label {
+            color: var(--muted) !important;
+            font-size: .68rem !important;
+            font-weight: 650 !important;
+            letter-spacing: .095em !important;
+            text-transform: uppercase;
+        }
+        .st-key-mission-controls [data-baseweb="select"] > div {
+            background: var(--surface-high);
+        }
         .telemetry-item {
             border-right: 1px solid var(--line);
             min-width: 0;
@@ -282,13 +275,6 @@ def _inject_styles() -> None:
             box-shadow: 0 8px 20px rgba(0, 0, 0, .16);
             font-weight: 650;
         }
-        [data-testid="stFileUploader"] button {
-            background: var(--surface-high) !important;
-            border: 1px solid var(--line-strong) !important;
-            border-radius: 7px !important;
-            color: var(--text) !important;
-            font-weight: 600;
-        }
         .stButton > button:hover, .stDownloadButton > button:hover {
             background: #2a6140;
             border-color: var(--green);
@@ -344,13 +330,20 @@ def _inject_styles() -> None:
             }
             .command-header p { overflow-wrap: anywhere; }
             .forecast-state { min-width: 0; width: fit-content; }
-            .telemetry-rail { grid-template-columns: 1fr 1fr; }
-            .telemetry-item:nth-child(even) { border-right: 0; }
+            .st-key-mission-controls { padding: .7rem .8rem .8rem; }
+            .st-key-mission-controls [data-testid="stHorizontalBlock"] {
+                flex-wrap: wrap;
+            }
+            .st-key-mission-controls [data-testid="stColumn"] {
+                flex: 1 1 13rem !important;
+                min-width: min(13rem, 100%);
+            }
+            .telemetry-rail {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
             .telemetry-item {
-                border-bottom: 1px solid var(--line);
                 padding: .72rem .8rem;
             }
-            .telemetry-item:nth-last-child(-n + 2) { border-bottom: 0; }
             [data-testid="stRadio"] > div { max-width: none; }
             [data-testid="stRadio"] label {
                 font-size: .74rem;
@@ -411,42 +404,16 @@ def _load_paths(paths: tuple[str, ...]) -> pl.DataFrame:
     return load_prediction_files([Path(path) for path in paths])
 
 
-def _load_uploaded_files(files: list[UploadedFile]) -> pl.DataFrame:
-    frames = [
-        prepare_predictions(
-            pl.read_parquet(BytesIO(upload.getvalue())),
-            model_name=Path(upload.name).stem.removesuffix("-predictions").upper(),
-        )
-        for upload in files
-    ]
-    return pl.concat(frames, how="diagonal_relaxed")
-
-
 def _load_data() -> pl.DataFrame:
     arguments = _arguments()
     paths = arguments.predictions or _discover_prediction_files()
 
-    with st.sidebar:
-        st.markdown("## Data feeds")
-        uploads = st.file_uploader(
-            "Add prediction Parquet files",
-            type=["parquet"],
-            accept_multiple_files=True,
-            help="Each file needs player, season, week, and prediction columns.",
-        )
-        if paths:
-            st.caption("Active prediction feeds")
-            for path in paths:
-                st.code(path.name, language=None)
-
-    if uploads:
-        return _load_uploaded_files(uploads)
     if paths:
         return _load_paths(tuple(str(path) for path in paths))
 
     st.warning(
-        "No prediction sheets found. Upload a Parquet file in the sidebar, "
-        "or start with `--predictions PATH`."
+        "No prediction sheets were found. Build the forecast archive or start "
+        "the dashboard with `--predictions PATH`."
     )
     st.code(
         "uv run ffpred-dashboard --predictions artifacts/svr-predictions.parquet",
@@ -455,45 +422,52 @@ def _load_data() -> pl.DataFrame:
     st.stop()
 
 
-def _global_filters(frame: pl.DataFrame) -> tuple[pl.DataFrame, int, list[str], str]:
+def _global_filters(
+    frame: pl.DataFrame,
+    *,
+    header: st.delta_generator.DeltaGenerator,
+) -> tuple[pl.DataFrame, int, list[str], str]:
     seasons = sorted(frame["target_season"].unique().to_list(), reverse=True)
     positions = sorted(frame["position"].unique().to_list())
     models = model_choices(frame)
 
-    with st.sidebar:
-        st.markdown("## Mission controls")
-        season = int(st.selectbox("Season", seasons))
+    with st.container(key="mission-controls"):
+        season_control, position_control, model_control = st.columns([1, 2, 1])
+        season = int(
+            season_control.selectbox(
+                "Target season",
+                seasons,
+                help="Choose an upcoming forecast or a frozen historical replay.",
+            )
+        )
         chosen_positions = [
             str(position)
-            for position in st.multiselect(
+            for position in position_control.multiselect(
                 "Position",
                 positions,
                 default=positions,
-                help="Filter the board to one or more standard fantasy positions.",
+                help="Filter every workspace to one or more fantasy positions.",
             )
         ]
-        model = st.selectbox(
+        model = model_control.selectbox(
             "Model view",
             models,
             index=0,
-            help="Consensus averages predictions when multiple sheets are loaded.",
-        )
-        st.divider()
-        st.caption(
-            "Standard non-PPR scoring. Predictions support decisions; they do not "
-            "guarantee player outcomes."
+            help="Consensus averages matching SVR and MLP predictions.",
         )
 
     selected = select_model(
         frame.filter(pl.col("target_season") == season),
         model,
     )
+    _command_header(header, selected)
     return selected, season, chosen_positions, model
 
 
-def _masthead(frame: pl.DataFrame, model: str) -> None:
-    positions = escape(", ".join(sorted(frame["position"].unique().to_list())))
-    target_season = int(frame["target_season"][0])
+def _command_header(
+    header: DeltaGenerator,
+    frame: pl.DataFrame,
+) -> None:
     actual_rows = frame[ACTUAL_COLUMN].count()
     is_frozen_forecast = "history_through_season" in frame.columns
     if is_frozen_forecast and actual_rows:
@@ -502,17 +476,7 @@ def _masthead(frame: pl.DataFrame, model: str) -> None:
         artifact_mode = "Upcoming forecast"
     else:
         artifact_mode = "Rolling backtest"
-    provenance_items = ""
-    if is_frozen_forecast:
-        history_through = int(frame["history_through_season"][0])
-        forecast_as_of = escape(str(frame["forecast_as_of"][0]))
-        provenance_items = (
-            "<div class='telemetry-item'>"
-            f"<span>History through</span><strong>{history_through}</strong></div>"
-            "<div class='telemetry-item'>"
-            f"<span>Forecast lock</span><strong>{forecast_as_of}</strong></div>"
-        )
-    st.html(
+    header.html(
         f"""
         <section class="command-header">
           <div>
@@ -526,18 +490,28 @@ def _masthead(frame: pl.DataFrame, model: str) -> None:
             <strong>{artifact_mode}</strong>
           </div>
         </section>
+        """
+    )
+
+
+def _masthead(frame: pl.DataFrame, model: str) -> None:
+    actual_rows = frame[ACTUAL_COLUMN].count()
+    is_frozen_forecast = "history_through_season" in frame.columns
+    provenance_items = ""
+    if is_frozen_forecast:
+        history_through = int(frame["history_through_season"][0])
+        forecast_as_of = escape(str(frame["forecast_as_of"][0]))
+        provenance_items = (
+            "<div class='telemetry-item'>"
+            f"<span>History through</span><strong>{history_through}</strong></div>"
+            "<div class='telemetry-item'>"
+            f"<span>Forecast lock</span><strong>{forecast_as_of}</strong></div>"
+        )
+    st.html(
+        f"""
         <div class="telemetry-rail">
           <div class="telemetry-item">
-            <span>Target season</span><strong>{target_season}</strong>
-          </div>
-          <div class="telemetry-item">
-            <span>Model view</span><strong>{escape(model)}</strong>
-          </div>
-          <div class="telemetry-item">
             <span>Matchup rows</span><strong>{frame.height:,}</strong>
-          </div>
-          <div class="telemetry-item">
-            <span>Positions</span><strong>{positions}</strong>
           </div>
           {provenance_items}
         </div>
@@ -561,7 +535,7 @@ def _masthead(frame: pl.DataFrame, model: str) -> None:
     if model == CONSENSUS_MODEL:
         st.caption(
             "Consensus is the per-game average of the loaded SVR and MLP "
-            "predictions. Choose either model sheet in the sidebar to view it alone."
+            "predictions. Choose either model in the controls above to view it alone."
         )
 
 
@@ -978,7 +952,7 @@ def render() -> None:
         page_title="Fantasy Forecast Center",
         page_icon="F",
         layout="wide",
-        initial_sidebar_state="auto",
+        initial_sidebar_state="collapsed",
     )
     _inject_styles()
     try:
@@ -987,7 +961,8 @@ def render() -> None:
         st.error(f"Could not open the prediction sheet: {error}")
         st.stop()
 
-    selected, season, positions, model = _global_filters(source)
+    header = st.empty()
+    selected, season, positions, model = _global_filters(source, header=header)
     selected_season = selected.filter(pl.col("target_season") == season)
     _masthead(selected_season, model)
     workspace = st.radio(
