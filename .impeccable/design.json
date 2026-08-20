@@ -1,111 +1,111 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-19T21:54:05.660Z",
-  "title": "Design System: Fantasy War Room",
+  "generatedAt": "2026-08-20T14:22:21.818Z",
+  "title": "Design System: Fantasy Forecast Center",
   "extensions": {
     "colorMeta": {
-      "ink-navy": {
+      "charcoal-field": {
+        "role": "neutral",
+        "displayName": "Charcoal Field",
+        "canonical": "oklch(18.9% 0.013 214.8)",
+        "tonalRamp": ["oklch(15% 0.013 214.8)", "oklch(28% 0.013 214.8)", "oklch(41% 0.013 214.8)", "oklch(54% 0.013 214.8)", "oklch(67% 0.013 214.8)", "oklch(78% 0.013 214.8)", "oklch(88% 0.013 214.8)", "oklch(95% 0.013 214.8)"]
+      },
+      "panel-deep": {
+        "role": "neutral",
+        "displayName": "Panel Deep",
+        "canonical": "oklch(22.5% 0.018 215.0)",
+        "tonalRamp": ["oklch(15% 0.018 215.0)", "oklch(28% 0.018 215.0)", "oklch(41% 0.018 215.0)", "oklch(54% 0.018 215.0)", "oklch(67% 0.018 215.0)", "oklch(78% 0.018 215.0)", "oklch(88% 0.018 215.0)", "oklch(95% 0.018 215.0)"]
+      },
+      "field-surface": {
+        "role": "neutral",
+        "displayName": "Field Surface",
+        "canonical": "oklch(24.6% 0.019 213.6)",
+        "tonalRamp": ["oklch(15% 0.019 213.6)", "oklch(28% 0.019 213.6)", "oklch(41% 0.019 213.6)", "oklch(54% 0.019 213.6)", "oklch(67% 0.019 213.6)", "oklch(78% 0.019 213.6)", "oklch(88% 0.019 213.6)", "oklch(95% 0.019 213.6)"]
+      },
+      "surface-high": {
+        "role": "neutral",
+        "displayName": "Surface High",
+        "canonical": "oklch(27.7% 0.023 215.0)",
+        "tonalRamp": ["oklch(15% 0.023 215.0)", "oklch(28% 0.023 215.0)", "oklch(41% 0.023 215.0)", "oklch(54% 0.023 215.0)", "oklch(67% 0.023 215.0)", "oklch(78% 0.023 215.0)", "oklch(88% 0.023 215.0)", "oklch(95% 0.023 215.0)"]
+      },
+      "grid-line": {
+        "role": "neutral",
+        "displayName": "Grid Line",
+        "canonical": "oklch(35.4% 0.029 209.5)",
+        "tonalRamp": ["oklch(15% 0.029 209.5)", "oklch(28% 0.029 209.5)", "oklch(41% 0.029 209.5)", "oklch(54% 0.029 209.5)", "oklch(67% 0.029 209.5)", "oklch(78% 0.029 209.5)", "oklch(88% 0.029 209.5)", "oklch(95% 0.029 209.5)"]
+      },
+      "grid-line-strong": {
+        "role": "neutral",
+        "displayName": "Grid Line Strong",
+        "canonical": "oklch(44.9% 0.037 208.6)",
+        "tonalRamp": ["oklch(15% 0.037 208.6)", "oklch(28% 0.037 208.6)", "oklch(41% 0.037 208.6)", "oklch(54% 0.037 208.6)", "oklch(67% 0.037 208.6)", "oklch(78% 0.037 208.6)", "oklch(88% 0.037 208.6)", "oklch(95% 0.037 208.6)"]
+      },
+      "broadcast-text": {
+        "role": "neutral",
+        "displayName": "Broadcast Text",
+        "canonical": "oklch(92.1% 0.014 174.1)",
+        "tonalRamp": ["oklch(15% 0.014 174.1)", "oklch(28% 0.014 174.1)", "oklch(41% 0.014 174.1)", "oklch(54% 0.014 174.1)", "oklch(67% 0.014 174.1)", "oklch(78% 0.014 174.1)", "oklch(88% 0.014 174.1)", "oklch(95% 0.014 174.1)"]
+      },
+      "telemetry-muted": {
+        "role": "neutral",
+        "displayName": "Telemetry Muted",
+        "canonical": "oklch(72.0% 0.026 180.3)",
+        "tonalRamp": ["oklch(15% 0.026 180.3)", "oklch(28% 0.026 180.3)", "oklch(41% 0.026 180.3)", "oklch(54% 0.026 180.3)", "oklch(67% 0.026 180.3)", "oklch(78% 0.026 180.3)", "oklch(88% 0.026 180.3)", "oklch(95% 0.026 180.3)"]
+      },
+      "field-green": {
         "role": "primary",
-        "displayName": "Ink Navy",
-        "canonical": "oklch(26.1% 0.047 261.2)",
-        "tonalRamp": ["oklch(15% 0.030 261.2)", "oklch(28% 0.040 261.2)", "oklch(41% 0.046 261.2)", "oklch(54% 0.047 261.2)", "oklch(67% 0.043 261.2)", "oklch(78% 0.036 261.2)", "oklch(88% 0.028 261.2)", "oklch(95% 0.021 261.2)"]
+        "displayName": "Field Green",
+        "canonical": "oklch(79.5% 0.145 147.2)",
+        "tonalRamp": ["oklch(15% 0.145 147.2)", "oklch(28% 0.145 147.2)", "oklch(41% 0.145 147.2)", "oklch(54% 0.145 147.2)", "oklch(67% 0.145 147.2)", "oklch(78% 0.145 147.2)", "oklch(88% 0.145 147.2)", "oklch(95% 0.145 147.2)"]
       },
-      "gold-highlight": {
+      "green-deep": {
+        "role": "primary",
+        "displayName": "Green Deep",
+        "canonical": "oklch(37.8% 0.064 157.0)",
+        "tonalRamp": ["oklch(15% 0.064 157.0)", "oklch(28% 0.064 157.0)", "oklch(41% 0.064 157.0)", "oklch(54% 0.064 157.0)", "oklch(67% 0.064 157.0)", "oklch(78% 0.064 157.0)", "oklch(88% 0.064 157.0)", "oklch(95% 0.064 157.0)"]
+      },
+      "comparison-cyan": {
         "role": "secondary",
-        "displayName": "Gold Highlight",
-        "canonical": "oklch(75.8% 0.145 86.7)",
-        "tonalRamp": ["oklch(15% 0.094 86.7)", "oklch(28% 0.123 86.7)", "oklch(41% 0.141 86.7)", "oklch(54% 0.144 86.7)", "oklch(67% 0.132 86.7)", "oklch(78% 0.111 86.7)", "oklch(88% 0.085 86.7)", "oklch(95% 0.065 86.7)"]
+        "displayName": "Comparison Cyan",
+        "canonical": "oklch(73.7% 0.086 210.0)",
+        "tonalRamp": ["oklch(15% 0.086 210.0)", "oklch(28% 0.086 210.0)", "oklch(41% 0.086 210.0)", "oklch(54% 0.086 210.0)", "oklch(67% 0.086 210.0)", "oklch(78% 0.086 210.0)", "oklch(88% 0.086 210.0)", "oklch(95% 0.086 210.0)"]
       },
-      "red-stamp": {
+      "actual-amber": {
         "role": "tertiary",
-        "displayName": "Red Stamp",
-        "canonical": "oklch(52.4% 0.168 27.9)",
-        "tonalRamp": ["oklch(15% 0.108 27.9)", "oklch(28% 0.143 27.9)", "oklch(41% 0.164 27.9)", "oklch(54% 0.167 27.9)", "oklch(67% 0.153 27.9)", "oklch(78% 0.128 27.9)", "oklch(88% 0.099 27.9)", "oklch(95% 0.076 27.9)"]
+        "displayName": "Actual Amber",
+        "canonical": "oklch(77.1% 0.104 84.0)",
+        "tonalRamp": ["oklch(15% 0.104 84.0)", "oklch(28% 0.104 84.0)", "oklch(41% 0.104 84.0)", "oklch(54% 0.104 84.0)", "oklch(67% 0.104 84.0)", "oklch(78% 0.104 84.0)", "oklch(88% 0.104 84.0)", "oklch(95% 0.104 84.0)"]
       },
-      "blue-info": {
+      "evidence-coral": {
         "role": "tertiary",
-        "displayName": "Blue Info",
-        "canonical": "oklch(48.5% 0.071 231.3)",
-        "tonalRamp": ["oklch(15% 0.046 231.3)", "oklch(28% 0.060 231.3)", "oklch(41% 0.069 231.3)", "oklch(54% 0.071 231.3)", "oklch(67% 0.065 231.3)", "oklch(78% 0.054 231.3)", "oklch(88% 0.042 231.3)", "oklch(95% 0.032 231.3)"]
+        "displayName": "Evidence Coral",
+        "canonical": "oklch(70.2% 0.106 29.5)",
+        "tonalRamp": ["oklch(15% 0.106 29.5)", "oklch(28% 0.106 29.5)", "oklch(41% 0.106 29.5)", "oklch(54% 0.106 29.5)", "oklch(67% 0.106 29.5)", "oklch(78% 0.106 29.5)", "oklch(88% 0.106 29.5)", "oklch(95% 0.106 29.5)"]
       },
-      "warm-paper": {
-        "role": "neutral",
-        "displayName": "Warm Paper",
-        "canonical": "oklch(94.9% 0.021 91.6)",
-        "tonalRamp": ["oklch(15% 0.014 91.6)", "oklch(28% 0.018 91.6)", "oklch(41% 0.020 91.6)", "oklch(54% 0.021 91.6)", "oklch(67% 0.019 91.6)", "oklch(78% 0.016 91.6)", "oklch(88% 0.012 91.6)", "oklch(95% 0.009 91.6)"]
-      },
-      "paper-deep": {
-        "role": "neutral",
-        "displayName": "Paper Deep",
-        "canonical": "oklch(90.2% 0.033 87.3)",
-        "tonalRamp": ["oklch(15% 0.021 87.3)", "oklch(28% 0.028 87.3)", "oklch(41% 0.032 87.3)", "oklch(54% 0.033 87.3)", "oklch(67% 0.030 87.3)", "oklch(78% 0.025 87.3)", "oklch(88% 0.019 87.3)", "oklch(95% 0.015 87.3)"]
-      },
-      "muted-ink": {
-        "role": "neutral",
-        "displayName": "Muted Ink",
-        "canonical": "oklch(50.6% 0.019 251.0)",
-        "tonalRamp": ["oklch(15% 0.012 251.0)", "oklch(28% 0.016 251.0)", "oklch(41% 0.019 251.0)", "oklch(54% 0.019 251.0)", "oklch(67% 0.017 251.0)", "oklch(78% 0.015 251.0)", "oklch(88% 0.011 251.0)", "oklch(95% 0.009 251.0)"]
-      },
-      "rule-line": {
-        "role": "neutral",
-        "displayName": "Rule Line",
-        "canonical": "oklch(66.3% 0.035 85.5)",
-        "tonalRamp": ["oklch(15% 0.023 85.5)", "oklch(28% 0.030 85.5)", "oklch(41% 0.034 85.5)", "oklch(54% 0.035 85.5)", "oklch(67% 0.032 85.5)", "oklch(78% 0.027 85.5)", "oklch(88% 0.021 85.5)", "oklch(95% 0.016 85.5)"]
-      },
-      "sidebar-cream": {
-        "role": "neutral",
-        "displayName": "Sidebar Cream",
-        "canonical": "oklch(95.9% 0.025 89.2)",
-        "tonalRamp": ["oklch(15% 0.016 89.2)", "oklch(28% 0.021 89.2)", "oklch(41% 0.024 89.2)", "oklch(54% 0.025 89.2)", "oklch(67% 0.023 89.2)", "oklch(78% 0.019 89.2)", "oklch(88% 0.015 89.2)", "oklch(95% 0.011 89.2)"]
-      },
-      "sidebar-field": {
-        "role": "neutral",
-        "displayName": "Sidebar Field",
-        "canonical": "oklch(32.8% 0.057 259.6)",
-        "tonalRamp": ["oklch(15% 0.037 259.6)", "oklch(28% 0.048 259.6)", "oklch(41% 0.056 259.6)", "oklch(54% 0.057 259.6)", "oklch(67% 0.052 259.6)", "oklch(78% 0.044 259.6)", "oklch(88% 0.034 259.6)", "oklch(95% 0.026 259.6)"]
-      },
-      "chart-grid": {
-        "role": "neutral",
-        "displayName": "Chart Grid",
-        "canonical": "oklch(82.5% 0.033 87.3)",
-        "tonalRamp": ["oklch(15% 0.021 87.3)", "oklch(28% 0.028 87.3)", "oklch(41% 0.032 87.3)", "oklch(54% 0.033 87.3)", "oklch(67% 0.030 87.3)", "oklch(78% 0.025 87.3)", "oklch(88% 0.019 87.3)", "oklch(95% 0.015 87.3)"]
-      },
-      "chart-line-violet": {
-        "role": "neutral",
-        "displayName": "Chart Line Violet",
-        "canonical": "oklch(50.6% 0.071 302.7)",
-        "tonalRamp": ["oklch(15% 0.046 302.7)", "oklch(28% 0.060 302.7)", "oklch(41% 0.069 302.7)", "oklch(54% 0.071 302.7)", "oklch(67% 0.065 302.7)", "oklch(78% 0.054 302.7)", "oklch(88% 0.042 302.7)", "oklch(95% 0.032 302.7)"]
-      },
-      "alert-paper": {
-        "role": "neutral",
-        "displayName": "Alert Paper",
-        "canonical": "oklch(96.8% 0.021 88.7)",
-        "tonalRamp": ["oklch(15% 0.014 88.7)", "oklch(28% 0.018 88.7)", "oklch(41% 0.020 88.7)", "oklch(54% 0.021 88.7)", "oklch(67% 0.019 88.7)", "oklch(78% 0.016 88.7)", "oklch(88% 0.012 88.7)", "oklch(95% 0.009 88.7)"]
-      },
-      "radio-active-text": {
-        "role": "neutral",
-        "displayName": "Radio Active Text",
-        "canonical": "oklch(97.8% 0.023 84.6)",
-        "tonalRamp": ["oklch(15% 0.015 84.6)", "oklch(28% 0.020 84.6)", "oklch(41% 0.022 84.6)", "oklch(54% 0.023 84.6)", "oklch(67% 0.021 84.6)", "oklch(78% 0.018 84.6)", "oklch(88% 0.014 84.6)", "oklch(95% 0.010 84.6)"]
+      "evidence-violet": {
+        "role": "tertiary",
+        "displayName": "Evidence Violet",
+        "canonical": "oklch(68.6% 0.082 292.3)",
+        "tonalRamp": ["oklch(15% 0.082 292.3)", "oklch(28% 0.082 292.3)", "oklch(41% 0.082 292.3)", "oklch(54% 0.082 292.3)", "oklch(67% 0.082 292.3)", "oklch(78% 0.082 292.3)", "oklch(88% 0.082 292.3)", "oklch(95% 0.082 292.3)"]
       }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "The masthead title only." },
-      "headline": { "displayName": "Headline", "purpose": "Workspace section headers (Draft board, Weekly decisions, Model room)." },
-      "body": { "displayName": "Body", "purpose": "Paragraphs, form labels, buttons, inputs, dataframe cells." },
-      "label": { "displayName": "Label", "purpose": "Uppercase structural labels: evidence-strip field names, the stamp text, workspace-tab captions." },
-      "mark": { "displayName": "Handwritten Mark", "purpose": "Data values only: evidence-strip figures and chart data labels, tilted -1deg." }
+      "display": { "displayName": "Display", "purpose": "The command-header masthead title only (h1)." },
+      "headline": { "displayName": "Headline", "purpose": "Workspace section headers (Draft board, Weekly decisions, Model room) (h2)." },
+      "body": { "displayName": "Body", "purpose": "Paragraphs, form labels, buttons, inputs, telemetry values, and dataframe cells." },
+      "label": { "displayName": "Label", "purpose": "Uppercase, wide-tracked structural labels: telemetry-rail captions and the forecast-state caption. Same body face, not a separate one." }
     },
     "shadows": [
-      { "name": "ledger-stack", "value": "6px 6px 0 rgba(23, 36, 59, .16)", "purpose": "Dataframe/table containers; paired with a 2px solid ink border for a stacked-paper feel." },
-      { "name": "stamped-button", "value": "3px 3px 0 var(--ink)", "purpose": "Resting state for primary and download buttons." },
-      { "name": "pressed-stamp", "value": "2px 2px 0 var(--red)", "purpose": "Button hover state, paired with a 1px translate and border/text swap to red." }
+      { "name": "ranking-sheet-lift", "value": "0 14px 34px rgba(0, 0, 0, .18)", "purpose": "Every st.dataframe ranking table; paired with a 1px solid Grid Line border and 8px radius." },
+      { "name": "button-rest", "value": "0 8px 20px rgba(0, 0, 0, .16)", "purpose": "Resting state for primary and download buttons." },
+      { "name": "button-hover", "value": "0 10px 24px rgba(0, 0, 0, .22)", "purpose": "Button hover state, paired with transform: translateY(-1px) — the button lifts rather than presses." }
     ],
     "motion": [
-      { "name": "button-press", "value": "transform 0.2s, background 0.2s (implicit; no explicit easing declared)", "purpose": "Hover transition on primary/download buttons: shadow shrinks and the button translates 1px toward the surface, like a stamp making contact." }
+      { "name": "field-lock", "value": "width 4% -> 18%, filter brightness(.7) -> brightness(1), 700ms cubic-bezier(.2, .8, .2, 1), both", "purpose": "The command header's bottom-edge Field Green underline animates in on load, standing in for the system's one moment of motion. Disabled entirely under prefers-reduced-motion." },
+      { "name": "button-lift", "value": "transform 0.2s (implicit), box-shadow transition on hover", "purpose": "Buttons translateY(-1px) into the deeper Button Hover shadow on hover/focus." }
     ],
     "breakpoints": [
-      { "name": "mobile", "value": "760px", "purpose": "Below this width: container padding tightens, the stamp becomes an inline block, workspace-tab labels shrink and center, and the evidence strip reflows to a 2-column grid. The three-cell workspace row and the QB-only expander are unchanged at this breakpoint." }
+      { "name": "mobile", "value": "760px", "purpose": "Below this width: container padding tightens to 3.35rem .8rem 3rem, the command header collapses to one column (badge drops below title/description), the telemetry rail reflows to a 2-column grid with alternating border removal, and workspace-pill labels shrink to .74rem. The three-cell workspace grid and the QB-only expander are unchanged at this breakpoint." }
     ]
   },
   "components": [
@@ -113,89 +113,91 @@
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Gold, square-cornered call-to-action with a hard offset shadow that presses down to red on hover.",
+      "description": "Green-deep, small-radius call-to-action that lifts into a deeper soft shadow on hover, with a distinct cyan focus ring.",
       "html": "<button class=\"ds-btn-primary\">Export draft sheet</button>",
-      "css": ".ds-btn-primary { background: #d8a928; color: #17243b; border: 2px solid #17243b; border-radius: 0; box-shadow: 3px 3px 0 #17243b; font-family: Aptos, Tahoma, sans-serif; font-weight: 800; text-transform: uppercase; padding: 0.5rem 1.25rem; transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s, color 0.2s; } .ds-btn-primary:hover { border-color: #b7352d; color: #b7352d; transform: translate(1px, 1px); box-shadow: 2px 2px 0 #b7352d; } .ds-btn-primary:focus-visible { outline: 3px solid #2f6680; outline-offset: 3px; }"
+      "css": ".ds-btn-primary { background: #214c34; color: #e5f3e7; border: 1px solid rgba(119, 213, 132, .48); border-radius: 7px; box-shadow: 0 8px 20px rgba(0, 0, 0, .16); font-family: 'Segoe UI', Arial, sans-serif; font-weight: 650; padding: 0.5rem 1.25rem; transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s, color 0.2s; } .ds-btn-primary:hover { background: #2a6140; border-color: #77d584; color: #eef8ef; transform: translateY(-1px); box-shadow: 0 10px 24px rgba(0, 0, 0, .22); } .ds-btn-primary:focus-visible { outline: 2px solid #62b9c8; outline-offset: 2px; }"
     },
     {
       "name": "File Uploader Button",
       "kind": "button",
-      "refersTo": "button-primary",
-      "description": "Gold action button with clipped corners, used for the model-sheet uploader inside the sidebar.",
+      "refersTo": "button-upload",
+      "description": "Quieter surface-high button used for the sidebar's model-sheet uploader; same small radius, no shadow.",
       "html": "<button class=\"ds-btn-upload\">Browse files</button>",
-      "css": ".ds-btn-upload { background: #d8a928; color: #17243b; border: 2px solid #fff7e7; border-radius: 0; font-weight: 800; padding: 0.5rem 1.25rem; clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }"
+      "css": ".ds-btn-upload { background: #1b2b2f; color: #dce8e4; border: 1px solid #3c5b60; border-radius: 7px; font-family: 'Segoe UI', Arial, sans-serif; font-weight: 600; padding: 0.5rem 1.25rem; }"
     },
     {
-      "name": "Workspace Tab Group",
+      "name": "Workspace Selector",
       "kind": "nav",
       "refersTo": "workspace-tab",
-      "description": "Three equal joined tabs selecting Draft Board / Weekly Decisions / Model Room; never stacks, even on mobile.",
+      "description": "Three equal pills on a panel-deep tray selecting Draft Board / Weekly Decisions / Model Room; a real CSS grid that never stacks, even on mobile.",
       "html": "<div class=\"ds-tabs\"><label class=\"ds-tab ds-tab-active\">Draft Board</label><label class=\"ds-tab\">Weekly Decisions</label><label class=\"ds-tab\">Model Room</label></div>",
-      "css": ".ds-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-bottom: 4px solid #17243b; max-width: 31rem; } .ds-tab { background: #e8dec7; border: 1px solid #17243b; border-bottom: 0; padding: 0.7rem 1.2rem; margin-right: -1px; font-family: 'Bahnschrift Condensed', Tahoma, sans-serif; font-weight: 800; text-transform: uppercase; text-align: center; color: #17243b; } .ds-tab-active { background: #17243b; color: #fff7e7; } @media (max-width: 760px) { .ds-tabs { max-width: none; } .ds-tab { font-size: 0.7rem; padding: 0.55rem 0.2rem; } }"
+      "css": ".ds-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .35rem; max-width: 36rem; padding: .3rem; background: #121e21; border: 1px solid #294044; border-radius: 9px; } .ds-tab { background: transparent; border: 1px solid transparent; border-radius: 6px; padding: .58rem 1rem; font-family: 'Segoe UI', Arial, sans-serif; font-weight: 600; text-align: center; color: #dce8e4; } .ds-tab-active { background: #214c34; border-color: rgba(119, 213, 132, .28); color: #e5f3e7; } @media (max-width: 760px) { .ds-tab { font-size: .74rem; padding: .55rem .2rem; } }"
     },
     {
-      "name": "Evidence Strip",
+      "name": "Command Header + Forecast State",
       "kind": "custom",
-      "refersTo": "evidence-strip",
-      "description": "Clipped-corner metadata ledger row under the masthead, pairing uppercase labels with tilted handwritten values.",
-      "html": "<div class=\"ds-evidence\"><span>Sheet <strong>SVR</strong></span><span>Rows <strong>1,240</strong></span><span>Positions <strong>QB</strong></span><span>Mode <strong>Forward projection</strong></span></div>",
-      "css": ".ds-evidence { display: flex; flex-wrap: wrap; gap: 0.5rem 1.6rem; background: #e8dec7; border-bottom: 1px solid #9d927b; padding: 0.65rem 0.8rem 0.8rem; font-family: 'Bahnschrift Condensed', Tahoma, sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #17243b; clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); } .ds-evidence strong { color: #b7352d; display: inline-block; font-family: 'Segoe Print', 'Bradley Hand', cursive; letter-spacing: -0.04em; transform: rotate(-1deg); } @media (max-width: 760px) { .ds-evidence { display: grid; grid-template-columns: 1fr 1fr; } }"
+      "refersTo": "command-header",
+      "description": "Gradient masthead panel with the display title and description beside a bordered forecast-state badge; an animated field-green underline runs along its bottom edge.",
+      "html": "<section class=\"ds-header\"><div><h1>Fantasy Forecast Center</h1><p>Season-long draft value and weekly matchup signals, kept in separate decision lanes and tied to the same model evidence.</p></div><div class=\"ds-forecast-state\"><span class=\"ds-status-dot\" aria-hidden=\"true\"></span><span>Forecast state</span><strong>Upcoming forecast</strong></div></section>",
+      "css": ".ds-header { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 2rem; background: linear-gradient(112deg, #1b2b2f, #121e21); border: 1px solid #294044; border-radius: 10px 10px 0 0; padding: clamp(1.4rem, 3vw, 2.5rem); overflow: hidden; } .ds-header::before { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: 18%; background: #77d584; animation: field-lock 700ms cubic-bezier(.2, .8, .2, 1) both; } @keyframes field-lock { from { width: 4%; filter: brightness(.7); } to { width: 18%; filter: brightness(1); } } .ds-header h1 { margin: 0; font-family: 'Bahnschrift', 'Arial Narrow', 'Segoe UI', sans-serif; font-weight: 650; font-size: clamp(2.4rem, 4vw, 4.1rem); line-height: .94; letter-spacing: -.035em; color: #dce8e4; } .ds-header p { color: #94aaa5; font-family: 'Segoe UI', Arial, sans-serif; margin: .7rem 0 0; max-width: 66ch; } .ds-forecast-state { display: grid; grid-template-columns: auto 1fr; align-self: center; background: rgba(119, 213, 132, .075); border: 1px solid rgba(119, 213, 132, .38); border-radius: 8px; padding: .75rem .9rem; min-width: 12.5rem; } .ds-status-dot { grid-row: 1 / 3; width: .55rem; height: .55rem; margin: .45rem .7rem 0 0; border-radius: 50%; background: #77d584; } .ds-forecast-state span { color: #94aaa5; font-size: .68rem; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; } .ds-forecast-state strong { color: #77d584; font-family: 'Segoe UI', Arial, sans-serif; font-size: .93rem; font-weight: 650; } @media (max-width: 760px) { .ds-header { grid-template-columns: 1fr; align-items: start; gap: 1.2rem; padding: 1.35rem; } }"
     },
     {
-      "name": "Masthead + Stamp",
+      "name": "Telemetry Rail",
       "kind": "custom",
-      "refersTo": "stamp",
-      "description": "Ledger masthead with the display title and a rotated red status stamp in the corner.",
-      "html": "<section class=\"ds-masthead\"><h1>Fantasy War Room</h1><p>Season value belongs on the draft board. Weekly matchups belong on their own desk.</p><span class=\"ds-stamp\">Forward projection</span></section>",
-      "css": ".ds-masthead { position: relative; border-top: 10px solid #17243b; border-bottom: 3px solid #17243b; padding: 1rem 0 1.15rem; margin-bottom: 1rem; } .ds-masthead h1 { margin: 0; text-transform: uppercase; font-family: 'Bahnschrift Condensed', 'Franklin Gothic Medium', sans-serif; font-weight: 800; letter-spacing: -0.035em; font-size: clamp(2.4rem, 5vw, 5.3rem); line-height: 0.9; color: #17243b; } .ds-masthead p { color: #5d6670; font-family: Aptos, Tahoma, sans-serif; font-size: 1.05rem; margin: 0.6rem 0 0; max-width: 70ch; } .ds-stamp { position: absolute; right: 0; top: 1.25rem; border: 3px solid #b7352d; color: #b7352d; font-family: 'Bahnschrift Condensed', Tahoma, sans-serif; font-size: 0.8rem; font-weight: 900; letter-spacing: 0.12em; padding: 0.4rem 0.65rem; text-transform: uppercase; transform: rotate(-2deg); } @media (max-width: 760px) { .ds-stamp { position: static; display: inline-block; margin-top: 1rem; } }"
+      "refersTo": "forecast-state",
+      "description": "Dense horizontal strip of provenance stat cells directly beneath the command header.",
+      "html": "<div class=\"ds-telemetry\"><div class=\"ds-telemetry-item\"><span>Target season</span><strong>2024</strong></div><div class=\"ds-telemetry-item\"><span>Model view</span><strong>Consensus</strong></div><div class=\"ds-telemetry-item\"><span>Matchup rows</span><strong>1,240</strong></div><div class=\"ds-telemetry-item\"><span>Positions</span><strong>QB</strong></div></div>",
+      "css": ".ds-telemetry { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); background: #162326; border: 1px solid #294044; border-top: 0; margin-bottom: 1.35rem; } .ds-telemetry-item { border-right: 1px solid #294044; padding: .8rem 1rem .9rem; } .ds-telemetry-item:last-child { border-right: 0; } .ds-telemetry-item span { display: block; color: #94aaa5; font-family: 'Segoe UI', Arial, sans-serif; font-size: .65rem; font-weight: 650; letter-spacing: .095em; text-transform: uppercase; margin-bottom: .28rem; } .ds-telemetry-item strong { display: block; color: #dce8e4; font-family: 'Bahnschrift', 'Segoe UI', sans-serif; font-size: .93rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } @media (max-width: 760px) { .ds-telemetry { grid-template-columns: 1fr 1fr; } .ds-telemetry-item { border-bottom: 1px solid #294044; padding: .72rem .8rem; } }"
     },
     {
       "name": "Ranking Sheet Table",
       "kind": "card",
       "refersTo": "dataframe-container",
-      "description": "The draft-board / weekly-board data table, framed like a stacked ledger sheet with a hard offset shadow.",
+      "description": "The draft-board / weekly-board data table, lifted off the charcoal canvas with a soft black shadow.",
       "html": "<div class=\"ds-sheet\"><table><thead><tr><th>Rank</th><th>Player</th><th>Projected</th></tr></thead><tbody><tr><td>1</td><td>Player One</td><td>312.4</td></tr></tbody></table></div>",
-      "css": ".ds-sheet { border: 2px solid #17243b; box-shadow: 6px 6px 0 rgba(23, 36, 59, .16); background: #f3eedf; font-family: Aptos, Tahoma, sans-serif; color: #17243b; } .ds-sheet table { width: 100%; border-collapse: collapse; } .ds-sheet th { text-align: left; font-family: 'Bahnschrift Condensed', Tahoma, sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 2px solid #17243b; padding: 0.5rem 0.75rem; } .ds-sheet td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #9d927b; }"
+      "css": ".ds-sheet { border: 1px solid #294044; border-radius: 8px; box-shadow: 0 14px 34px rgba(0, 0, 0, .18); overflow: hidden; background: #162326; font-family: 'Segoe UI', Arial, sans-serif; color: #dce8e4; } .ds-sheet table { width: 100%; border-collapse: collapse; } .ds-sheet th { text-align: left; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; font-size: .75rem; color: #94aaa5; border-bottom: 1px solid #294044; padding: .5rem .75rem; } .ds-sheet td { padding: .5rem .75rem; border-bottom: 1px solid #294044; }"
     },
     {
       "name": "Sidebar Filing Panel",
       "kind": "nav",
       "refersTo": "sidebar-panel",
-      "description": "Permanent dark ink-navy control desk holding model-sheet loading and board filters.",
-      "html": "<aside class=\"ds-sidebar\"><h2>Board controls</h2><label>Season</label><select><option>2025</option></select></aside>",
-      "css": ".ds-sidebar { background: #17243b; border-right: 1px solid #78849a; padding: 1rem; color: #f8f1df; font-family: Aptos, Tahoma, sans-serif; } .ds-sidebar h2 { font-family: 'Bahnschrift Condensed', 'Franklin Gothic Medium', sans-serif; font-weight: 800; letter-spacing: -0.035em; color: #f8f1df; } .ds-sidebar select { background: #233552; border: 1px solid #78849a; border-radius: 0; color: #f8f1df; padding: 0.4rem 0.6rem; width: 100%; }"
+      "description": "Permanent panel-deep control desk holding the model-sheet loader and mission-control filters.",
+      "html": "<aside class=\"ds-sidebar\"><h2>Mission controls</h2><label>Season</label><select><option>2024</option></select></aside>",
+      "css": ".ds-sidebar { background: #121e21; border-right: 1px solid #294044; padding: 1rem; color: #dce8e4; font-family: 'Segoe UI', Arial, sans-serif; } .ds-sidebar h2 { font-family: 'Segoe UI', Arial, sans-serif; font-weight: 650; font-size: .82rem; letter-spacing: .11em; text-transform: uppercase; border-bottom: 1px solid #294044; padding-bottom: .65rem; margin: 1.45rem 0 .85rem; color: #dce8e4; } .ds-sidebar select { background: #1b2b2f; border: 1px solid #3c5b60; border-radius: 7px; color: #dce8e4; padding: .4rem .6rem; width: 100%; }"
     }
   ],
   "narrative": {
-    "northStar": "The Fantasy War Room",
-    "overview": "This is a working war room for player evidence, not a generic analytics dashboard: warm ruled paper stands in for a legal pad, ink-navy carries every hard rule and border, a rotated red stamp reports artifact status like a rubber stamp on a filed sheet, and gold marks the one action that matters on any given screen. The system never softens itself with rounded corners or blurred shadows — depth comes from flat, offset \"stamp\" shadows, and corners get personality only from clipped-path notches, never radius.\n\nThe build stays disciplined about role separation: ink structures, red marks status and hard-won facts (actuals, hover/error), gold acts, blue informs, and a cursive \"handwritten\" face is reserved exclusively for data values scrawled onto the ledger — never for body copy or structural labels. Three equal workspaces (Draft Board, Weekly Decisions, Model Room) sit as one unbroken row under the masthead at every viewport width, because moving between season-long and single-week decisions is the product's central promise.",
+    "northStar": "The Night-Game Command Deck",
+    "overview": "This is a stadium operations display for player evidence, not a generic analytics dashboard: a charcoal field, gridded like turf under stadium lights, carries a single restrained accent strategy so model provenance never gets lost behind ranking noise. Field Green is the only signal for state and action; Comparison Cyan and Actual Amber carry the two evidence roles a forecast needs — what the models project against each other, and what already happened. There is no paper, no ink stamp, no cursive handwriting anywhere in this system; every trace of the prior ledger metaphor has been retired.\n\nThe build stays disciplined about role separation: green signals state and action, cyan compares model output, amber marks confirmed fact, and a small five-color evidence palette (green, cyan, amber, coral, violet) extends only as far as the weekly trend chart needs it. A compact command header and a live telemetry rail lead directly into three persistent workspaces (Draft Board, Weekly Decisions, Model Room), rendered as one equal-width row at every viewport, because moving between season-long and single-week decisions without losing model context is the product's central promise.",
     "keyCharacteristics": [
-      "Warm ruled-paper canvas with a permanent dark ink-navy sidebar as the control desk",
-      "Zero border-radius everywhere; clipped-corner notches are the only corner treatment",
-      "Hard, non-blurred offset shadows (\"ledger stack\" / \"stamped button\"), never soft glows",
-      "A rotated red stamp and tilted cursive \"handwritten\" marks as the signature evidence devices",
-      "Three equal, never-stacking workspace tabs above a full-width ranking sheet"
+      "Charcoal-field canvas with a faint green-tinted 40px grid, read as a night-lit stadium turf",
+      "Small radii everywhere (6–10px) plus one fully circular status dot; no clip-path notches, no square corners",
+      "Soft, blurred, black-based drop shadows for elevation — never a hard flat offset",
+      "A compact command header with an animated field-lock underline and a live telemetry rail as the signature devices",
+      "Three equal, never-stacking workspace tabs above the active ranking surface"
     ],
     "rules": [
-      { "name": "The One Action Rule", "body": "Gold appears only on primary buttons and the uploader control — the single actionable color on any screen. It is never used decoratively or for status.", "section": "colors" },
-      { "name": "The Stamp Rule", "body": "Red never carries body text or long-form emphasis. It is reserved for the status stamp, handwritten actual-value marks, and the hover/error interaction states — always a fact or an action, never prose.", "section": "colors" },
-      { "name": "The Handwritten Mark Rule", "body": "Segoe Print (or its Bradley Hand fallback) appears only on data values and call-outs — the evidence strip's figures and chart data labels — never on structural labels, headings, or body copy.", "section": "typography" },
-      { "name": "The Equal Three Rule", "body": "The three workspace tabs (Draft Board / Weekly Decisions / Model Room) always render as one equal-width row. They never stack, wrap, or collapse into a dropdown, even at mobile widths — only their type size and padding shrink.", "section": "layout" },
-      { "name": "The Flat Offset Rule", "body": "Every shadow is a hard, non-blurred offset in a single flat color (`Npx Npx 0 color`). A soft or blurred box-shadow never appears in this system.", "section": "elevation" },
-      { "name": "The Hard Corner Rule", "body": "No border-radius is ever non-zero. When a corner needs character, it is clipped with clip-path, not rounded — and clipping is reserved for ledger/tab-like surfaces (the evidence strip, the uploader button), not applied everywhere.", "section": "shapes" }
+      { "name": "The Field Signal Rule", "body": "Field Green (and its Green Deep variant) is reserved for state and action chrome — the status dot, the forecast-state badge, the active workspace pill, buttons, the slider thumb, and the active toggle. It never appears as a comparison or actual-value color inside a chart.", "section": "colors" },
+      { "name": "The Confirmed-Fact Amber Rule", "body": "Actual Amber marks only confirmed, already-happened values — the draft-board's actual-points tick and the trend chart's actual line. A projection is never drawn in amber.", "section": "colors" },
+      { "name": "The Evidence Palette Order Rule", "body": "When the weekly trend chart compares more than one player, added lines take colors from a fixed five-step sequence — Field Green, Comparison Cyan, Actual Amber, Evidence Coral, Evidence Violet — always in that order, never reshuffled or reassigned per player.", "section": "colors" },
+      { "name": "The One Display Face Rule", "body": "Bahnschrift is the only face used for h1–h3. Every other role — including uppercase labels — stays on the Segoe UI body stack, distinguished by weight and tracking, never by swapping fonts.", "section": "typography" },
+      { "name": "The Equal Three Rule", "body": "The workspace selector is a real CSS grid of repeat(3, minmax(0, 1fr)) — Draft Board, Weekly Decisions, Model Room always render as one equal-width row, at every viewport width, with only label size and padding shrinking below 760px.", "section": "layout" },
+      { "name": "The Soft Lift Rule", "body": "Every shadow in this system is a soft, blurred, black-based drop shadow (0 Npx Npx rgba(0,0,0,.16–.22)). A hard, non-blurred, colored offset shadow never appears here.", "section": "elevation" },
+      { "name": "The Small-Radius Rule", "body": "Corner treatment is a small radius (6–10px) scaled to the surface's size, never zero and never a clip-path notch. The single exception is the fully circular (50%) status dot.", "section": "shapes" }
     ],
     "dos": [
-      "Do reserve Segoe Print (or its cursive fallback) strictly for data values and call-outs — the evidence strip's figures and chart data labels — never for structural labels or body copy.",
-      "Do keep border-radius: 0 on every control; use clip-path notches, not rounding, when a corner needs character.",
-      "Do use hard, non-blurred offset shadows (Npx Npx 0 color) for elevation; never a blurred box-shadow.",
-      "Do keep the three workspace tabs in one equal-width row at every viewport width.",
-      "Do reserve Gold Highlight exclusively for primary actionable buttons and the uploader control."
+      "Do reserve Field Green (and Green Deep) for state and action chrome only — the status dot, forecast-state badge, active workspace pill, buttons, slider thumb, and toggle.",
+      "Do keep the workspace selector a true repeat(3, minmax(0, 1fr)) grid at every viewport; shrink only label size and padding below 760px.",
+      "Do use soft, blurred, black-based shadows (0 Npx Npx rgba(0,0,0,.16-.22)) for elevation; never a hard offset.",
+      "Do follow the fixed five-color evidence-palette order (green, cyan, amber, coral, violet) when the trend chart adds compared players.",
+      "Do keep Bahnschrift exclusive to h1–h3; everything else, including uppercase labels, stays on Segoe UI.",
+      "Do respect prefers-reduced-motion by disabling the command header's field-lock animation."
     ],
     "donts": [
-      "Don't use Red Stamp for body text or long-form content; it is reserved for the stamp, handwritten actual-value marks, and hover/error states.",
-      "Don't add soft or blurred shadows/glows anywhere; depth comes from flat, hard-edged offsets only.",
-      "Don't stack, wrap, or collapse the workspace tabs into a dropdown on mobile; shrink type and padding instead.",
-      "Don't introduce a second display face — Bahnschrift Condensed is the only heading/label face across headings, the stamp, and the evidence-strip labels."
+      "Don't use Actual Amber for a projected or comparison value — it marks confirmed actuals only.",
+      "Don't add a clip-path notch or a square corner anywhere; every surface carries a small radius (6–10px) except the fully circular status dot.",
+      "Don't stack, wrap, or collapse the workspace selector into a dropdown on narrow viewports.",
+      "Don't substitute the Comparison Cyan focus-visible outline with the Field Green hover treatment; the two must stay visually distinct."
     ]
   }
 }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from html import escape
 from io import BytesIO
 from pathlib import Path
 from typing import Never
@@ -28,209 +29,365 @@ from ffpred.dashboard.data import (
     weekly_board,
 )
 
-PAPER = "#f3eedf"
-INK = "#17243b"
-RED = "#b7352d"
-GOLD = "#d8a928"
-BLUE = "#2f6680"
-MUTED = "#5d6670"
+CANVAS = "#0d1517"
+SURFACE = "#162326"
+TEXT = "#dce8e4"
+GREEN = "#77d584"
+CYAN = "#62b9c8"
+AMBER = "#d4af63"
+CORAL = "#d98578"
+VIOLET = "#9b91c9"
+GRID = "#294044"
 
 
 def _inject_styles() -> None:
     st.html(
         """
         <!--
-        THESIS: A working fantasy war room, not a generic analytics dashboard.
-        OWN-WORLD: Ink-blue auction sheets, red stamps, gold highlights, hard
-        rules, clipped corners, and handwritten value marks on warm paper.
-        STORY: Load model sheets, rank a season for draft day, then move to a
-        separate matchup desk for weekly choices and inspect model evidence.
-        FIRST VIEWPORT: A ledger masthead, artifact status, and three explicit
-        workspaces above a full-width ranking sheet.
-        FORM: Dense war-room ledger, fourth grounded direction; fixed-sheet
-        staging selected for scanability; seed 40420016.
+        THESIS: A night-game forecast command center that makes model provenance
+        as visible as player rank, rejecting both spreadsheet beige and neon sci-fi.
+        OWN-WORLD: Soft charcoal field layers, field-green signal, cyan comparison
+        data, amber actuals, low-contrast grid lines, and broadcast-grade typography.
+        STORY: Confirm the forecast state, select a decision horizon, filter the
+        field, and compare projected performance without losing model context.
+        FIRST VIEWPORT: A compact forecast header and live telemetry rail lead
+        directly into three persistent workspaces and the active ranking surface.
+        FORM: Stadium operations display; dense horizontal telemetry staging;
+        restrained color strategy optimized for long evening sessions.
         -->
         <style>
         :root {
-            --paper: #f3eedf;
-            --paper-deep: #e8dec7;
-            --ink: #17243b;
-            --red: #b7352d;
-            --gold: #d8a928;
-            --blue: #2f6680;
-            --muted: #5d6670;
-            --rule: #9d927b;
+            --canvas: #0d1517;
+            --panel: #121e21;
+            --surface: #162326;
+            --surface-high: #1b2b2f;
+            --line: #294044;
+            --line-strong: #3c5b60;
+            --text: #dce8e4;
+            --muted: #94aaa5;
+            --green: #77d584;
+            --green-deep: #214c34;
+            --cyan: #62b9c8;
+            --amber: #d4af63;
+            --coral: #d98578;
         }
         .stApp {
             background:
-                linear-gradient(rgba(23, 36, 59, .035) 1px, transparent 1px),
-                var(--paper);
-            background-size: 100% 28px;
-            color: var(--ink);
+                linear-gradient(rgba(119, 213, 132, .022) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(119, 213, 132, .016) 1px, transparent 1px),
+                var(--canvas);
+            background-size: 40px 40px;
+            color: var(--text);
+            overflow-x: hidden;
         }
-        [data-testid="stHeader"] { background: transparent; }
+        [data-testid="stHeader"] {
+            background: rgba(13, 21, 23, .92);
+            border-bottom: 1px solid rgba(60, 91, 96, .45);
+        }
         [data-testid="stSidebar"] {
-            background: var(--ink);
-            border-right: 1px solid #78849a;
+            background: var(--panel);
+            border-right: 1px solid var(--line);
         }
-        [data-testid="stSidebar"] * { color: #f8f1df; }
+        [data-testid="stSidebar"] * { color: var(--text); }
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
+            border-bottom: 1px solid var(--line);
+            color: var(--text) !important;
+            font-size: .82rem !important;
+            letter-spacing: .11em !important;
+            margin: 1.45rem 0 .85rem !important;
+            padding-bottom: .65rem;
+            text-transform: uppercase;
+        }
         [data-testid="stSidebar"] [data-baseweb="select"] > div,
-        [data-testid="stSidebar"] [data-baseweb="input"] > div {
-            background: #233552;
-            border-color: #78849a;
+        [data-testid="stSidebar"] [data-baseweb="input"] > div,
+        [data-testid="stSidebar"] [data-baseweb="base-input"],
+        [data-testid="stSidebar"] [data-baseweb="tag"] {
+            background: var(--surface-high);
+            border-color: var(--line-strong);
         }
         .block-container {
-            max-width: 1480px;
-            padding-top: 2.25rem;
-            padding-bottom: 4rem;
+            box-sizing: border-box;
+            max-width: 1440px;
+            padding-top: 2rem;
+            padding-bottom: 4.5rem;
+            width: 100%;
         }
         h1, h2, h3 {
-            color: var(--ink) !important;
-            font-family: "Bahnschrift Condensed", "Franklin Gothic Medium",
+            color: var(--text) !important;
+            font-family: "Bahnschrift", "Arial Narrow", "Segoe UI",
                 sans-serif !important;
-            font-weight: 800 !important;
+        }
+        h1 {
+            font-size: clamp(2.4rem, 4vw, 4.1rem) !important;
+            font-weight: 650 !important;
             letter-spacing: -.035em !important;
+            line-height: .94;
         }
-        h1 { font-size: clamp(2.4rem, 5vw, 5.3rem) !important; line-height: .9; }
         h2 {
-            border-bottom: 3px solid var(--ink);
-            padding-bottom: .35rem;
-            margin-top: 2.7rem !important;
+            font-size: clamp(1.65rem, 2.6vw, 2.3rem) !important;
+            font-weight: 620 !important;
+            letter-spacing: -.025em !important;
+            margin: 2.6rem 0 .55rem !important;
         }
-        p, label, button, input, [data-testid="stMarkdownContainer"] {
-            font-family: "Aptos", Tahoma, sans-serif;
+        h3 { font-weight: 600 !important; }
+        p, label, button, input, textarea, [data-testid="stMarkdownContainer"] {
+            font-family: "Segoe UI", Arial, sans-serif;
         }
-        [data-testid="stMain"] label { color: var(--ink) !important; }
-        .war-masthead {
+        p, [data-testid="stCaptionContainer"] {
+            color: var(--muted) !important;
+            line-height: 1.58;
+        }
+        [data-testid="stMain"] label { color: var(--text) !important; }
+        .command-header {
+            align-items: end;
+            background: linear-gradient(112deg, var(--surface-high), var(--panel));
+            border: 1px solid var(--line);
+            border-radius: 10px 10px 0 0;
+            display: grid;
+            gap: 2rem;
+            grid-template-columns: minmax(0, 1fr) auto;
+            overflow: hidden;
+            padding: clamp(1.4rem, 3vw, 2.5rem);
             position: relative;
-            border-top: 10px solid var(--ink);
-            border-bottom: 3px solid var(--ink);
-            padding: 1rem 0 1.15rem;
-            margin-bottom: 1rem;
         }
-        .war-masthead h1 { margin: 0; text-transform: uppercase; }
-        .war-masthead p {
-            color: var(--muted);
-            font-size: 1.05rem;
-            margin: .6rem 0 0;
-            max-width: 70ch;
-        }
-        .stamp {
+        .command-header::before {
+            background: var(--green);
+            bottom: 0;
+            content: "";
+            height: 3px;
+            left: 0;
             position: absolute;
-            right: 0;
-            top: 1.25rem;
-            border: 3px solid var(--red);
-            color: var(--red);
-            font-family: "Bahnschrift Condensed", Tahoma, sans-serif;
-            font-size: .8rem;
-            font-weight: 900;
-            letter-spacing: .12em;
-            padding: .4rem .65rem;
-            text-transform: uppercase;
-            transform: rotate(-2deg);
+            width: 18%;
+            animation: field-lock 700ms cubic-bezier(.2, .8, .2, 1) both;
         }
-        .evidence-strip {
-            display: flex;
-            flex-wrap: wrap;
-            gap: .5rem 1.6rem;
-            background: var(--paper-deep);
-            border-bottom: 1px solid var(--rule);
-            padding: .65rem .8rem .8rem;
-            margin-bottom: 1rem;
-            font-family: "Bahnschrift Condensed", Tahoma, sans-serif;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: .04em;
-            clip-path: polygon(
-                0 0, calc(100% - 12px) 0, 100% 12px,
-                100% 100%, 12px 100%, 0 calc(100% - 12px)
-            );
+        @keyframes field-lock {
+            from { width: 4%; filter: brightness(.7); }
+            to { width: 18%; filter: brightness(1); }
         }
-        .evidence-strip strong {
-            color: var(--red);
-            display: inline-block;
-            font-family: "Segoe Print", "Bradley Hand", cursive;
-            letter-spacing: -.04em;
-            transform: rotate(-1deg);
+        @media (prefers-reduced-motion: reduce) {
+            .command-header::before { animation: none; }
+        }
+        .command-header h1 { margin: 0; }
+        .command-header > div { min-width: 0; }
+        .command-header p {
+            color: var(--muted);
+            font-size: 1rem;
+            margin: .7rem 0 0;
+            max-width: 66ch;
+        }
+        .forecast-state {
+            align-self: center;
+            background: rgba(119, 213, 132, .075);
+            border: 1px solid rgba(119, 213, 132, .38);
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            min-width: 12.5rem;
+            padding: .75rem .9rem;
+        }
+        .status-dot {
+            background: var(--green);
+            border-radius: 50%;
+            grid-row: 1 / 3;
+            height: .55rem;
+            margin: .45rem .7rem 0 0;
+            width: .55rem;
+        }
+        .forecast-state span {
+            color: var(--muted);
+            font-size: .68rem;
+            font-weight: 650;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+        }
+        .forecast-state strong {
+            color: var(--green);
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: .93rem;
+            font-weight: 650;
+            margin-top: .12rem;
+        }
+        .telemetry-rail {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-top: 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+            margin-bottom: 1.35rem;
+        }
+        .telemetry-item {
+            border-right: 1px solid var(--line);
+            min-width: 0;
+            padding: .8rem 1rem .9rem;
+        }
+        .telemetry-item:last-child { border-right: 0; }
+        .telemetry-item span {
+            color: var(--muted);
+            display: block;
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: .65rem;
+            font-weight: 650;
+            letter-spacing: .095em;
+            margin-bottom: .28rem;
+            text-transform: uppercase;
+        }
+        .telemetry-item strong {
+            color: var(--text);
+            display: block;
+            font-family: "Bahnschrift", "Segoe UI", sans-serif;
+            font-size: .93rem;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         [data-testid="stRadio"] > div {
+            box-sizing: border-box;
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0;
-            border-bottom: 4px solid var(--ink);
-            max-width: 31rem;
+            gap: .35rem;
+            max-width: 36rem;
+            padding: .3rem;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            width: 100%;
         }
+        [data-testid="stRadio"] label > div:first-child { display: none; }
         [data-testid="stRadio"] label {
-            background: var(--paper-deep);
-            border: 1px solid var(--ink);
-            border-bottom: 0;
-            padding: .7rem 1.2rem;
-            margin-right: -1px;
-            font-weight: 800;
-            text-transform: uppercase;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            justify-content: center;
+            padding: .58rem 1rem;
+            font-weight: 600;
             width: 100%;
         }
         [data-testid="stRadio"] label:has(input:checked) {
-            background: var(--ink);
-            color: #fff7e7;
+            background: var(--green-deep);
+            border-color: rgba(119, 213, 132, .28);
+            color: #e5f3e7;
         }
         div[data-testid="stDataFrame"] {
-            border: 2px solid var(--ink);
-            box-shadow: 6px 6px 0 rgba(23, 36, 59, .16);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: 0 14px 34px rgba(0, 0, 0, .18);
+            overflow: hidden;
         }
         .stButton > button, .stDownloadButton > button {
-            border: 2px solid var(--ink);
-            border-radius: 0;
-            background: var(--gold);
-            color: var(--ink);
-            box-shadow: 3px 3px 0 var(--ink);
-            font-weight: 800;
-            text-transform: uppercase;
+            border: 1px solid rgba(119, 213, 132, .48);
+            border-radius: 7px;
+            background: var(--green-deep);
+            color: #e5f3e7;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, .16);
+            font-weight: 650;
         }
         [data-testid="stFileUploader"] button {
-            background: var(--gold) !important;
-            border: 2px solid #fff7e7 !important;
-            border-radius: 0 !important;
-            color: var(--ink) !important;
-            clip-path: polygon(
-                0 0, calc(100% - 8px) 0, 100% 8px,
-                100% 100%, 8px 100%, 0 calc(100% - 8px)
-            );
-            font-weight: 800;
+            background: var(--surface-high) !important;
+            border: 1px solid var(--line-strong) !important;
+            border-radius: 7px !important;
+            color: var(--text) !important;
+            font-weight: 600;
         }
         .stButton > button:hover, .stDownloadButton > button:hover {
-            border-color: var(--red);
-            color: var(--red);
-            transform: translate(1px, 1px);
-            box-shadow: 2px 2px 0 var(--red);
+            background: #2a6140;
+            border-color: var(--green);
+            color: #eef8ef;
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, .22);
         }
         .stButton > button:focus-visible, .stDownloadButton > button:focus-visible {
-            outline: 3px solid var(--blue);
-            outline-offset: 3px;
+            outline: 2px solid var(--cyan);
+            outline-offset: 2px;
         }
         [data-testid="stAlert"] {
-            border-radius: 0;
-            border: 2px solid var(--ink);
-            background: #faf4e5;
+            border-radius: 8px;
+            border: 1px solid var(--line-strong);
+            background: var(--surface);
         }
         [data-baseweb="select"] > div, [data-baseweb="input"] > div {
-            border-radius: 0;
+            background: var(--surface);
+            border-color: var(--line-strong);
+            border-radius: 7px;
+            color: var(--text);
+        }
+        [data-testid="stExpander"] {
+            background: rgba(22, 35, 38, .68);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+        }
+        [data-testid="stSlider"] [role="slider"] {
+            background: var(--green);
+            border-color: var(--green);
+        }
+        [data-testid="stToggle"] [data-checked="true"] {
+            background: var(--green-deep);
+        }
+        hr { border-color: var(--line) !important; }
+        code {
+            background: var(--surface-high) !important;
+            color: var(--cyan) !important;
         }
         @media (max-width: 760px) {
-            .block-container { padding: 1rem .75rem 3rem; }
-            .stamp { position: static; display: inline-block; margin-top: 1rem; }
+            .block-container { padding: 3.35rem .8rem 3rem; }
+            .command-header {
+                align-items: start;
+                grid-template-columns: 1fr;
+                gap: 1.2rem;
+                padding: 1.35rem;
+            }
+            .command-header h1 {
+                font-size: 2.15rem !important;
+                max-width: 100%;
+                overflow-wrap: normal;
+                word-break: normal;
+            }
+            .command-header p { overflow-wrap: anywhere; }
+            .forecast-state { min-width: 0; width: fit-content; }
+            .telemetry-rail { grid-template-columns: 1fr 1fr; }
+            .telemetry-item:nth-child(even) { border-right: 0; }
+            .telemetry-item {
+                border-bottom: 1px solid var(--line);
+                padding: .72rem .8rem;
+            }
+            .telemetry-item:nth-last-child(-n + 2) { border-bottom: 0; }
             [data-testid="stRadio"] > div { max-width: none; }
             [data-testid="stRadio"] label {
-                font-size: .7rem;
+                font-size: .74rem;
                 justify-content: center;
                 padding: .55rem .2rem;
                 text-align: center;
             }
-            .evidence-strip { display: grid; grid-template-columns: 1fr 1fr; }
         }
         </style>
         """
     )
+
+
+def _chart_theme(
+    chart: alt.Chart | alt.LayerChart,
+) -> alt.Chart | alt.LayerChart:
+    themed = (
+        chart.configure(background=SURFACE)
+        .configure_view(fill=SURFACE, stroke=None)
+        .configure_axis(
+            domainColor=GRID,
+            gridColor=GRID,
+            labelColor=TEXT,
+            labelFont="Segoe UI",
+            tickColor=GRID,
+            titleColor=TEXT,
+            titleFont="Segoe UI",
+        )
+        .configure_legend(
+            labelColor=TEXT,
+            labelFont="Segoe UI",
+            titleColor=TEXT,
+            titleFont="Segoe UI",
+        )
+    )
+    assert isinstance(themed, (alt.Chart, alt.LayerChart))
+    return themed
 
 
 def _arguments() -> argparse.Namespace:
@@ -270,7 +427,7 @@ def _load_data() -> pl.DataFrame:
     paths = arguments.predictions or _discover_prediction_files()
 
     with st.sidebar:
-        st.markdown("## Model sheets")
+        st.markdown("## Data feeds")
         uploads = st.file_uploader(
             "Add prediction Parquet files",
             type=["parquet"],
@@ -278,7 +435,7 @@ def _load_data() -> pl.DataFrame:
             help="Each file needs player, season, week, and prediction columns.",
         )
         if paths:
-            st.caption("Loaded from disk")
+            st.caption("Active prediction feeds")
             for path in paths:
                 st.code(path.name, language=None)
 
@@ -304,7 +461,7 @@ def _global_filters(frame: pl.DataFrame) -> tuple[pl.DataFrame, int, list[str], 
     models = model_choices(frame)
 
     with st.sidebar:
-        st.markdown("## Board controls")
+        st.markdown("## Mission controls")
         season = int(st.selectbox("Season", seasons))
         chosen_positions = [
             str(position)
@@ -316,7 +473,7 @@ def _global_filters(frame: pl.DataFrame) -> tuple[pl.DataFrame, int, list[str], 
             )
         ]
         model = st.selectbox(
-            "Model sheet",
+            "Model view",
             models,
             index=0,
             help="Consensus averages predictions when multiple sheets are loaded.",
@@ -331,7 +488,8 @@ def _global_filters(frame: pl.DataFrame) -> tuple[pl.DataFrame, int, list[str], 
 
 
 def _masthead(frame: pl.DataFrame, model: str) -> None:
-    positions = ", ".join(sorted(frame["position"].unique().to_list()))
+    positions = escape(", ".join(sorted(frame["position"].unique().to_list())))
+    target_season = int(frame["target_season"][0])
     actual_rows = frame[ACTUAL_COLUMN].count()
     is_frozen_forecast = "history_through_season" in frame.columns
     if is_frozen_forecast and actual_rows:
@@ -343,24 +501,40 @@ def _masthead(frame: pl.DataFrame, model: str) -> None:
     provenance_items = ""
     if is_frozen_forecast:
         history_through = int(frame["history_through_season"][0])
-        forecast_as_of = str(frame["forecast_as_of"][0])
+        forecast_as_of = escape(str(frame["forecast_as_of"][0]))
         provenance_items = (
-            f"<span>History thru <strong>{history_through}</strong></span>"
-            f"<span>As of <strong>{forecast_as_of}</strong></span>"
+            "<div class='telemetry-item'>"
+            f"<span>History through</span><strong>{history_through}</strong></div>"
+            "<div class='telemetry-item'>"
+            f"<span>Forecast lock</span><strong>{forecast_as_of}</strong></div>"
         )
     st.html(
         f"""
-        <section class="war-masthead">
-          <h1>Fantasy War Room</h1>
-          <p>Season value belongs on the draft board. Weekly matchups belong on
-          their own desk. Use the same evidence without mixing the decisions.</p>
-          <span class="stamp">{artifact_mode}</span>
+        <section class="command-header">
+          <div>
+            <h1>Fantasy Forecast Center</h1>
+            <p>Season-long draft value and weekly matchup signals, kept in
+            separate decision lanes and tied to the same model evidence.</p>
+          </div>
+          <div class="forecast-state">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span>Forecast state</span>
+            <strong>{artifact_mode}</strong>
+          </div>
         </section>
-        <div class="evidence-strip">
-          <span>Sheet <strong>{model}</strong></span>
-          <span>Rows <strong>{frame.height:,}</strong></span>
-          <span>Positions <strong>{positions}</strong></span>
-          <span>Mode <strong>{artifact_mode}</strong></span>
+        <div class="telemetry-rail">
+          <div class="telemetry-item">
+            <span>Target season</span><strong>{target_season}</strong>
+          </div>
+          <div class="telemetry-item">
+            <span>Model view</span><strong>{escape(model)}</strong>
+          </div>
+          <div class="telemetry-item">
+            <span>Matchup rows</span><strong>{frame.height:,}</strong>
+          </div>
+          <div class="telemetry-item">
+            <span>Positions</span><strong>{positions}</strong>
+          </div>
           {provenance_items}
         </div>
         """
@@ -448,7 +622,7 @@ def _draft_view(
     chart_frame = display.head(18).sort("projected_points").to_pandas()
     bars = (
         alt.Chart(chart_frame)
-        .mark_bar(color=INK, cornerRadiusEnd=0)
+        .mark_bar(color=GREEN, cornerRadiusEnd=3)
         .encode(
             x=alt.X("projected_points:Q", title="Projected season points"),
             y=alt.Y("player_name:N", sort=None, title=None),
@@ -464,24 +638,22 @@ def _draft_view(
         align="left",
         baseline="middle",
         dx=5,
-        color=INK,
-        font="Segoe Print",
-        fontWeight="bold",
+        color=TEXT,
+        font="Segoe UI",
+        fontWeight=600,
     ).encode(text=alt.Text("projected_points:Q", format=".0f"))
     actual = (
         alt.Chart(chart_frame.dropna(subset=["actual_points"]))
-        .mark_tick(color=RED, thickness=3, size=18)
+        .mark_tick(color=AMBER, thickness=3, size=18)
         .encode(x="actual_points:Q", y=alt.Y("player_name:N", sort=None))
     )
     st.altair_chart(
-        (bars + labels + actual)
-        .properties(height=max(360, len(chart_frame) * 28))
-        .configure(background=PAPER)
-        .configure_view(fill=PAPER, stroke=None)
-        .configure_axis(gridColor="#cfc5ae", labelColor=INK, titleColor=INK),
+        _chart_theme(
+            (bars + labels + actual).properties(height=max(360, len(chart_frame) * 28))
+        ),
         width="stretch",
     )
-    st.caption("Ink bar: projection. Red mark: actual total when available.")
+    st.caption("Field green: projection. Amber marker: actual total when available.")
 
     table = display.select(
         pl.col("position_rank").alias("Rank"),
@@ -560,7 +732,7 @@ def _weekly_view(
     if not comparison.is_empty():
         comparison_chart = (
             alt.Chart(comparison.to_pandas())
-            .mark_bar(color=BLUE)
+            .mark_bar(color=CYAN, cornerRadiusEnd=3)
             .encode(
                 x=alt.X("prediction:Q", title=f"Week {week} projected points"),
                 y=alt.Y("player_name:N", sort="-x", title=None),
@@ -578,9 +750,7 @@ def _weekly_view(
             .properties(height=max(160, len(compared) * 52))
         )
         st.altair_chart(
-            comparison_chart.configure(background=PAPER)
-            .configure_view(fill=PAPER, stroke=None)
-            .configure_axis(gridColor="#cfc5ae", labelColor=INK, titleColor=INK),
+            _chart_theme(comparison_chart),
             width="stretch",
         )
 
@@ -610,7 +780,7 @@ def _weekly_view(
                     "player_name:N",
                     title="Player",
                     scale=alt.Scale(
-                        range=[INK, RED, BLUE, GOLD, "#6d5b87"],
+                        range=[GREEN, CYAN, AMBER, CORAL, VIOLET],
                     ),
                 ),
                 strokeDash=alt.StrokeDash(
@@ -631,9 +801,7 @@ def _weekly_view(
             .properties(height=340)
         )
         st.altair_chart(
-            trend.configure(background=PAPER)
-            .configure_view(fill=PAPER, stroke=None)
-            .configure_axis(gridColor="#cfc5ae", labelColor=INK, titleColor=INK),
+            _chart_theme(trend),
             width="stretch",
         )
 
@@ -692,7 +860,7 @@ def _model_room(frame: pl.DataFrame) -> None:
     chart_frame = scorecard.to_pandas()
     chart = (
         alt.Chart(chart_frame)
-        .mark_bar(color=RED)
+        .mark_bar(color=CORAL, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
         .encode(
             x=alt.X("model:N", title=None, sort="y"),
             y=alt.Y("mae:Q", title="Mean absolute error"),
@@ -706,9 +874,7 @@ def _model_room(frame: pl.DataFrame) -> None:
         .properties(height=320)
     )
     st.altair_chart(
-        chart.configure(background=PAPER)
-        .configure_view(fill=PAPER, stroke=None)
-        .configure_axis(gridColor="#cfc5ae", labelColor=INK, titleColor=INK),
+        _chart_theme(chart),
         width="stretch",
     )
 
@@ -716,7 +882,7 @@ def _model_room(frame: pl.DataFrame) -> None:
 def render() -> None:
     """Render the dashboard."""
     st.set_page_config(
-        page_title="Fantasy War Room",
+        page_title="Fantasy Forecast Center",
         page_icon="F",
         layout="wide",
         initial_sidebar_state="auto",
