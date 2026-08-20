@@ -469,7 +469,7 @@ def _global_filters(frame: pl.DataFrame) -> tuple[pl.DataFrame, int, list[str], 
                 "Position",
                 positions,
                 default=positions,
-                help="The current training pipeline produces quarterback rows.",
+                help="Filter the board to one or more standard fantasy positions.",
             )
         ]
         model = st.selectbox(
@@ -480,10 +480,14 @@ def _global_filters(frame: pl.DataFrame) -> tuple[pl.DataFrame, int, list[str], 
         )
         st.divider()
         st.caption(
-            "Predictions support decisions; they do not guarantee player outcomes."
+            "Standard non-PPR scoring. Predictions support decisions; they do not "
+            "guarantee player outcomes."
         )
 
-    selected = select_model(frame, model)
+    selected = select_model(
+        frame.filter(pl.col("target_season") == season),
+        model,
+    )
     return selected, season, chosen_positions, model
 
 
@@ -539,13 +543,6 @@ def _masthead(frame: pl.DataFrame, model: str) -> None:
         </div>
         """
     )
-    if positions == "QB":
-        with st.expander("Why does this artifact only show QB?"):
-            st.write(
-                "The current model pipeline only trains quarterback predictions. "
-                "The position control expands automatically when future artifacts "
-                "include other positions."
-            )
     if is_frozen_forecast and actual_rows:
         st.caption(
             "This historical forecast is frozen before the target season. "

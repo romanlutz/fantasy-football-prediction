@@ -2,14 +2,17 @@
 # name: test_cli_help_snapshot
   '''
   usage: ffpred [-h] [-v]
-                {build-dataset,build-forecast,train-svr,train-mlp,project-svr,project-mlp,evaluate} ...
+                {build-dataset,build-forecast,build-forecast-archive,train-svr,train-mlp,project-svr,project-mlp,evaluate} ...
   
   Build and evaluate fantasy-football prediction models
   
   positional arguments:
-    {build-dataset,build-forecast,train-svr,train-mlp,project-svr,project-mlp,evaluate}
+    {build-dataset,build-forecast,build-forecast-archive,train-svr,train-mlp,project-svr,project-mlp,evaluate}
       build-dataset       build train/test datasets
       build-forecast      build frozen training and future schedule datasets
+      build-forecast-archive
+                          build frozen all-position forecasts for a range of
+                          seasons
       train-svr           train an SVR model
       train-mlp           train an MLP model
       project-svr         fit SVR and predict a frozen forecast dataset

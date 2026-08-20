@@ -33,6 +33,17 @@ class ForecastBuildOptions:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ForecastArchiveOptions:
+    """All-position forecast archive options."""
+
+    output_dir: Path
+    history_start: int
+    first_target_year: int
+    last_target_year: int
+    as_of: date | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SvrOptions:
     """SVR command options."""
 

@@ -105,7 +105,7 @@
       { "name": "button-lift", "value": "transform 0.2s (implicit), box-shadow transition on hover", "purpose": "Buttons translateY(-1px) into the deeper Button Hover shadow on hover/focus." }
     ],
     "breakpoints": [
-      { "name": "mobile", "value": "760px", "purpose": "Below this width: container padding tightens to 3.35rem .8rem 3rem, the command header collapses to one column (badge drops below title/description), the telemetry rail reflows to a 2-column grid with alternating border removal, and workspace-pill labels shrink to .74rem. The three-cell workspace grid and the QB-only expander are unchanged at this breakpoint." }
+      { "name": "mobile", "value": "760px", "purpose": "Below this width: container padding tightens to 3.35rem .8rem 3rem, the command header collapses to one column (badge drops below title/description), the telemetry rail reflows to a 2-column grid with alternating border removal, and workspace-pill labels shrink to .74rem. The three-cell workspace grid remains unchanged." }
     ]
   },
   "components": [

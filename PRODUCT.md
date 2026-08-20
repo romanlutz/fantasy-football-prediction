@@ -40,9 +40,10 @@ narrow the field for roster decisions.
   completed game statistics through the recorded prior-season cutoff.
 - Use preseason schedule and QB1 depth-chart assignments for upcoming seasons,
   and keep historical outcomes separate from the features used to predict them.
-- The current prediction pipeline is quarterback-focused. The interface must
-  communicate unavailable positions honestly while remaining compatible with
-  future multi-position artifacts.
+- Cover the standard fantasy roster: QB, RB, WR, TE, K, and team defense/special
+  teams (DST), using explicit position-aware scoring.
+- Retain point-in-time forecasts for every supported target season from 2010
+  onward, not only the upcoming season.
 - Model output is decision support, not a guarantee of fantasy performance.
 
 ## Evidence on Hand

@@ -10,9 +10,10 @@ associated with the paper is preserved in the
 [`legacy-2015`](https://github.com/romanlutz/fantasy-football-prediction/tree/legacy-2015)
 tag.
 
-This project builds reproducible, leakage-safe quarterback fantasy-football
-datasets from [nflverse](https://github.com/nflverse/nflverse-data), then trains
-support-vector and multilayer-perceptron regressors.
+This project builds reproducible, leakage-safe fantasy-football datasets from
+[nflverse](https://github.com/nflverse/nflverse-data), then trains
+support-vector and multilayer-perceptron regressors for QB, RB, WR, TE, K, and
+team defense/special teams (DST).
 
 ## Requirements and setup
 
@@ -71,10 +72,11 @@ error and bias when actual results are present. The dashboard automatically
 discovers `*-predictions.parquet` files in the current directory and
 `artifacts/`; files can also be uploaded in the browser.
 
-The current training pipeline is quarterback-only, so existing artifacts show
-only QB in the position filter. Artifacts with a `position` column automatically
-add their positions to the interface. Historical artifacts include completed
-game outcomes and are labeled as backtests, not live future projections.
+The dashboard reads the complete point-in-time archive from `artifacts/`, so the
+season selector covers 2010 through the upcoming season and the position filter
+offers QB, RB, WR, TE, K, and DST. Historical artifacts include completed game
+outcomes for comparison and remain frozen to information available before their
+target season.
 
 Build a point-in-time season forecast without using any target-season game
 statistics:
@@ -115,6 +117,42 @@ that season's first regular-season game; an upcoming forecast defaults to the
 current date. The generated manifest records the cutoff, as-of date, source
 hashes, and output hashes. Changing a team's projected starter requires
 rebuilding after nflverse publishes an updated depth chart.
+
+Build the complete standard-scoring archive:
+
+```console
+uv run ffpred build-forecast-archive \
+  --history-start 1999 \
+  --first-target-year 2010 \
+  --last-target-year 2026 \
+  --output-dir artifacts
+```
+
+The archive uses week-one historical depth charts through 2024 and preseason
+daily depth charts from 2025 onward. It selects fantasy-relevant depth at each
+position, adds one DST entry per team, and freezes every feature at the previous
+completed season. If a source depth chart omits a team-position slot, the builder
+logs the gap, falls back to that team's top prior-season producer, and records
+team-position coverage in the manifest. Historical outcomes are attached only
+after the frozen features are built. Run both model projections for each
+generated season:
+
+```powershell
+foreach ($year in 2010..2026) {
+  uv run ffpred project-svr `
+    --train "artifacts\$year\training.parquet" `
+    --forecast "artifacts\$year\forecast.parquet" `
+    --predictions "artifacts\$year\svr-predictions.parquet"
+  uv run ffpred project-mlp `
+    --train "artifacts\$year\training.parquet" `
+    --forecast "artifacts\$year\forecast.parquet" `
+    --predictions "artifacts\$year\mlp-predictions.parquet"
+}
+```
+
+Player scoring is standard non-PPR. Kicker scoring awards 3 points through 39
+yards, 4 from 40–49, 5 from 50+, and 1 per extra point. DST scoring includes
+sacks, takeaways, touchdowns, safeties, blocked kicks, and points allowed.
 
 Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as
@@ -159,9 +197,9 @@ schemas for every source frame. Preserve the manifest and Parquet files
 together. nflverse release assets can be corrected after publication, so source
 hashes are necessary to distinguish upstream revisions.
 
-Feature rows include target identity and the latest quarterback and defense
-history period used. Those lineage columns are never model inputs; tests assert
-that every history period strictly precedes its target.
+Feature rows include target identity and the latest player and opponent history
+season used. Those lineage columns are never model inputs; tests assert that
+every history period strictly precedes its target.
 
 ## Quality checks
 

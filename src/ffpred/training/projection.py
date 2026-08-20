@@ -10,8 +10,7 @@ import polars as pl
 from numpy.typing import NDArray
 
 from ffpred.datasets.io import read_forecast
-from ffpred.features.schema import MODEL_FEATURE_COLUMNS
-from ffpred.training.data import TrainingData
+from ffpred.training.data import TrainingData, model_feature_columns
 from ffpred.training.protocol import Regressor
 
 
@@ -21,16 +20,22 @@ class ProjectionData:
 
     frame: pl.DataFrame
     features: NDArray[np.float64]
+    feature_names: tuple[str, ...]
 
 
 def load_projection_data(path: Path) -> ProjectionData:
     """Load a forecast artifact for model inference."""
     frame = read_forecast(path)
+    feature_names = model_feature_columns(frame)
     features = np.asarray(
-        frame.select(MODEL_FEATURE_COLUMNS).to_numpy(),
+        frame.select(feature_names).to_numpy(),
         dtype=np.float64,
     )
-    return ProjectionData(frame=frame, features=features)
+    return ProjectionData(
+        frame=frame,
+        features=features,
+        feature_names=feature_names,
+    )
 
 
 def project(
@@ -39,6 +44,8 @@ def project(
     forecast: ProjectionData,
 ) -> NDArray[np.float64]:
     """Fit on completed games and predict frozen forecast rows."""
+    if train.feature_names != forecast.feature_names:
+        raise ValueError("Training and forecast feature contracts do not match")
     return np.asarray(
         estimator.fit(train.features, train.target).predict(forecast.features),
         dtype=np.float64,

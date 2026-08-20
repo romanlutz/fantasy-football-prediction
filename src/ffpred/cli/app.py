@@ -18,27 +18,31 @@ from numpy.typing import NDArray
 from ffpred.cli.options import (
     BuildOptions,
     EvaluateOptions,
+    ForecastArchiveOptions,
     ForecastBuildOptions,
     MlpOptions,
     ProjectionOptions,
     SvrOptions,
 )
 from ffpred.config import Settings
+from ffpred.datasets.archive import ForecastArchiveConfig, build_forecast_archive
 from ffpred.datasets.builder import DatasetBuildConfig, build_datasets
 from ffpred.datasets.forecast import ForecastBuildConfig, build_forecast_datasets
 from ffpred.errors import FfpredError
 from ffpred.evaluation.metrics import evaluate
+from ffpred.features.all_positions import ALL_POSITION_MODEL_FEATURE_COLUMNS
 from ffpred.features.schema import IDENTITY_COLUMNS, TARGET_COLUMN
 from ffpred.logging import configure_logging
 from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
 from ffpred.training.data import load_training_data
-from ffpred.training.mlp import MlpConfig, train_mlp
+from ffpred.training.mlp import MlpConfig, create_archive_estimator, train_mlp
 from ffpred.training.mlp import create_estimator as create_mlp
 from ffpred.training.projection import load_projection_data, project
 from ffpred.training.svr import (
     DEFAULT_SVR_CONFIG,
     candidate_configs,
+    create_scalable_estimator,
     select_config,
     select_manual_features,
     train_svr,
@@ -83,6 +87,20 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
     forecast.add_argument("--target-year", type=int, required=True)
     forecast.add_argument("--as-of", type=date.fromisoformat)
     forecast.add_argument("--include-actuals", action="store_true")
+
+    archive = subparsers.add_parser(
+        "build-forecast-archive",
+        help="build frozen all-position forecasts for a range of seasons",
+    )
+    archive.add_argument("--output-dir", type=Path, default=settings.output_dir)
+    archive.add_argument("--history-start", type=int, default=1999)
+    archive.add_argument("--first-target-year", type=int, default=2010)
+    archive.add_argument(
+        "--last-target-year",
+        type=int,
+        default=date.today().year,
+    )
+    archive.add_argument("--as-of", type=date.fromisoformat)
 
     svr = subparsers.add_parser("train-svr", help="train an SVR model")
     _add_dataset_arguments(svr, "svr-predictions.parquet")
@@ -201,6 +219,16 @@ def _forecast_build_options(args: argparse.Namespace) -> ForecastBuildOptions:
     )
 
 
+def _forecast_archive_options(args: argparse.Namespace) -> ForecastArchiveOptions:
+    return ForecastArchiveOptions(
+        output_dir=args.output_dir,
+        history_start=args.history_start,
+        first_target_year=args.first_target_year,
+        last_target_year=args.last_target_year,
+        as_of=args.as_of,
+    )
+
+
 def _projection_options(args: argparse.Namespace) -> ProjectionOptions:
     return ProjectionOptions(
         train_path=args.train,
@@ -278,6 +306,35 @@ def _run_forecast_build(
     }
 
 
+def _run_forecast_archive(
+    options: ForecastArchiveOptions,
+    provider: NflDataProvider,
+) -> dict[str, object]:
+    result = build_forecast_archive(
+        ForecastArchiveConfig(
+            output_dir=options.output_dir,
+            history_start=options.history_start,
+            first_target_year=options.first_target_year,
+            last_target_year=options.last_target_year,
+            as_of=options.as_of,
+        ),
+        provider=provider,
+    )
+    return {
+        "seasons": [
+            {
+                "target_year": season.target_year,
+                "training": season.training.path,
+                "training_rows": season.training.rows,
+                "forecast": season.forecast.path,
+                "forecast_rows": season.forecast.rows,
+                "manifest": str(season.manifest_path),
+            }
+            for season in result.seasons
+        ]
+    }
+
+
 def _run_svr(options: SvrOptions) -> dict[str, object]:
     train = load_training_data(options.train_path)
     test = load_training_data(options.test_path)
@@ -330,9 +387,17 @@ def _run_projection(
 ) -> dict[str, object]:
     train = load_training_data(options.train_path)
     forecast = load_projection_data(options.forecast_path)
-    estimator = (
-        create_svr(DEFAULT_SVR_CONFIG) if model == "svr" else create_mlp(MlpConfig())
-    )
+    is_archive = train.feature_names == ALL_POSITION_MODEL_FEATURE_COLUMNS
+    if model == "svr":
+        estimator = (
+            create_scalable_estimator()
+            if is_archive
+            else create_svr(DEFAULT_SVR_CONFIG)
+        )
+    else:
+        estimator = (
+            create_archive_estimator() if is_archive else create_mlp(MlpConfig())
+        )
     predictions = project(estimator, train, forecast)
     _write_predictions(options.predictions_path, forecast.frame, predictions)
     scored = forecast.frame.with_columns(
@@ -382,6 +447,11 @@ def main(
         elif args.command == "build-forecast":
             output = _run_forecast_build(
                 _forecast_build_options(args),
+                provider or _provider(settings),
+            )
+        elif args.command == "build-forecast-archive":
+            output = _run_forecast_archive(
+                _forecast_archive_options(args),
                 provider or _provider(settings),
             )
         elif args.command == "train-svr":

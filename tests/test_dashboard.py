@@ -163,3 +163,36 @@ def test_dashboard_app_renders_all_workspaces(
         app.radio[0].set_value(workspace).run()
         assert not app.exception
         assert headings[workspace] in [header.value for header in app.header]
+
+
+def test_dashboard_exposes_all_artifact_seasons_and_positions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    positions = ["QB", "RB", "WR", "TE", "K", "DST"]
+    pl.DataFrame(
+        {
+            "player_id": [f"player-{index}" for index in range(len(positions))] * 2,
+            "player_name": [f"Player {position}" for position in positions] * 2,
+            "position": positions * 2,
+            "target_season": [2025] * len(positions) + [2026] * len(positions),
+            "target_week": [1] * (len(positions) * 2),
+            "target_game_id": [
+                f"{season}-{position}"
+                for season in (2025, 2026)
+                for position in positions
+            ],
+            "fantasy_points": [10.0] * len(positions) + [None] * len(positions),
+            "prediction": [9.0] * (len(positions) * 2),
+        }
+    ).write_parquet(tmp_path / "svr-predictions.parquet")
+    app_path = Path(__file__).parents[1] / "src" / "ffpred" / "dashboard" / "app.py"
+    monkeypatch.chdir(tmp_path)
+
+    app = AppTest.from_file(app_path, default_timeout=30).run()
+    season = next(widget for widget in app.selectbox if widget.label == "Season")
+    position = next(widget for widget in app.multiselect if widget.label == "Position")
+
+    assert not app.exception
+    assert season.options == ["2026", "2025"]
+    assert position.options == ["DST", "K", "QB", "RB", "TE", "WR"]
