@@ -166,7 +166,7 @@ def test_model_name_from_path_is_concise() -> None:
     )
 
 
-def test_dashboard_app_renders_all_workspaces(
+def test_dashboard_app_renders_draft_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -190,20 +190,7 @@ def test_dashboard_app_renders_all_workspaces(
     ]
     sort.set_value("Adjusted at actual PPG").run()
     assert not app.exception
-    assert app.radio[0].options == [
-        "Draft Board",
-        "Weekly Decisions",
-        "Model Room",
-    ]
-    headings = {
-        "Draft Board": "Draft board",
-        "Weekly Decisions": "Weekly decisions",
-        "Model Room": "Model room",
-    }
-    for workspace in app.radio[0].options:
-        app.radio[0].set_value(workspace).run()
-        assert not app.exception
-        assert headings[workspace] in [header.value for header in app.header]
+    assert "Draft board" in [header.value for header in app.header]
 
 
 def test_dashboard_exposes_all_artifact_seasons_and_positions(
@@ -237,3 +224,14 @@ def test_dashboard_exposes_all_artifact_seasons_and_positions(
     assert not app.exception
     assert season.options == ["2026", "2025"]
     assert position.options == ["DST", "K", "QB", "RB", "TE", "WR"]
+
+    season.set_value("2025").run()
+    assert app.session_state["_forecast-filter-state"]["season"] == 2025
+
+    position = next(widget for widget in app.multiselect if widget.label == "Position")
+    position.set_value(["QB", "WR"]).run()
+    assert app.session_state["_forecast-filter-state"]["positions"] == ["QB", "WR"]
+
+    model = next(widget for widget in app.selectbox if widget.label == "Model view")
+    model.set_value("SVR").run()
+    assert app.session_state["_forecast-filter-state"]["model"] == "SVR"

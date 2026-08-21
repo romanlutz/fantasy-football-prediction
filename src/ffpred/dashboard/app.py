@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from html import escape
 from pathlib import Path
-from typing import Never
+from typing import Never, TypeVar
 
 import altair as alt
 import polars as pl
@@ -41,6 +42,12 @@ ACTUAL_NEUTRAL = "#e6efec"
 PROJECTED_PACE_PURPLE = "#cc79a7"
 ACTUAL_PACE_YELLOW = "#f0e442"
 
+SEASON_FILTER_KEY = "forecast-target-season"
+POSITION_FILTER_KEY = "forecast-positions"
+MODEL_FILTER_KEY = "forecast-model"
+FILTER_STATE_KEY = "_forecast-filter-state"
+FILTER_QUERY_KEYS = ("season", "position", "model")
+
 DRAFT_BAR_FIELDS = {
     "Projected": "projected_points",
     "Actual": "actual_points",
@@ -53,6 +60,8 @@ DRAFT_BAR_COLORS = {
     "Adjusted at projected PPG": PROJECTED_PACE_PURPLE,
     "Adjusted at actual PPG": ACTUAL_PACE_YELLOW,
 }
+
+T = TypeVar("T")
 
 
 def _inject_styles() -> None:
@@ -251,32 +260,49 @@ def _inject_styles() -> None:
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-        [data-testid="stRadio"] > div {
-            box-sizing: border-box;
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: .35rem;
-            max-width: 36rem;
-            padding: .3rem;
+        [data-testid="stToolbar"] .rc-overflow:has(
+            [data-testid="stTopNavLink"]
+        ) {
             background: var(--panel);
             border: 1px solid var(--line);
             border-radius: 9px;
+            box-sizing: border-box;
+            gap: .35rem;
+            max-width: 36rem;
+            padding: .3rem;
+            width: min(36rem, calc(100vw - 4rem));
+        }
+        [data-testid="stToolbar"] .rc-overflow-item:has(
+            [data-testid="stTopNavLink"]
+        ) {
+            flex: 1 1 0;
+            min-width: 0;
+        }
+        [data-testid="stTopNavLinkContainer"] {
+            min-width: 0;
             width: 100%;
         }
-        [data-testid="stRadio"] label > div:first-child { display: none; }
-        [data-testid="stRadio"] label {
-            background: transparent;
+        [data-testid="stTopNavLink"] {
             border: 1px solid transparent;
             border-radius: 6px;
-            justify-content: center;
-            padding: .58rem 1rem;
+            color: var(--muted) !important;
+            font-family: "Segoe UI", Arial, sans-serif !important;
+            font-size: .86rem;
             font-weight: 600;
+            justify-content: center;
+            min-width: 0;
+            padding: .2rem .7rem !important;
             width: 100%;
         }
-        [data-testid="stRadio"] label:has(input:checked) {
-            background: var(--green-deep);
+        [data-testid="stTopNavLink"] p {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        [data-testid="stTopNavLink"][aria-current="page"] {
+            background: var(--green-deep) !important;
             border-color: rgba(119, 213, 132, .28);
-            color: #e5f3e7;
+            color: #e5f3e7 !important;
         }
         div[data-testid="stDataFrame"] {
             border: 1px solid var(--line);
@@ -361,12 +387,9 @@ def _inject_styles() -> None:
             .telemetry-item {
                 padding: .72rem .8rem;
             }
-            [data-testid="stRadio"] > div { max-width: none; }
-            [data-testid="stRadio"] label {
+            [data-testid="stTopNavLink"] {
                 font-size: .74rem;
-                justify-content: center;
-                padding: .55rem .2rem;
-                text-align: center;
+                padding-inline: .25rem !important;
             }
         }
         </style>
@@ -439,6 +462,82 @@ def _load_data() -> pl.DataFrame:
     st.stop()
 
 
+def _matching_option(
+    value: str | None,
+    options: Sequence[T],
+    fallback: T,
+) -> T:
+    if value is None:
+        return fallback
+    normalized = value.casefold()
+    return next(
+        (option for option in options if str(option).casefold() == normalized),
+        fallback,
+    )
+
+
+def _query_positions(positions: Sequence[str]) -> list[str]:
+    raw = st.query_params.get_all("position")
+    requested = {
+        position.strip().casefold()
+        for value in raw
+        for position in value.split(",")
+        if position.strip()
+    }
+    return [position for position in positions if position.casefold() in requested]
+
+
+def _write_filter_query() -> None:
+    season = st.session_state[SEASON_FILTER_KEY]
+    chosen_positions = st.session_state[POSITION_FILTER_KEY]
+    model = st.session_state[MODEL_FILTER_KEY]
+    st.session_state[FILTER_STATE_KEY] = {
+        "season": season,
+        "positions": chosen_positions,
+        "model": model,
+    }
+    st.query_params["season"] = str(season)
+    st.query_params["position"] = chosen_positions or [""]
+    st.query_params["model"] = model
+
+
+def _hydrate_filter_state(
+    seasons: Sequence[int],
+    positions: Sequence[str],
+    models: Sequence[str],
+) -> None:
+    query_present = any(key in st.query_params for key in FILTER_QUERY_KEYS)
+    if query_present:
+        season = _matching_option(st.query_params.get("season"), seasons, seasons[0])
+        chosen_positions = (
+            _query_positions(positions)
+            if "position" in st.query_params
+            else list(positions)
+        )
+        model = _matching_option(st.query_params.get("model"), models, models[0])
+    else:
+        saved = st.session_state.get(FILTER_STATE_KEY, {})
+        season = saved.get("season", seasons[0])
+        if season not in seasons:
+            season = seasons[0]
+        saved_positions = saved.get("positions", positions)
+        chosen_positions = [
+            position for position in positions if position in saved_positions
+        ]
+        model = saved.get("model", models[0])
+        if model not in models:
+            model = models[0]
+
+    st.session_state[SEASON_FILTER_KEY] = season
+    st.session_state[POSITION_FILTER_KEY] = chosen_positions
+    st.session_state[MODEL_FILTER_KEY] = model
+    st.session_state[FILTER_STATE_KEY] = {
+        "season": season,
+        "positions": chosen_positions,
+        "model": model,
+    }
+
+
 def _global_filters(
     frame: pl.DataFrame,
     *,
@@ -447,6 +546,7 @@ def _global_filters(
     seasons = sorted(frame["target_season"].unique().to_list(), reverse=True)
     positions = sorted(frame["position"].unique().to_list())
     models = model_choices(frame)
+    _hydrate_filter_state(seasons, positions, models)
 
     with st.container(key="mission-controls"):
         season_control, position_control, model_control = st.columns([1, 2, 1])
@@ -454,6 +554,8 @@ def _global_filters(
             season_control.selectbox(
                 "Target season",
                 seasons,
+                key=SEASON_FILTER_KEY,
+                on_change=_write_filter_query,
                 help="Choose an upcoming forecast or a frozen historical replay.",
             )
         )
@@ -462,17 +564,20 @@ def _global_filters(
             for position in position_control.multiselect(
                 "Position",
                 positions,
-                default=positions,
+                key=POSITION_FILTER_KEY,
+                on_change=_write_filter_query,
                 help="Filter every workspace to one or more fantasy positions.",
             )
         ]
         model = model_control.selectbox(
             "Model view",
             models,
-            index=0,
+            key=MODEL_FILTER_KEY,
+            on_change=_write_filter_query,
             help="Consensus averages matching SVR and MLP predictions.",
         )
 
+    _write_filter_query()
     selected = select_model(
         frame.filter(pl.col("target_season") == season),
         model,
@@ -980,6 +1085,24 @@ def _model_room(frame: pl.DataFrame) -> None:
     )
 
 
+def _workspace_page(source: pl.DataFrame, workspace: str) -> None:
+    header = st.empty()
+    selected, season, positions, model = _global_filters(source, header=header)
+    selected_season = selected.filter(pl.col("target_season") == season)
+    _masthead(selected_season, model)
+    if workspace == "draft":
+        _draft_view(
+            selected,
+            season=season,
+            positions=positions,
+            model=model,
+        )
+    elif workspace == "weekly":
+        _weekly_view(selected, season=season, positions=positions)
+    else:
+        _model_room(source.filter(pl.col("target_season") == season))
+
+
 def render() -> None:
     """Render the dashboard."""
     st.set_page_config(
@@ -995,27 +1118,36 @@ def render() -> None:
         st.error(f"Could not open the prediction sheet: {error}")
         st.stop()
 
-    header = st.empty()
-    selected, season, positions, model = _global_filters(source, header=header)
-    selected_season = selected.filter(pl.col("target_season") == season)
-    _masthead(selected_season, model)
-    workspace = st.radio(
-        "Workspace",
-        ["Draft Board", "Weekly Decisions", "Model Room"],
-        horizontal=True,
-        label_visibility="collapsed",
+    draft_page = st.Page(
+        lambda: _workspace_page(source, "draft"),
+        title="Draft Board",
+        url_path="draft",
     )
-    if workspace == "Draft Board":
-        _draft_view(
-            selected,
-            season=season,
-            positions=positions,
-            model=model,
-        )
-    elif workspace == "Weekly Decisions":
-        _weekly_view(selected, season=season, positions=positions)
-    else:
-        _model_room(source.filter(pl.col("target_season") == season))
+    weekly_page = st.Page(
+        lambda: _workspace_page(source, "weekly"),
+        title="Weekly Decisions",
+        url_path="weekly",
+    )
+    model_page = st.Page(
+        lambda: _workspace_page(source, "model"),
+        title="Model Room",
+        url_path="model",
+    )
+
+    def open_draft_board() -> None:
+        st.switch_page(draft_page)
+
+    landing_page = st.Page(
+        open_draft_board,
+        title="Fantasy Forecast Center",
+        default=True,
+        visibility="hidden",
+    )
+    page = st.navigation(
+        [landing_page, draft_page, weekly_page, model_page],
+        position="top",
+    )
+    page.run()
 
 
 def run() -> Never:

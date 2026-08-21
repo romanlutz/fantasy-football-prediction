@@ -91,14 +91,14 @@ components:
 
 This is a stadium operations display for player evidence, not a generic analytics dashboard: a charcoal field, gridded like turf under stadium lights, carries a restrained accent strategy so model provenance never gets lost behind ranking noise. Field Green is the only signal for state and action. Historical comparison uses a colorblind-safe blue, near-white, purple, and yellow set plus solid-versus-dashed treatment, so meaning never depends on hue alone. There is no paper, no ink stamp, no cursive handwriting anywhere in this system; every trace of the prior ledger metaphor has been retired.
 
-The build stays disciplined about role separation: green signals state and action, cyan compares model output, amber marks confirmed fact, and a small five-color evidence palette (green, cyan, amber, coral, violet) extends only as far as the weekly trend chart needs it. A compact command header and a live telemetry rail lead directly into three persistent workspaces (Draft Board, Weekly Decisions, Model Room), rendered as one equal-width row at every viewport, because moving between season-long and single-week decisions without losing model context is the product's central promise.
+The build stays disciplined about role separation: green signals state and action, cyan compares model output, amber marks confirmed fact, and a small five-color evidence palette (green, cyan, amber, coral, violet) extends only as far as the weekly trend chart needs it. Native top navigation exposes three persistent, addressable workspaces (Draft Board, Weekly Decisions, Model Room), because moving between season-long and single-week decisions without losing model context is the product's central promise.
 
 **Key Characteristics:**
 - Charcoal-field canvas with a faint green-tinted 40px grid, read as a night-lit stadium turf
 - Small radii everywhere (6–10px) plus one fully circular status dot; no clip-path notches, no square corners
 - Soft, blurred, black-based drop shadows for elevation — never a hard flat offset
 - A compact command header with an animated field-lock underline and a live telemetry rail as the signature devices
-- Three equal, never-stacking workspace tabs above the active ranking surface
+- Three compact, top-level workspace routes in the application header
 
 ## Colors
 
@@ -159,14 +159,14 @@ A charcoal, night-game palette where nearly all of the interface is dark neutral
 
 ## Layout
 
-The container is capped at 1440px with 2rem of top padding and 4.5rem of bottom padding, sitting on the charcoal canvas's faint two-axis 40px green grid. The first viewport stacks, in order: a command header (title and description beside a bordered forecast-state badge, with an animated Field Green underline growing along its bottom edge), an attached mission-control rail for target season, position, and model, a compact provenance rail, a three-cell equal-width workspace selector, then the active workspace's full-width content and ranking table.
+The container is capped at 1440px with 2rem of top padding and 4.5rem of bottom padding, sitting on the charcoal canvas's faint two-axis 40px green grid. Native top navigation selects the workspace route. The page then stacks a command header (title and description beside a bordered forecast-state badge, with an animated Field Green underline growing along its bottom edge), an attached mission-control rail for target season, position, and model, a compact provenance rail, then the active workspace's full-width content and ranking table.
 
 Prediction artifacts are discovered and loaded in the background; their file-level mechanics never occupy the decision surface. The three mission controls sit directly beneath the command header in a Panel Deep rail so users can change the forecast context before entering a workspace.
 
-At the 760px breakpoint, container padding becomes `3.35rem .8rem 3rem`, the command header collapses to a single column (the forecast-state badge drops below the title and description instead of sitting beside them), mission controls wrap into full-width groups as needed, the three compact provenance cells remain in one row, and workspace-pill labels shrink to `.74rem` — but the selector's underlying CSS grid stays `repeat(3, minmax(0, 1fr))` at every width, so the three destinations never stack or collapse into a dropdown.
+At the 760px breakpoint, container padding becomes `3.35rem .8rem 3rem`, the command header collapses to a single column (the forecast-state badge drops below the title and description instead of sitting beside them), mission controls wrap into full-width groups as needed, the three compact provenance cells remain in one row, and top-navigation labels shrink to `.74rem`.
 
 ### Named Rules
-**The Equal Three Rule.** The workspace selector is a real CSS grid of `repeat(3, minmax(0, 1fr))` — Draft Board, Weekly Decisions, Model Room always render as one equal-width row, at every viewport width, with only label size and padding shrinking below 760px.
+**The Addressable Workspace Rule.** Draft Board, Weekly Decisions, and Model Room are first-level routes. Filter context is serialized independently into validated query parameters and survives workspace changes.
 
 ## Elevation & Depth
 
@@ -205,9 +205,9 @@ Every interactive surface carries a small radius instead of a square or clipped 
 - **Style:** 7px radius, Field Surface background, Grid Line Strong border. Inside the mission-control rail, controls fill with Surface High so they read one step lighter than the panel behind them.
 - **Focus:** Buttons carry an explicit Comparison Cyan `focus-visible` outline; other controls use BaseWeb/Streamlit's default focus treatment.
 
-### Navigation (Workspace Selector)
-- **Style:** A `repeat(3, minmax(0, 1fr))` grid on a Panel Deep tray (9px radius, `1px solid` Grid Line border); each pill hides its native radio dot, centers its label, and takes a 6px radius. The checked pill fills Green Deep with a `rgba(119, 213, 132, .28)` border and `#e5f3e7` text; unchecked pills stay transparent.
-- **Mobile:** The same three-cell grid persists; only label size (`.74rem`) and padding shrink.
+### Navigation (Top-level routes)
+- **Style:** Streamlit's native top navigation sits on a Panel Deep tray (9px radius, `1px solid` Grid Line border). Each centered route link takes a 6px radius. The current route fills Green Deep with a `rgba(119, 213, 132, .28)` border and `#e5f3e7` text; inactive routes use Telemetry Muted.
+- **Mobile:** Labels shrink to `.74rem` and truncate only when the browser cannot fit their full text.
 
 ### Command Header + Forecast State (signature component)
 A `112deg` gradient panel (Surface High → Panel Deep, 10px top radius) holding the masthead title and description on the left, and a bordered Forecast State badge — status dot, "Forecast state" label, and the live artifact mode ("Point-in-time replay" / "Upcoming forecast" / "Rolling backtest") — on the right. Its bottom edge carries the `field-lock` animated Field Green underline, growing from 4% to 18% width on load.
@@ -218,11 +218,19 @@ A dense horizontal strip of stat cells directly under the mission controls (`aut
 ### Mission-Control Rail (signature component)
 An attached Panel Deep control strip directly below the command header. Target season, position, and model view are editable in one responsive row, using persistent uppercase labels and Surface High fields. On narrow screens the controls wrap into usable full-width groups rather than moving into hidden navigation.
 
+### URL Navigation
+Draft Board, Weekly Decisions, and Model Room are top-level routes at `/draft`,
+`/weekly`, and `/model`. The native top navigation exposes those routes in one
+horizontal row. Target season, position, and model view are shareable query
+parameters, so a copied URL restores the same forecast context. Multiple
+positions use repeated `position` parameters rather than a comma-delimited
+display value.
+
 ## Do's and Don'ts
 
 ### Do:
 - **Do** reserve Field Green (and Green Deep) for state and action chrome only — the status dot, forecast-state badge, active workspace pill, buttons, slider thumb, and toggle.
-- **Do** keep the workspace selector a true `repeat(3, minmax(0, 1fr))` grid at every viewport; shrink only label size and padding below 760px.
+- **Do** keep all three workspace routes visible in the native top navigation whenever viewport space allows.
 - **Do** use soft, blurred, black-based shadows (`0 Npx Npx rgba(0,0,0,.16-.22)`) for elevation; never a hard offset.
 - **Do** follow the fixed five-color evidence-palette order (green, cyan, amber, coral, violet) when the trend chart adds compared players.
 - **Do** keep Bahnschrift exclusive to `h1`–`h3`; everything else, including uppercase labels, stays on Segoe UI.
@@ -231,5 +239,5 @@ An attached Panel Deep control strip directly below the command header. Target s
 ### Don't:
 - **Don't** use Actual Amber for a projected or comparison value — it marks confirmed actuals only.
 - **Don't** add a `clip-path` notch or a square corner anywhere; every surface carries a small radius (6–10px) except the fully circular status dot.
-- **Don't** stack, wrap, or collapse the workspace selector into a dropdown on narrow viewports.
+- **Don't** recreate route navigation with state-only controls that leave the URL unchanged.
 - **Don't** substitute the Comparison Cyan `focus-visible` outline with the Field Green hover treatment; the two must stay visually distinct.

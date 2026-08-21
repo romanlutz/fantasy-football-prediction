@@ -73,6 +73,10 @@ discovers `*-predictions.parquet` files in the current directory and
 `artifacts/`. Prediction-file selection stays out of the interface; use repeated
 `--predictions` arguments when launching against explicit artifacts.
 
+Each workspace has a shareable route: `/draft`, `/weekly`, or `/model`. Season,
+position, and model choices are preserved in the URL, for example:
+`/draft?season=2025&position=QB&position=WR&model=SVR`.
+
 The dashboard reads the complete point-in-time archive from `artifacts/`, so the
 season selector covers 2010 through the upcoming season and the position filter
 offers QB, RB, WR, TE, K, and DST. Historical artifacts include completed game
