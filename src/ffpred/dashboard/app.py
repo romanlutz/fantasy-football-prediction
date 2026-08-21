@@ -372,7 +372,8 @@ def _draft_view(
     st.header("Draft board")
     st.write(
         "Rank total season value here. Weekly volatility and model disagreement "
-        "stay visible, but they do not replace projected points."
+        "stay visible, but they do not replace projected points. Opportunity "
+        "share and team volume expose fragile production behind recent scores."
     )
     if not positions:
         st.warning("Choose at least one position to build the draft board.")
@@ -413,18 +414,35 @@ def _draft_view(
         return
 
     chart_frame = display.head(18).sort("projected_points").to_pandas()
+    tooltips = [
+        alt.Tooltip("player_name:N", title="Player"),
+        alt.Tooltip("projected_points:Q", title="Projected", format=".1f"),
+        alt.Tooltip("points_per_game:Q", title="Per game", format=".1f"),
+        alt.Tooltip("volatility:Q", title="Weekly swing", format=".1f"),
+    ]
+    if "team" in display.columns:
+        tooltips.append(alt.Tooltip("team:N", title="Team"))
+    if "target_share" in display.columns:
+        tooltips.append(
+            alt.Tooltip("target_share:Q", title="Target share", format=".1%")
+        )
+    if "carry_share" in display.columns:
+        tooltips.append(alt.Tooltip("carry_share:Q", title="Carry share", format=".1%"))
+    if "team_offensive_plays" in display.columns:
+        tooltips.append(
+            alt.Tooltip(
+                "team_offensive_plays:Q",
+                title="Play volume",
+                format=".1f",
+            )
+        )
     bars = (
         alt.Chart(chart_frame)
         .mark_bar(color=INK, cornerRadiusEnd=0)
         .encode(
             x=alt.X("projected_points:Q", title="Projected season points"),
             y=alt.Y("player_name:N", sort=None, title=None),
-            tooltip=[
-                alt.Tooltip("player_name:N", title="Player"),
-                alt.Tooltip("projected_points:Q", title="Projected", format=".1f"),
-                alt.Tooltip("points_per_game:Q", title="Per game", format=".1f"),
-                alt.Tooltip("volatility:Q", title="Weekly swing", format=".1f"),
-            ],
+            tooltip=tooltips,
         )
     )
     labels = bars.mark_text(
@@ -450,7 +468,7 @@ def _draft_view(
     )
     st.caption("Ink bar: projection. Red mark: actual total when available.")
 
-    table = display.select(
+    table_columns: list[pl.Expr] = [
         pl.col("position_rank").alias("Rank"),
         pl.col("position").alias("Pos"),
         pl.col("player_name").alias("Player"),
@@ -460,19 +478,48 @@ def _draft_view(
         pl.col("volatility").alias("Weekly swing"),
         pl.col("model_spread").alias("Model spread"),
         pl.col("actual_points").alias("Actual"),
+    ]
+    if "team" in display.columns:
+        table_columns.insert(3, pl.col("team").alias("Team"))
+    opportunity_display_columns = {
+        "target_share": (pl.col("target_share") * 100).alias("Target share"),
+        "carry_share": (pl.col("carry_share") * 100).alias("Carry share"),
+        "team_offensive_plays": pl.col("team_offensive_plays").alias("Play volume"),
+        "team_pass_rate": (pl.col("team_pass_rate") * 100).alias("Pass rate"),
+        "usage_warning": pl.col("usage_warning").alias("Volume flag"),
+        "opportunity_basis": pl.col("opportunity_basis").alias("Usage basis"),
+    }
+    table_columns.extend(
+        expression
+        for column, expression in opportunity_display_columns.items()
+        if column in display.columns
     )
+    table = display.select(table_columns)
+    column_config = {
+        "Projected": st.column_config.NumberColumn(format="%.1f"),
+        "Per game": st.column_config.NumberColumn(format="%.1f"),
+        "Weekly swing": st.column_config.NumberColumn(format="%.1f"),
+        "Model spread": st.column_config.NumberColumn(format="%.1f"),
+        "Actual": st.column_config.NumberColumn(format="%.1f"),
+        "Target share": st.column_config.NumberColumn(format="%.1f%%"),
+        "Carry share": st.column_config.NumberColumn(format="%.1f%%"),
+        "Play volume": st.column_config.NumberColumn(format="%.1f"),
+        "Pass rate": st.column_config.NumberColumn(format="%.1f%%"),
+    }
     st.dataframe(
         table,
         hide_index=True,
         width="stretch",
-        column_config={
-            "Projected": st.column_config.NumberColumn(format="%.1f"),
-            "Per game": st.column_config.NumberColumn(format="%.1f"),
-            "Weekly swing": st.column_config.NumberColumn(format="%.1f"),
-            "Model spread": st.column_config.NumberColumn(format="%.1f"),
-            "Actual": st.column_config.NumberColumn(format="%.1f"),
-        },
+        column_config=column_config,
     )
+    if "opportunity_basis" in display.columns:
+        st.caption(
+            "Shares and rates use depth-chart projections when projected_* "
+            "columns are supplied; otherwise they are leakage-safe trailing "
+            "10-game values. Play volume is pass attempts plus carries. "
+            "Draft-season roster changes still require a depth-chart "
+            "projection source."
+        )
     st.download_button(
         "Export draft sheet",
         table.write_csv(),

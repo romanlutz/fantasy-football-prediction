@@ -27,6 +27,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ffpred"]
 
+[tool.uv]
+# SHAP leaves Numba unconstrained enough for universal resolution to select
+# releases that predate every supported Python version.
+constraint-dependencies = ["numba>=0.62"]
+
 [dependency-groups]
 dev = [
     "hypothesis>=6.165.10",

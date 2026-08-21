@@ -176,6 +176,22 @@ Artifacts with a `position` column automatically add their positions to the
 interface. Historical artifacts include completed game outcomes and are labeled
 as backtests, not live future projections.
 
+RB/WR/TE models include leakage-safe target share, carry share, team targets,
+pass attempts, rush attempts, pass/rush rate, and offensive opportunity volume.
+The volume measure is pass attempts plus carries, so it deliberately excludes
+sacks and penalty-nullified plays. Prediction artifacts retain both last-game
+and trailing-10-game opportunity context, and the Draft Board shows the
+trailing values with explicit low-target-share, committee, and low-volume
+flags.
+
+For a true preseason board, an artifact can supply `projected_*` opportunity
+columns, such as `projected_target_share`, `projected_carry_share`,
+`projected_team_offensive_plays`, and `projected_team_pass_rate`. The dashboard
+prefers those depth-chart estimates over trailing history. Producing those
+estimates still requires a point-in-time roster/depth-chart source so coaching,
+quarterback, injury, departure, and draft changes are not silently guessed from
+last season's box scores.
+
 Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as
 `FFPRED_OUTPUT_DIR`, `FFPRED_HISTORY_START`, `FFPRED_TRAIN_START`,
@@ -241,7 +257,7 @@ target.
 | QB | Implemented | Standard passing/rushing, configurable via `ScoringConfig` |
 | Team D/ST | Implemented | Sacks, interceptions, fumble recoveries, defensive/ST touchdowns, safeties, blocked kicks, and tiered points-allowed, configurable via `DstScoringConfig` |
 | K | Implemented | Field goals grouped into 0-39/40-49/50+ yard bands, PATs, configurable via `KickerScoringConfig` (kicker's own debut games are dropped rather than backed by a rookie-cohort fallback) |
-| RB / WR / TE | Implemented | Rushing/receiving yards and touchdowns, fumbles, and a single configurable `reception` weight that expresses standard (0), half-PPR (0.5), or full-PPR (1.0) scoring via `ReceivingScoringConfig` (debut games are dropped, as with K; two-point conversion *attempts* are not tracked, only makes) |
+| RB / WR / TE | Implemented | Rushing/receiving yards and touchdowns, fumbles, target share, carry share, team pass/rush volume and rate, and a single configurable `reception` weight that expresses standard (0), half-PPR (0.5), or full-PPR (1.0) scoring via `ReceivingScoringConfig` (debut games are dropped, as with K; two-point conversion *attempts* are not tracked, only makes) |
 | IDP | Implemented (lower-confidence) | Solo/assisted tackles, sacks, interceptions, passes defended, forced fumbles, and touchdowns, configurable via `IdpScoringConfig`. Nflverse tackle attribution is less consistently officiated than offensive box scores and some advanced defensive charting is missing in early seasons, so `build-idp-dataset` defaults to a 2010+ history window and should be evaluated separately from the other positions rather than blended into one headline metric |
 
 All implemented positions share the same acquisition/features/datasets

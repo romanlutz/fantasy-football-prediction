@@ -155,6 +155,7 @@ RECEIVING_PLAYER_STATS_CONTRACT = FrameContract(
         "game_id": ColumnKind.TEXT,
         "team": ColumnKind.TEXT,
         "opponent_team": ColumnKind.TEXT,
+        "attempts": ColumnKind.NUMBER,
         "carries": ColumnKind.NUMBER,
         "rushing_yards": ColumnKind.NUMBER,
         "rushing_tds": ColumnKind.NUMBER,

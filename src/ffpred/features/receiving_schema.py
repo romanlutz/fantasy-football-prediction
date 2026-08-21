@@ -19,12 +19,28 @@ RECEIVING_STAT_FIELDS = (
     "receiving_two_point_made",
     "fumbles",
 )
+OPPORTUNITY_STAT_FIELDS = (
+    "target_share",
+    "carry_share",
+    "team_targets",
+    "team_pass_attempts",
+    "team_rushing_attempts",
+    "team_offensive_plays",
+    "team_pass_rate",
+    "team_rush_rate",
+)
+ROLLING_STAT_FIELDS = (*RECEIVING_STAT_FIELDS, *OPPORTUNITY_STAT_FIELDS)
 
 RECEIVING_LAST_ONE_COLUMNS = tuple(
-    f"receiving_last_1_{field}" for field in RECEIVING_STAT_FIELDS
+    f"receiving_last_1_{field}" for field in ROLLING_STAT_FIELDS
 )
 RECEIVING_LAST_TEN_COLUMNS = tuple(
-    f"receiving_last_10_{field}" for field in RECEIVING_STAT_FIELDS
+    f"receiving_last_10_{field}" for field in ROLLING_STAT_FIELDS
+)
+OUTPUT_CONTEXT_COLUMNS = tuple(
+    f"receiving_last_{window}_{field}"
+    for window in (1, 10)
+    for field in OPPORTUNITY_STAT_FIELDS
 )
 DEFENSE_LAST_ONE_COLUMNS = tuple(
     f"defense_last_1_{field}" for field in DEFENSE_STAT_FIELDS
@@ -42,6 +58,8 @@ IDENTITY_COLUMNS = (
     "player_id",
     "player_name",
     "position",
+    "team",
+    "opponent",
     "target_season",
     "target_week",
     "target_game_id",
@@ -64,6 +82,8 @@ FEATURE_SCHEMA = {
     "player_id": pl.String,
     "player_name": pl.String,
     "position": pl.String,
+    "team": pl.String,
+    "opponent": pl.String,
     "target_season": pl.Int64,
     "target_week": pl.Int64,
     "target_game_id": pl.String,

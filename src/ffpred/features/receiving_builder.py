@@ -14,7 +14,7 @@ from ffpred.features.receiving_schema import (
     FEATURE_COLUMNS,
     FEATURE_SCHEMA,
     MODEL_FEATURE_COLUMNS,
-    RECEIVING_STAT_FIELDS,
+    ROLLING_STAT_FIELDS,
     TARGET_COLUMN,
     validate_feature_frame,
 )
@@ -28,6 +28,7 @@ def _receiving_frame(histories: Mapping[PlayerId, ReceivingHistory]) -> pl.DataF
             "player_id": history.player_id,
             "player_name": history.name,
             "position": history.position,
+            "team": game.context.team,
             "target_season": game.key.season,
             "target_week": game.key.week,
             "target_game_id": game.context.game_id,
@@ -86,9 +87,30 @@ def build_receiving_feature_frame(
     """
     if not receiving_histories:
         return pl.DataFrame(schema=FEATURE_SCHEMA)
-    receiving = _receiving_frame(receiving_histories).with_columns(
-        rolling_expressions(
-            RECEIVING_STAT_FIELDS, prefix="receiving", group="player_id"
+    receiving = (
+        _receiving_frame(receiving_histories)
+        .with_columns(
+            pl.when(pl.col("team_targets") > 0)
+            .then(pl.col("targets") / pl.col("team_targets"))
+            .otherwise(0.0)
+            .alias("target_share"),
+            pl.when(pl.col("team_rushing_attempts") > 0)
+            .then(pl.col("rushing_attempts") / pl.col("team_rushing_attempts"))
+            .otherwise(0.0)
+            .alias("carry_share"),
+            pl.when(pl.col("team_offensive_plays") > 0)
+            .then(pl.col("team_pass_attempts") / pl.col("team_offensive_plays"))
+            .otherwise(0.0)
+            .alias("team_pass_rate"),
+            pl.when(pl.col("team_offensive_plays") > 0)
+            .then(pl.col("team_rushing_attempts") / pl.col("team_offensive_plays"))
+            .otherwise(0.0)
+            .alias("team_rush_rate"),
+        )
+        .with_columns(
+            rolling_expressions(
+                ROLLING_STAT_FIELDS, prefix="receiving", group="player_id"
+            )
         )
     )
     defenses = (

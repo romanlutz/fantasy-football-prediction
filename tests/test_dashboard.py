@@ -95,6 +95,55 @@ def test_draft_and_weekly_boards_rank_the_selected_horizon() -> None:
     assert weekly["model_agreement"].unique().to_list() == ["Single model"]
 
 
+def test_draft_board_surfaces_depth_chart_share_and_volume_risk() -> None:
+    predictions = _predictions().with_columns(
+        pl.lit("WR").alias("position"),
+        pl.lit(0.10).alias("projected_target_share"),
+        pl.lit(55.0).alias("projected_team_offensive_plays"),
+        pl.lit(0.62).alias("projected_team_pass_rate"),
+    )
+    prepared = select_model(
+        prepare_predictions(predictions, model_name="SVR"),
+        "SVR",
+    )
+
+    draft = draft_board(
+        prepared,
+        season=2025,
+        positions=["WR"],
+        minimum_games=2,
+    )
+
+    assert draft["target_share"].to_list() == [0.10, 0.10]
+    assert draft["team_offensive_plays"].to_list() == [55.0, 55.0]
+    assert draft["opportunity_basis"].unique().to_list() == ["Depth-chart estimate"]
+    assert draft["usage_warning"].unique().to_list() == [
+        "Low target share; Low-volume offense"
+    ]
+
+
+def test_draft_board_flags_running_back_committee_risk() -> None:
+    predictions = _predictions().with_columns(
+        pl.lit("RB").alias("position"),
+        pl.lit(0.35).alias("projected_carry_share"),
+        pl.lit(64.0).alias("projected_team_offensive_plays"),
+    )
+    prepared = select_model(
+        prepare_predictions(predictions, model_name="SVR"),
+        "SVR",
+    )
+
+    draft = draft_board(
+        prepared,
+        season=2025,
+        positions=["RB"],
+        minimum_games=2,
+    )
+
+    assert draft["carry_share"].to_list() == [0.35, 0.35]
+    assert draft["usage_warning"].unique().to_list() == ["Committee risk"]
+
+
 def test_model_scorecard_includes_consensus() -> None:
     frame = pl.concat(
         [

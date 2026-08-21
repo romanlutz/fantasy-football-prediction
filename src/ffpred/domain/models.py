@@ -198,6 +198,10 @@ class ReceivingGameStats:
     receiving_touchdowns: float
     receiving_two_point_made: float
     fumbles: float
+    team_targets: float = 0.0
+    team_pass_attempts: float = 0.0
+    team_rushing_attempts: float = 0.0
+    team_offensive_plays: float = 0.0
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

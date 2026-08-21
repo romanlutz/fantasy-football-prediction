@@ -446,15 +446,35 @@ def acquire_receiving_histories(
     schedules = _schedule_index(provider.load_schedules(season_list))
     frame = validate_frame(
         provider.load_player_stats(season_list), RECEIVING_PLAYER_STATS_CONTRACT
-    ).filter(
-        (pl.col("season_type") == REGULAR_SEASON)
-        & (pl.col("position").is_in(position_list))
-    )
+    ).filter(pl.col("season_type") == REGULAR_SEASON)
+    team_totals = {
+        (
+            GameId(_required_text(row["game_id"], "game_id")),
+            TeamCode(_required_text(row["team"], "team")),
+        ): (
+            _number(row["team_targets"]),
+            _number(row["team_pass_attempts"]),
+            _number(row["team_rushing_attempts"]),
+        )
+        for row in (
+            frame.filter(pl.col("player_id").is_not_null())
+            .group_by("game_id", "team")
+            .agg(
+                pl.col("targets").fill_null(0).sum().alias("team_targets"),
+                pl.col("attempts").fill_null(0).sum().alias("team_pass_attempts"),
+                pl.col("carries").fill_null(0).sum().alias("team_rushing_attempts"),
+            )
+            .iter_rows(named=True)
+        )
+    }
+    frame = frame.filter(pl.col("position").is_in(position_list))
 
     histories: dict[PlayerId, ReceivingHistory] = {}
     for row in frame.iter_rows(named=True):
         player_id = PlayerId(_required_text(row["player_id"], "player_id"))
         game_id = GameId(_required_text(row["game_id"], "game_id"))
+        team = TeamCode(_required_text(row["team"], "team"))
+        targets, pass_attempts, rushing_attempts = team_totals[(game_id, team)]
         if game_id not in schedules:
             raise DataAcquisitionError(f"No schedule row found for game {game_id}")
         history = histories.setdefault(
@@ -470,7 +490,7 @@ def acquire_receiving_histories(
             key=key,
             context=_game_context(
                 schedules[game_id],
-                team=TeamCode(_required_text(row["team"], "team")),
+                team=team,
                 opponent=TeamCode(
                     _required_text(row["opponent_team"], "opponent_team")
                 ),
@@ -486,6 +506,10 @@ def acquire_receiving_histories(
                 receiving_touchdowns=_number(row["receiving_tds"]),
                 receiving_two_point_made=_number(row["receiving_2pt_conversions"]),
                 fumbles=_number(row["fumbles_total"]),
+                team_targets=targets,
+                team_pass_attempts=pass_attempts,
+                team_rushing_attempts=rushing_attempts,
+                team_offensive_plays=pass_attempts + rushing_attempts,
             ),
         )
     return histories

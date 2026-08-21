@@ -42,6 +42,7 @@ def _provider() -> FakeProvider:
                     "game_id": "2014_01_GB_SEA",
                     "team": "GB",
                     "opponent_team": "SEA",
+                    "attempts": 0,
                     "carries": 15,
                     "rushing_yards": 80,
                     "rushing_tds": 1,
@@ -80,6 +81,9 @@ def test_receiving_acquisition_maps_nflverse_fields() -> None:
     assert game.stats.rushing_yards == 80
     assert game.stats.receptions == 4
     assert game.stats.receiving_two_point_made == 1
+    assert game.stats.team_targets == 5
+    assert game.stats.team_rushing_attempts == 15
+    assert game.stats.team_offensive_plays == 15
 
 
 def test_receiving_acquisition_filters_by_requested_positions() -> None:
@@ -122,6 +126,17 @@ def test_receiving_feature_frame_is_named_and_leakage_safe() -> None:
     assert tuple(frame.columns) == FEATURE_COLUMNS
     assert frame.height > 0
     assert set(frame["position"].to_list()) <= {"RB", "WR"}
+    row = frame.filter(
+        (pl.col("player_id") == "00-WR")
+        & (pl.col("target_season") == 2020)
+        & (pl.col("target_week") == 2)
+    ).row(0, named=True)
+    assert row["receiving_last_1_target_share"] == pytest.approx(0.5)
+    assert row["receiving_last_1_carry_share"] == pytest.approx(10 / 23)
+    assert row["receiving_last_1_team_pass_attempts"] == 30
+    assert row["receiving_last_1_team_rushing_attempts"] == 23
+    assert row["receiving_last_1_team_offensive_plays"] == 53
+    assert row["receiving_last_1_team_pass_rate"] == pytest.approx(30 / 53)
     for row in frame.iter_rows(named=True):
         target = (row["target_season"], row["target_week"])
         assert (

@@ -358,6 +358,8 @@ def test_receiving_build_train_and_evaluate_round_trip(
     assert evaluation_output["metrics"] == train_output["metrics"]
     prediction_frame = pl.read_parquet(predictions)
     assert "prediction" in prediction_frame.columns
+    assert "receiving_last_10_target_share" in prediction_frame.columns
+    assert "receiving_last_10_team_offensive_plays" in prediction_frame.columns
     assert set(pl.read_parquet(tmp_path / "train.parquet")["position"]) == {"WR"}
 
 

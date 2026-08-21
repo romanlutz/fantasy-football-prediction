@@ -36,9 +36,12 @@ narrow the field for roster decisions.
 - Support filtering by position and other useful player, team, season, week, and
   performance attributes when those fields are present in an artifact.
 - Work with the project's Parquet datasets and prediction artifacts.
-- The current prediction pipeline is quarterback-focused. The interface must
-  communicate unavailable positions honestly while remaining compatible with
-  future multi-position artifacts.
+- The prediction pipeline supports QB, D/ST, kicker, RB/WR/TE, and IDP
+  artifacts. The interface must communicate positions unavailable in a loaded
+  artifact honestly.
+- RB/WR/TE draft evidence includes target share, carry share, team volume, and
+  pass/rush tendency. Preseason roster changes require explicit depth-chart
+  estimates rather than silent extrapolation from last season.
 - Model output is decision support, not a guarantee of fantasy performance.
 
 ## Evidence on Hand

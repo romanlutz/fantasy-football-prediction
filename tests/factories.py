@@ -221,6 +221,7 @@ def make_receiving_provider(
                         "game_id": game_id,
                         "team": "GB",
                         "opponent_team": "SEA",
+                        "attempts": 0,
                         "carries": 10 + index,
                         "rushing_yards": 40 + index * 5,
                         "rushing_tds": 1,
@@ -233,6 +234,30 @@ def make_receiving_provider(
                         "fumbles_total": 0,
                     }
                 )
+            player_stats.append(
+                {
+                    "player_id": "00-QB",
+                    "player_display_name": "Test Quarterback",
+                    "position": "QB",
+                    "season": season,
+                    "week": week,
+                    "season_type": "REG",
+                    "game_id": game_id,
+                    "team": "GB",
+                    "opponent_team": "SEA",
+                    "attempts": 30,
+                    "carries": 3,
+                    "rushing_yards": 15,
+                    "rushing_tds": 0,
+                    "rushing_2pt_conversions": 0,
+                    "receptions": 0,
+                    "targets": 0,
+                    "receiving_yards": 0,
+                    "receiving_tds": 0,
+                    "receiving_2pt_conversions": 0,
+                    "fumbles_total": 0,
+                }
+            )
             team_stats.append(
                 {
                     "season": season,

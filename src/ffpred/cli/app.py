@@ -113,6 +113,15 @@ POSITION_IDENTITY_COLUMNS: dict[str, tuple[str, ...]] = {
     "te": receiving_schema.IDENTITY_COLUMNS,
     "idp": idp_schema.IDENTITY_COLUMNS,
 }
+POSITION_OUTPUT_CONTEXT_COLUMNS: dict[str, tuple[str, ...]] = {
+    "qb": (),
+    "dst": (),
+    "k": (),
+    "rb": receiving_schema.OUTPUT_CONTEXT_COLUMNS,
+    "wr": receiving_schema.OUTPUT_CONTEXT_COLUMNS,
+    "te": receiving_schema.OUTPUT_CONTEXT_COLUMNS,
+    "idp": (),
+}
 POSITION_VALIDATORS = {
     "qb": qb_schema.validate_feature_frame,
     "dst": dst_schema.validate_feature_frame,
@@ -340,11 +349,11 @@ def _write_predictions(
     test_frame: pl.DataFrame,
     predictions: NDArray[np.float64],
     *,
-    identity_columns: tuple[str, ...],
+    source_columns: tuple[str, ...],
     additional_columns: Mapping[str, NDArray[np.float64]] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    frame = test_frame.select(*identity_columns, TARGET_COLUMN).with_columns(
+    frame = test_frame.select(*source_columns, TARGET_COLUMN).with_columns(
         pl.Series(PREDICTION_COLUMN, predictions, dtype=pl.Float64)
     )
     if additional_columns:
@@ -556,6 +565,7 @@ def _run_svr(options: SvrOptions) -> dict[str, object]:
         raise FfpredError("--manual-features is only supported for --position qb")
     feature_names = POSITION_FEATURE_COLUMNS[options.position]
     identity_columns = POSITION_IDENTITY_COLUMNS[options.position]
+    context_columns = POSITION_OUTPUT_CONTEXT_COLUMNS[options.position]
     validator = POSITION_VALIDATORS[options.position]
     train = load_training_data(options.train_path, feature_names, validator=validator)
     test = load_training_data(options.test_path, feature_names, validator=validator)
@@ -576,7 +586,7 @@ def _run_svr(options: SvrOptions) -> dict[str, object]:
         options.predictions_path,
         test.frame,
         result.predictions,
-        identity_columns=identity_columns,
+        source_columns=(*identity_columns, *context_columns),
     )
     explanations_path = options.explainability.path
     if explanations_path is not None:
@@ -603,6 +613,7 @@ def _run_svr(options: SvrOptions) -> dict[str, object]:
 def _run_mlp(options: MlpOptions) -> dict[str, object]:
     feature_names = POSITION_FEATURE_COLUMNS[options.position]
     identity_columns = POSITION_IDENTITY_COLUMNS[options.position]
+    context_columns = POSITION_OUTPUT_CONTEXT_COLUMNS[options.position]
     validator = POSITION_VALIDATORS[options.position]
     train = load_training_data(options.train_path, feature_names, validator=validator)
     test = load_training_data(options.test_path, feature_names, validator=validator)
@@ -618,7 +629,7 @@ def _run_mlp(options: MlpOptions) -> dict[str, object]:
         options.predictions_path,
         test.frame,
         result.predictions,
-        identity_columns=identity_columns,
+        source_columns=(*identity_columns, *context_columns),
     )
     explanations_path = options.explainability.path
     if explanations_path is not None:
@@ -645,6 +656,7 @@ def _run_mlp(options: MlpOptions) -> dict[str, object]:
 def _run_ebm(options: EbmOptions) -> dict[str, object]:
     feature_names = POSITION_FEATURE_COLUMNS[options.position]
     identity_columns = POSITION_IDENTITY_COLUMNS[options.position]
+    context_columns = POSITION_OUTPUT_CONTEXT_COLUMNS[options.position]
     validator = POSITION_VALIDATORS[options.position]
     train = load_training_data(options.train_path, feature_names, validator=validator)
     test = load_training_data(options.test_path, feature_names, validator=validator)
@@ -674,7 +686,7 @@ def _run_ebm(options: EbmOptions) -> dict[str, object]:
         options.predictions_path,
         test.frame,
         result.predictions,
-        identity_columns=identity_columns,
+        source_columns=(*identity_columns, *context_columns),
         additional_columns=interval_columns,
     )
     diagnostics = _model_diagnostics(
