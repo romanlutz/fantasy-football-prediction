@@ -181,6 +181,15 @@ def test_dashboard_app_renders_all_workspaces(
     assert not app.number_input
     assert [widget.label for widget in app.multiselect] == ["Position"]
     assert next(widget for widget in app.selectbox if widget.label == "Target season")
+    sort = next(widget for widget in app.selectbox if widget.label == "Sort players by")
+    assert sort.options == [
+        "Projected",
+        "Actual",
+        "Adjusted at projected PPG",
+        "Adjusted at actual PPG",
+    ]
+    sort.set_value("Adjusted at actual PPG").run()
+    assert not app.exception
     assert app.radio[0].options == [
         "Draft Board",
         "Weekly Decisions",

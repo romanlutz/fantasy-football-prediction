@@ -16,6 +16,10 @@ colors:
   actual-amber: "#d4af63"
   evidence-coral: "#d98578"
   evidence-violet: "#9b91c9"
+  projected-blue: "#56b4e9"
+  actual-neutral: "#e6efec"
+  projected-pace-purple: "#cc79a7"
+  actual-pace-yellow: "#f0e442"
 typography:
   display:
     fontFamily: "Bahnschrift, Arial Narrow, Segoe UI, sans-serif"
@@ -85,7 +89,7 @@ components:
 
 **Creative North Star: "The Night-Game Command Deck"**
 
-This is a stadium operations display for player evidence, not a generic analytics dashboard: a charcoal field, gridded like turf under stadium lights, carries a single restrained accent strategy so model provenance never gets lost behind ranking noise. Field Green is the only signal for state and action; Comparison Cyan and Actual Amber carry the two evidence roles a forecast needs — what the models project against each other, and what already happened. There is no paper, no ink stamp, no cursive handwriting anywhere in this system; every trace of the prior ledger metaphor has been retired.
+This is a stadium operations display for player evidence, not a generic analytics dashboard: a charcoal field, gridded like turf under stadium lights, carries a restrained accent strategy so model provenance never gets lost behind ranking noise. Field Green is the only signal for state and action. Historical comparison uses a colorblind-safe blue, near-white, purple, and yellow set plus solid-versus-dashed treatment, so meaning never depends on hue alone. There is no paper, no ink stamp, no cursive handwriting anywhere in this system; every trace of the prior ledger metaphor has been retired.
 
 The build stays disciplined about role separation: green signals state and action, cyan compares model output, amber marks confirmed fact, and a small five-color evidence palette (green, cyan, amber, coral, violet) extends only as far as the weekly trend chart needs it. A compact command header and a live telemetry rail lead directly into three persistent workspaces (Draft Board, Weekly Decisions, Model Room), rendered as one equal-width row at every viewport, because moving between season-long and single-week decisions without losing model context is the product's central promise.
 
@@ -101,31 +105,38 @@ The build stays disciplined about role separation: green signals state and actio
 A charcoal, night-game palette where nearly all of the interface is dark neutral field, and each accent color carries exactly one evidentiary role.
 
 ### Primary
-- **Field Green** (`#77d584`): The action/state signal color — the status dot, the forecast-state badge text, the active workspace pill, the primary/download buttons (via its deep variant), the slider thumb, the active toggle track, and the draft-board projection bars. It is the "the model is live and this is its call" color.
+- **Field Green** (`#77d584`): The action/state signal color — the status dot, the forecast-state badge text, the active workspace pill, the primary/download buttons (via its deep variant), the slider thumb, and the active toggle track. It is the "the model is live" color and does not encode chart evidence.
 - **Green Deep** (`#214c34`): Field Green's recessed low-light variant — the fill for primary/download buttons and the active workspace pill, so controls read as illuminated turf rather than a flat color chip.
 
 ### Secondary
 - **Comparison Cyan** (`#62b9c8`): The projected-PPG adjusted marker on the draft board, the weekly-comparison bar chart, `code` text, and the button `focus-visible` outline — a color-independent focus cue kept deliberately distinct from the green hover state.
 
 ### Tertiary
-- **Actual Amber** (`#d4af63`): The confirmed/actual-value marker — the draft-board's actual-points bars and the "actual" line in the weekly trend chart. Never used for a projection.
-- **Evidence Coral** (`#d98578`): The actual-PPG adjusted marker on the draft board, the model-room mean-absolute-error bar chart, and the fourth line in the multi-player trend comparison.
+- **Actual Amber** (`#d4af63`): The confirmed/actual-value marker in the weekly trend chart. Never used for a projection.
+- **Evidence Coral** (`#d98578`): The model-room mean-absolute-error bar chart and the fourth line in the multi-player trend comparison.
 - **Evidence Violet** (`#9b91c9`): Reserved for the fifth compared player's trend line only — the rarest color in the system.
+
+### Historical Comparison
+- **Projected Blue** (`#56b4e9`): Original preseason projection.
+- **Actual Neutral** (`#e6efec`): Recorded season total, deliberately achromatic.
+- **Projected-Pace Purple** (`#cc79a7`): Actual total adjusted with preseason projected PPG.
+- **Actual-Pace Yellow** (`#f0e442`): Actual total adjusted with observed PPG.
+- Injury additions use translucent fill and a dashed outline; solid fill is the recorded or modeled base. Labels, tooltips, and pattern reinforce every color.
 
 ### Neutral
 - **Charcoal Field** (`#0d1517`): The base canvas, overlaid with a faint two-axis 40px grid of green-tinted hairlines (`rgba(119, 213, 132, .022)` / `rgba(119, 213, 132, .016)`) so the page itself reads as a night-lit field.
-- **Panel Deep** (`#121e21`): The sidebar and the workspace-selector tray fill, one step lighter than the canvas.
+- **Panel Deep** (`#121e21`): The mission-control and workspace-selector tray fill, one step lighter than the canvas.
 - **Field Surface** (`#162326`): Dataframes, inputs, alerts, and every Altair chart's background.
-- **Surface High** (`#1b2b2f`): The command header's gradient highlight and the sidebar's form-field fill — the lightest charcoal step.
+- **Surface High** (`#1b2b2f`): The command header's gradient highlight and mission-control field fill — the lightest charcoal step.
 - **Grid Line** (`#294044`): Borders throughout, and every Altair chart's axis, gridline, and tick color.
-- **Grid Line Strong** (`#3c5b60`): Stronger borders on inputs, alerts, and sidebar form fields.
+- **Grid Line Strong** (`#3c5b60`): Stronger borders on inputs, alerts, and mission-control fields.
 - **Broadcast Text** (`#dce8e4`): The primary text color throughout, headings and body alike.
 - **Telemetry Muted** (`#94aaa5`): Captions, paragraph copy, and telemetry-item labels.
 
 ### Named Rules
 **The Field Signal Rule.** Field Green (and its Green Deep variant) is reserved for state and action chrome — the status dot, the forecast-state badge, the active workspace pill, buttons, the slider thumb, and the active toggle. It never appears as a comparison or actual-value color inside a chart.
 
-**The Confirmed-Fact Amber Rule.** Actual Amber marks only confirmed, already-happened values — the draft-board's actual-points bar and the trend chart's actual line. A projection is never drawn in amber. Comparison Cyan marks the projected-PPG adjusted total, while Evidence Coral marks the actual-PPG adjusted total; neither is a confirmed actual.
+**The Historical Comparison Redundancy Rule.** The Draft Board never relies on green-versus-amber or any color pair alone. Its four measures use labeled color roles, and injury additions are always distinguished from the solid base by a dashed outline and translucent fill.
 
 **The Evidence Palette Order Rule.** When the weekly trend chart compares more than one player, added lines take colors from a fixed five-step sequence — Field Green, Comparison Cyan, Actual Amber, Evidence Coral, Evidence Violet — always in that order, never reshuffled or reassigned per player.
 

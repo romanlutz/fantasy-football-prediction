@@ -36,6 +36,23 @@ AMBER = "#d4af63"
 CORAL = "#d98578"
 VIOLET = "#9b91c9"
 GRID = "#294044"
+PROJECTED_BLUE = "#56b4e9"
+ACTUAL_NEUTRAL = "#e6efec"
+PROJECTED_PACE_PURPLE = "#cc79a7"
+ACTUAL_PACE_YELLOW = "#f0e442"
+
+DRAFT_BAR_FIELDS = {
+    "Projected": "projected_points",
+    "Actual": "actual_points",
+    "Adjusted at projected PPG": "projected_pace_adjusted_actual",
+    "Adjusted at actual PPG": "actual_pace_adjusted_actual",
+}
+DRAFT_BAR_COLORS = {
+    "Projected": PROJECTED_BLUE,
+    "Actual": ACTUAL_NEUTRAL,
+    "Adjusted at projected PPG": PROJECTED_PACE_PURPLE,
+    "Adjusted at actual PPG": ACTUAL_PACE_YELLOW,
+}
 
 
 def _inject_styles() -> None:
@@ -556,124 +573,156 @@ def _draft_view(
         st.warning("Choose at least one position to build the draft board.")
         return
 
-    controls = st.columns([2, 1])
-    search = controls[0].text_input("Find player", placeholder="Search the board")
-    top_n = controls[1].selectbox("Board depth", [12, 24, 50, 100], index=1)
-
     board = draft_board(
         frame,
         season=season,
         positions=positions,
     )
+    has_actuals = board["actual_points"].count() > 0
+    controls = st.columns([2, 1, 1.6] if has_actuals else [2, 1])
+    search = controls[0].text_input("Find player", placeholder="Search the board")
+    top_n = controls[1].selectbox("Board depth", [12, 24, 50, 100], index=1)
+    sort_label = (
+        controls[2].selectbox("Sort players by", list(DRAFT_BAR_FIELDS))
+        if has_actuals
+        else "Projected"
+    )
     if search:
         board = board.filter(
             pl.col("player_name").str.contains(search, literal=True, strict=False)
         )
-    display = board.head(top_n)
+    display = board.sort(
+        DRAFT_BAR_FIELDS[sort_label],
+        descending=True,
+        nulls_last=True,
+    ).head(top_n)
 
     if display.is_empty():
         st.warning("No players match this search.")
         return
 
-    chart_frame = display.head(18).sort("projected_points").to_pandas()
-    comparison = (
-        chart_frame[["player_name", "projected_points", "actual_points"]]
-        .melt(
-            id_vars="player_name",
-            value_vars=["projected_points", "actual_points"],
-            var_name="measure",
-            value_name="points",
-        )
-        .dropna(subset=["points"])
+    chart_rows = display.head(18)
+    player_order = chart_rows["player_name"].to_list()
+    identity = ["player_name", "injury_games"]
+    regular_bars = pl.concat(
+        [
+            chart_rows.select(
+                *identity,
+                pl.lit(label).alias("measure"),
+                pl.col(field).alias("base_points"),
+                pl.col(field).alias("total_points"),
+                pl.lit(0.0).alias("addition_points"),
+            )
+            for label, field in list(DRAFT_BAR_FIELDS.items())[:2]
+        ],
+        how="vertical",
     )
-    comparison["measure"] = comparison["measure"].replace(
-        {
-            "projected_points": "Projected",
-            "actual_points": "Actual",
-        }
+    adjusted_bars = pl.concat(
+        [
+            chart_rows.select(
+                *identity,
+                pl.lit(label).alias("measure"),
+                pl.col("actual_points").alias("base_points"),
+                pl.col(total_field).alias("total_points"),
+                pl.col(addition_field).alias("addition_points"),
+            )
+            for label, total_field, addition_field in (
+                (
+                    "Adjusted at projected PPG",
+                    "projected_pace_adjusted_actual",
+                    "projected_pace_injury_points",
+                ),
+                (
+                    "Adjusted at actual PPG",
+                    "actual_pace_adjusted_actual",
+                    "actual_pace_injury_points",
+                ),
+            )
+        ],
+        how="vertical",
+    ).filter(pl.col("injury_games") > 0)
+    chart_data = pl.concat([regular_bars, adjusted_bars], how="vertical").drop_nulls(
+        ["base_points", "total_points"]
     )
-    bars = (
-        alt.Chart(comparison)
+    chart_frame = chart_data.to_pandas()
+    available_measures = set(chart_data["measure"].to_list())
+    bar_order = [label for label in DRAFT_BAR_FIELDS if label in available_measures]
+    color = alt.Color(
+        "measure:N",
+        scale=alt.Scale(
+            domain=bar_order,
+            range=[DRAFT_BAR_COLORS[label] for label in bar_order],
+        ),
+        sort=bar_order,
+        legend=alt.Legend(
+            columns=2,
+            direction="horizontal",
+            labelLimit=240,
+            orient="bottom",
+            symbolType="square",
+            title=None,
+        ),
+    )
+    y = alt.Y(
+        "player_name:N",
+        sort=player_order,
+        title=None,
+        scale=alt.Scale(paddingInner=0.34, paddingOuter=0.16),
+    )
+    y_offset = alt.YOffset(
+        "measure:N",
+        sort=bar_order,
+        scale=alt.Scale(paddingInner=0.12),
+        title=None,
+    )
+    tooltip = [
+        alt.Tooltip("player_name:N", title="Player"),
+        alt.Tooltip("measure:N", title="Measure"),
+        alt.Tooltip("total_points:Q", title="Total", format=".1f"),
+        alt.Tooltip("addition_points:Q", title="Injury addition", format=".1f"),
+        alt.Tooltip("injury_games:Q", title="Injury misses"),
+    ]
+    base_bars = (
+        alt.Chart(chart_frame)
         .mark_bar(cornerRadiusEnd=3)
         .encode(
-            x=alt.X("points:Q", title="Season points"),
-            y=alt.Y("player_name:N", sort=None, title=None),
-            yOffset=alt.YOffset(
-                "measure:N",
-                sort=["Projected", "Actual"],
-                title=None,
-            ),
-            color=alt.Color(
-                "measure:N",
-                scale=alt.Scale(
-                    domain=["Projected", "Actual"],
-                    range=[GREEN, AMBER],
-                ),
-                title=None,
-            ),
-            tooltip=[
-                alt.Tooltip("player_name:N", title="Player"),
-                alt.Tooltip("measure:N", title="Measure"),
-                alt.Tooltip("points:Q", title="Points", format=".1f"),
-            ],
+            x=alt.X("base_points:Q", title="Season points"),
+            y=y,
+            yOffset=y_offset,
+            color=color,
+            tooltip=tooltip,
         )
     )
-    projected_pace_adjusted = (
-        alt.Chart(chart_frame.dropna(subset=["projected_pace_adjusted_actual"]))
-        .mark_point(color=CYAN, filled=True, shape="diamond", size=80)
-        .encode(
-            x=alt.X("projected_pace_adjusted_actual:Q"),
-            y=alt.Y("player_name:N", sort=None),
-            tooltip=[
-                alt.Tooltip("player_name:N", title="Player"),
-                alt.Tooltip(
-                    "projected_pace_adjusted_actual:Q",
-                    title="Adjusted at projected PPG",
-                    format=".1f",
-                ),
-                alt.Tooltip("injury_games:Q", title="Injury misses"),
-                alt.Tooltip(
-                    "projected_pace_injury_points:Q",
-                    title="Projected-pace addition",
-                    format=".1f",
-                ),
-            ],
+    additions = (
+        alt.Chart(chart_frame)
+        .transform_filter(alt.datum.addition_points > 0)
+        .mark_bar(
+            cornerRadiusEnd=3,
+            fillOpacity=0.2,
+            strokeWidth=1.5,
+            strokeDash=[6, 3],
         )
-    )
-    actual_pace_adjusted = (
-        alt.Chart(chart_frame.dropna(subset=["actual_pace_adjusted_actual"]))
-        .mark_point(color=CORAL, filled=True, shape="circle", size=70)
         .encode(
-            x=alt.X("actual_pace_adjusted_actual:Q"),
-            y=alt.Y("player_name:N", sort=None),
-            tooltip=[
-                alt.Tooltip("player_name:N", title="Player"),
-                alt.Tooltip(
-                    "actual_pace_adjusted_actual:Q",
-                    title="Adjusted at actual PPG",
-                    format=".1f",
-                ),
-                alt.Tooltip("injury_games:Q", title="Injury misses"),
-                alt.Tooltip(
-                    "actual_pace_injury_points:Q",
-                    title="Actual-pace addition",
-                    format=".1f",
-                ),
-            ],
+            x=alt.X("base_points:Q"),
+            x2=alt.X2("total_points:Q"),
+            y=y,
+            yOffset=y_offset,
+            color=color,
+            stroke=color,
+            tooltip=tooltip,
         )
     )
     st.altair_chart(
         _chart_theme(
-            (bars + projected_pace_adjusted + actual_pace_adjusted).properties(
-                height=max(360, len(chart_frame) * 32)
-            )
+            (base_bars + additions).properties(height=max(420, len(player_order) * 58))
         ),
         width="stretch",
     )
     st.caption(
-        "Green: projected. Amber: actual. Cyan diamond: injury games filled at "
-        "projected PPG. Coral circle: injury games filled at actual PPG. Only "
-        "Out and reserve-list absences count."
+        "Solid bars show recorded or modeled points. On adjusted bars, the "
+        "translucent dashed extension estimates points for injury misses. "
+        "Adjusted bars appear only for players with source-backed Out or "
+        "reserve-list absences."
     )
 
     table = display.select(
