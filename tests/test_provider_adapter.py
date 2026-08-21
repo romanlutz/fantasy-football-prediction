@@ -3,7 +3,9 @@ from unittest.mock import Mock
 
 import polars as pl
 
+from ffpred.providers.fakes import FakeProvider
 from ffpred.providers.nflreadpy import NFLVERSE_DATA_URL, NflReadPyProvider
+from ffpred.providers.provenance import ProvenanceProvider
 
 
 def test_nflreadpy_adapter_delegates_all_operations(monkeypatch) -> None:
@@ -14,6 +16,7 @@ def test_nflreadpy_adapter_delegates_all_operations(monkeypatch) -> None:
     load_depth_charts = Mock(return_value=frame)
     load_players = Mock(return_value=frame)
     load_pbp = Mock(return_value=frame)
+    load_injuries = Mock(return_value=frame)
     monkeypatch.setattr(
         "ffpred.providers.nflreadpy.nfl.load_player_stats",
         load_player_stats,
@@ -35,6 +38,10 @@ def test_nflreadpy_adapter_delegates_all_operations(monkeypatch) -> None:
         load_players,
     )
     monkeypatch.setattr("ffpred.providers.nflreadpy.nfl.load_pbp", load_pbp)
+    monkeypatch.setattr(
+        "ffpred.providers.nflreadpy.nfl.load_injuries",
+        load_injuries,
+    )
     provider = NflReadPyProvider()
 
     assert provider.load_player_stats((2024, 2025)) is frame
@@ -43,12 +50,14 @@ def test_nflreadpy_adapter_delegates_all_operations(monkeypatch) -> None:
     assert provider.load_depth_charts((2025,)) is frame
     assert provider.load_players() is frame
     assert provider.load_pbp(2025) is frame
+    assert provider.load_injuries((2024, 2025)) is frame
     load_player_stats.assert_called_once_with([2024, 2025])
     load_team_stats.assert_called_once_with([2025])
     load_schedules.assert_called_once_with([2025])
     load_depth_charts.assert_called_once_with([2025])
     load_players.assert_called_once_with()
     load_pbp.assert_called_once_with(2025)
+    load_injuries.assert_called_once_with([2024, 2025])
 
 
 def test_nflreadpy_adapter_reports_reproducibility_metadata() -> None:
@@ -75,3 +84,16 @@ def test_nflreadpy_adapter_applies_explicit_cache_settings(monkeypatch) -> None:
         cache_mode="filesystem",
         cache_dir=Path("cache"),
     )
+
+
+def test_provenance_provider_fingerprints_every_delegated_call() -> None:
+    injuries = pl.DataFrame({"season": [2023], "week": [1]})
+    provider = ProvenanceProvider(FakeProvider(injuries=injuries))
+
+    assert provider.load_injuries((2023, 2024)) is injuries
+    assert provider.load_players() is not None
+
+    artifact = provider.artifacts["injuries:2023-2024"]
+    assert artifact.rows == 1
+    assert artifact.sha256
+    assert "players" in provider.artifacts

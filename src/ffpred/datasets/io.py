@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
@@ -11,6 +12,8 @@ from ffpred.datasets.manifest import DatasetArtifact
 from ffpred.errors import DatasetIntegrityError, EmptyDatasetError
 from ffpred.features.all_positions import validate_all_position_frame
 from ffpred.features.schema import validate_feature_frame, validate_forecast_frame
+
+Validator = Callable[[pl.DataFrame], pl.DataFrame]
 
 
 def file_sha256(path: Path) -> str:
@@ -22,9 +25,14 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def write_dataset(path: Path, frame: pl.DataFrame) -> DatasetArtifact:
+def write_dataset(
+    path: Path,
+    frame: pl.DataFrame,
+    *,
+    validator: Validator = validate_feature_frame,
+) -> DatasetArtifact:
     """Validate and atomically persist a feature table as Parquet."""
-    validate_feature_frame(frame)
+    validator(frame)
     if frame.is_empty():
         raise EmptyDatasetError(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -43,6 +51,7 @@ def read_dataset(
     path: Path,
     *,
     expected_sha256: str | None = None,
+    validator: Validator | None = None,
 ) -> pl.DataFrame:
     """Read and validate a persisted feature table."""
     if expected_sha256 is not None:
@@ -53,6 +62,8 @@ def read_dataset(
                 f"expected {expected_sha256}, got {actual}"
             )
     frame = pl.read_parquet(path)
+    if validator is not None:
+        return validator(frame)
     if "player_history_through_season" in frame.columns:
         return validate_all_position_frame(frame, target_required=True)
     return validate_feature_frame(frame)

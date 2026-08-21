@@ -10,9 +10,16 @@ import polars as pl
 
 from ffpred.acquisition.contracts import (
     DEFAULT_SEASONS,
+    DST_TEAM_STATS_CONTRACT,
+    IDP_PLAYER_STATS_CONTRACT,
+    INJURY_REPORTS_CONTRACT,
+    INJURY_REPORTS_MAX_SEASON,
+    INJURY_REPORTS_MIN_SEASON,
+    KICKER_PLAYER_STATS_CONTRACT,
     PBP_CONTRACT,
     PLAYER_STATS_CONTRACT,
     PLAYERS_CONTRACT,
+    RECEIVING_PLAYER_STATS_CONTRACT,
     REGULAR_SEASON,
     SCHEDULES_CONTRACT,
     TEAM_STATS_CONTRACT,
@@ -21,15 +28,30 @@ from ffpred.acquisition.contracts import (
 from ffpred.acquisition.schema import validate_frame
 from ffpred.domain.identifiers import GameId, PlayerId, Season, TeamCode, Week
 from ffpred.domain.models import (
+    INJURY_STATUS_BY_REPORT_TEXT,
     DefenseGame,
     DefenseGameStats,
     DefenseHistory,
+    DstGame,
+    DstGameStats,
+    DstHistory,
     GameContext,
     GameKey,
+    IdpGame,
+    IdpGameStats,
+    IdpHistory,
+    InjuryHistory,
+    InjuryReport,
+    KickerGame,
+    KickerGameStats,
+    KickerHistory,
     PlayerProfile,
     QuarterbackGame,
     QuarterbackGameStats,
     QuarterbackHistory,
+    ReceivingGame,
+    ReceivingGameStats,
+    ReceivingHistory,
 )
 from ffpred.errors import DataAcquisitionError
 from ffpred.providers.nflreadpy import NflReadPyProvider
@@ -299,5 +321,279 @@ def acquire_defense_histories(
                 turnovers=_number(row["passing_interceptions"])
                 + _number(row["fumbles_lost_total"]),
             ),
+        )
+    return histories
+
+
+def acquire_dst_histories(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[TeamCode, DstHistory]:
+    """Acquire each team's own defense/special-teams production by game.
+
+    Unlike ``acquire_defense_histories`` (which attributes a game's offensive
+    production to the *opposing* defense, for use as opponent-context
+    features), this attributes team_stats' ``def_*`` columns to the team the
+    row itself names: nflverse team_stats rows report each team's own
+    defensive box score, verified live (e.g. a team credited with sacking its
+    opponent's quarterback shows those sacks under its own row).
+    """
+    season_list = sorted(set(seasons))
+    provider = provider or NflReadPyProvider()
+    schedules = _schedule_index(provider.load_schedules(season_list))
+    frame = validate_frame(
+        provider.load_team_stats(season_list), DST_TEAM_STATS_CONTRACT
+    ).filter(pl.col("season_type") == REGULAR_SEASON)
+
+    histories: dict[TeamCode, DstHistory] = {}
+    for row in frame.iter_rows(named=True):
+        game_id = GameId(_required_text(row["game_id"], "game_id"))
+        if game_id not in schedules:
+            raise DataAcquisitionError(f"No schedule row found for game {game_id}")
+        schedule = schedules[game_id]
+        team = TeamCode(_required_text(row["team"], "team"))
+        opponent = TeamCode(_required_text(row["opponent_team"], "opponent_team"))
+        if team == schedule.home_team:
+            points_allowed = schedule.away_score
+        elif team == schedule.away_team:
+            points_allowed = schedule.home_score
+        else:
+            raise DataAcquisitionError(
+                f"Team {team} is not listed in schedule for {game_id}"
+            )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history = histories.setdefault(team, DstHistory(team=team))
+        history.games[key] = DstGame(
+            key=key,
+            context=_game_context(schedule, team=team, opponent=opponent),
+            stats=DstGameStats(
+                points_allowed=points_allowed,
+                sacks=_number(row["def_sacks"]),
+                interceptions=_number(row["def_interceptions"]),
+                fumble_recoveries=_number(row["fumble_recovery_opp"]),
+                touchdowns=_number(row["def_tds"]),
+                safeties=_number(row["def_safeties"]),
+                blocked_kicks=_number(row["def_punt_blocks"])
+                + _number(row["def_pat_blocks"])
+                + _number(row["def_fg_blocks"]),
+            ),
+        )
+    return histories
+
+
+def acquire_kicker_histories(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[PlayerId, KickerHistory]:
+    """Acquire regular-season kicker histories.
+
+    Kicker scoring needs no opponent context, so unlike QB/D/ST acquisition
+    this does not join a schedule index at all.
+    """
+    season_list = sorted(set(seasons))
+    provider = provider or NflReadPyProvider()
+    frame = validate_frame(
+        provider.load_player_stats(season_list), KICKER_PLAYER_STATS_CONTRACT
+    ).filter((pl.col("season_type") == REGULAR_SEASON) & (pl.col("position") == "K"))
+
+    histories: dict[PlayerId, KickerHistory] = {}
+    for row in frame.iter_rows(named=True):
+        player_id = PlayerId(_required_text(row["player_id"], "player_id"))
+        history = histories.setdefault(
+            player_id,
+            KickerHistory(
+                player_id=player_id,
+                name=_required_text(row["player_display_name"], "player_display_name"),
+            ),
+        )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history.games[key] = KickerGame(
+            key=key,
+            game_id=GameId(_required_text(row["game_id"], "game_id")),
+            stats=KickerGameStats(
+                fg_made_0_39=_number(row["fg_made_0_19"])
+                + _number(row["fg_made_20_29"])
+                + _number(row["fg_made_30_39"]),
+                fg_made_40_49=_number(row["fg_made_40_49"]),
+                fg_made_50_plus=_number(row["fg_made_50_59"])
+                + _number(row["fg_made_60_"]),
+                fg_missed=_number(row["fg_missed"]),
+                pat_made=_number(row["pat_made"]),
+                pat_missed=_number(row["pat_missed"]),
+            ),
+        )
+    return histories
+
+
+def acquire_receiving_histories(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    positions: Iterable[str] = ("RB", "WR", "TE"),
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[PlayerId, ReceivingHistory]:
+    """Acquire regular-season RB/WR/TE histories.
+
+    Reuses the same relocation-safe schedule index as QB/D/ST acquisition,
+    since the opponent context features draw on the existing
+    ``acquire_defense_histories`` output keyed by that same normalized team
+    code.
+    """
+    season_list = sorted(set(seasons))
+    position_list = list(positions)
+    provider = provider or NflReadPyProvider()
+    schedules = _schedule_index(provider.load_schedules(season_list))
+    frame = validate_frame(
+        provider.load_player_stats(season_list), RECEIVING_PLAYER_STATS_CONTRACT
+    ).filter(
+        (pl.col("season_type") == REGULAR_SEASON)
+        & (pl.col("position").is_in(position_list))
+    )
+
+    histories: dict[PlayerId, ReceivingHistory] = {}
+    for row in frame.iter_rows(named=True):
+        player_id = PlayerId(_required_text(row["player_id"], "player_id"))
+        game_id = GameId(_required_text(row["game_id"], "game_id"))
+        if game_id not in schedules:
+            raise DataAcquisitionError(f"No schedule row found for game {game_id}")
+        history = histories.setdefault(
+            player_id,
+            ReceivingHistory(
+                player_id=player_id,
+                name=_required_text(row["player_display_name"], "player_display_name"),
+                position=_required_text(row["position"], "position"),
+            ),
+        )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history.games[key] = ReceivingGame(
+            key=key,
+            context=_game_context(
+                schedules[game_id],
+                team=TeamCode(_required_text(row["team"], "team")),
+                opponent=TeamCode(
+                    _required_text(row["opponent_team"], "opponent_team")
+                ),
+            ),
+            stats=ReceivingGameStats(
+                rushing_attempts=_number(row["carries"]),
+                rushing_yards=_number(row["rushing_yards"]),
+                rushing_touchdowns=_number(row["rushing_tds"]),
+                rushing_two_point_made=_number(row["rushing_2pt_conversions"]),
+                receptions=_number(row["receptions"]),
+                targets=_number(row["targets"]),
+                receiving_yards=_number(row["receiving_yards"]),
+                receiving_touchdowns=_number(row["receiving_tds"]),
+                receiving_two_point_made=_number(row["receiving_2pt_conversions"]),
+                fumbles=_number(row["fumbles_total"]),
+            ),
+        )
+    return histories
+
+
+def acquire_idp_histories(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[PlayerId, IdpHistory]:
+    """Acquire regular-season individual defensive player (IDP) histories.
+
+    Filters to the DL/LB/DB position groups. Like kicker acquisition, this
+    needs no schedule join: no opponent-context feature is computed for IDP
+    in this first release. Callers building a training dataset should
+    restrict ``seasons`` to 2010 or later; nflverse's tackle attribution and
+    advanced defensive charting are less consistently populated before then
+    (see the project README's Positions table).
+    """
+    season_list = sorted(set(seasons))
+    provider = provider or NflReadPyProvider()
+    frame = validate_frame(
+        provider.load_player_stats(season_list), IDP_PLAYER_STATS_CONTRACT
+    ).filter(
+        (pl.col("season_type") == REGULAR_SEASON)
+        & (pl.col("position_group").is_in(["DL", "LB", "DB"]))
+    )
+
+    histories: dict[PlayerId, IdpHistory] = {}
+    for row in frame.iter_rows(named=True):
+        player_id = PlayerId(_required_text(row["player_id"], "player_id"))
+        history = histories.setdefault(
+            player_id,
+            IdpHistory(
+                player_id=player_id,
+                name=_required_text(row["player_display_name"], "player_display_name"),
+                position_group=_required_text(row["position_group"], "position_group"),
+            ),
+        )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history.games[key] = IdpGame(
+            key=key,
+            game_id=GameId(_required_text(row["game_id"], "game_id")),
+            stats=IdpGameStats(
+                solo_tackles=_number(row["def_tackles_solo"]),
+                assisted_tackles=_number(row["def_tackles_with_assist"]),
+                sacks=_number(row["def_sacks"]),
+                interceptions=_number(row["def_interceptions"]),
+                passes_defended=_number(row["def_pass_defended"]),
+                fumbles_forced=_number(row["def_fumbles_forced"]),
+                touchdowns=_number(row["def_tds"]),
+            ),
+        )
+    return histories
+
+
+def acquire_injury_reports(
+    seasons: Iterable[int] = DEFAULT_SEASONS,
+    *,
+    provider: NflDataProvider | None = None,
+) -> dict[PlayerId, InjuryHistory]:
+    """Acquire official weekly injury-report designations.
+
+    Only rows with a recognized ``report_status`` (Questionable, Doubtful, or
+    Out) become an ``InjuryReport``; a null or unrecognized status (e.g. a
+    practice-only listing with no game designation) carries no game-impact
+    information and is skipped, matching how this data is used downstream --
+    to explain an *actual* game absence or a pace change, not practice
+    participation. Seasons outside nflverse's coverage window
+    (``INJURY_REPORTS_MIN_SEASON``-``INJURY_REPORTS_MAX_SEASON``) are
+    dropped rather than raising, since the source was retired after the 2024
+    season with no replacement announced.
+    """
+    season_list = [
+        season
+        for season in sorted(set(seasons))
+        if INJURY_REPORTS_MIN_SEASON <= season <= INJURY_REPORTS_MAX_SEASON
+    ]
+    histories: dict[PlayerId, InjuryHistory] = {}
+    if not season_list:
+        return histories
+
+    provider = provider or NflReadPyProvider()
+    frame = validate_frame(
+        provider.load_injuries(season_list), INJURY_REPORTS_CONTRACT
+    ).filter(
+        (pl.col("game_type") == REGULAR_SEASON)
+        & pl.col("gsis_id").is_not_null()
+        & pl.col("report_status").is_not_null()
+    )
+
+    for row in frame.iter_rows(named=True):
+        status = INJURY_STATUS_BY_REPORT_TEXT.get(row["report_status"])
+        if status is None:
+            continue
+        player_id = PlayerId(_required_text(row["gsis_id"], "gsis_id"))
+        history = histories.setdefault(
+            player_id,
+            InjuryHistory(
+                player_id=player_id,
+                name=row["full_name"] or "",
+            ),
+        )
+        key = GameKey(Season(int(row["season"])), Week(int(row["week"])))
+        history.reports[key] = InjuryReport(
+            key=key,
+            team=TeamCode(_required_text(row["team"], "team")),
+            status=status,
+            primary_injury=row["report_primary_injury"],
         )
     return histories

@@ -2,22 +2,37 @@
 # name: test_cli_help_snapshot
   '''
   usage: ffpred [-h] [-v]
-                {build-dataset,build-forecast,build-forecast-archive,train-svr,train-mlp,project-svr,project-mlp,evaluate} ...
+                {build-dataset,build-dst-dataset,build-kicker-dataset,build-receiving-dataset,build-idp-dataset,build-forecast,build-forecast-archive,train-svr,train-mlp,train-ebm,project-svr,project-mlp,evaluate,injury-report,current-injuries} ...
   
   Build and evaluate fantasy-football prediction models
   
   positional arguments:
-    {build-dataset,build-forecast,build-forecast-archive,train-svr,train-mlp,project-svr,project-mlp,evaluate}
-      build-dataset       build train/test datasets
+    {build-dataset,build-dst-dataset,build-kicker-dataset,build-receiving-dataset,build-idp-dataset,build-forecast,build-forecast-archive,train-svr,train-mlp,train-ebm,project-svr,project-mlp,evaluate,injury-report,current-injuries}
+      build-dataset       build QB train/test datasets
+      build-dst-dataset   build team D/ST train/test datasets
+      build-kicker-dataset
+                          build kicker train/test datasets
+      build-receiving-dataset
+                          build RB/WR/TE train/test datasets
+      build-idp-dataset   build IDP train/test datasets
       build-forecast      build frozen training and future schedule datasets
       build-forecast-archive
                           build frozen all-position forecasts for a range of
                           seasons
       train-svr           train an SVR model
       train-mlp           train an MLP model
+      train-ebm           train an Explainable Boosting Machine
       project-svr         fit SVR and predict a frozen forecast dataset
       project-mlp         fit MLP and predict a frozen forecast dataset
       evaluate            evaluate a prediction Parquet artifact
+      injury-report       report when players were on the injury report and how
+                          it affected their fantasy score versus their pre-
+                          injury pace
+      current-injuries    fetch today's injury report from ESPN's public
+                          (unofficial) endpoint -- an operational supplement for
+                          seasons nflverse's own injury-report source no longer
+                          covers; not part of the leakage-safe historical
+                          feature pipeline
   
   options:
     -h, --help            show this help message and exit

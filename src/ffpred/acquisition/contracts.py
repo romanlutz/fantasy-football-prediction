@@ -70,6 +70,26 @@ TEAM_STATS_CONTRACT = FrameContract(
     },
     non_null=frozenset({"season", "week", "game_id"}),
 )
+DST_TEAM_STATS_CONTRACT = FrameContract(
+    name="team_stats",
+    columns={
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "team": ColumnKind.TEXT,
+        "opponent_team": ColumnKind.TEXT,
+        "def_sacks": ColumnKind.NUMBER,
+        "def_interceptions": ColumnKind.NUMBER,
+        "def_tds": ColumnKind.NUMBER,
+        "def_safeties": ColumnKind.NUMBER,
+        "fumble_recovery_opp": ColumnKind.NUMBER,
+        "def_punt_blocks": ColumnKind.NUMBER,
+        "def_pat_blocks": ColumnKind.NUMBER,
+        "def_fg_blocks": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"season", "week", "game_id"}),
+)
 SCHEDULES_CONTRACT = FrameContract(
     name="schedules",
     columns={
@@ -135,4 +155,96 @@ PBP_CONTRACT = FrameContract(
         "passer_player_id": ColumnKind.TEXT,
         "rusher_player_id": ColumnKind.TEXT,
     },
+)
+KICKER_PLAYER_STATS_CONTRACT = FrameContract(
+    name="player_stats",
+    columns={
+        "player_id": ColumnKind.TEXT,
+        "player_display_name": ColumnKind.TEXT,
+        "position": ColumnKind.TEXT,
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "fg_made_0_19": ColumnKind.NUMBER,
+        "fg_made_20_29": ColumnKind.NUMBER,
+        "fg_made_30_39": ColumnKind.NUMBER,
+        "fg_made_40_49": ColumnKind.NUMBER,
+        "fg_made_50_59": ColumnKind.NUMBER,
+        "fg_made_60_": ColumnKind.NUMBER,
+        "fg_missed": ColumnKind.NUMBER,
+        "pat_made": ColumnKind.NUMBER,
+        "pat_missed": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"season", "week", "game_id"}),
+)
+RECEIVING_PLAYER_STATS_CONTRACT = FrameContract(
+    name="player_stats",
+    columns={
+        "player_id": ColumnKind.TEXT,
+        "player_display_name": ColumnKind.TEXT,
+        "position": ColumnKind.TEXT,
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "team": ColumnKind.TEXT,
+        "opponent_team": ColumnKind.TEXT,
+        "carries": ColumnKind.NUMBER,
+        "rushing_yards": ColumnKind.NUMBER,
+        "rushing_tds": ColumnKind.NUMBER,
+        "rushing_2pt_conversions": ColumnKind.NUMBER,
+        "receptions": ColumnKind.NUMBER,
+        "targets": ColumnKind.NUMBER,
+        "receiving_yards": ColumnKind.NUMBER,
+        "receiving_tds": ColumnKind.NUMBER,
+        "receiving_2pt_conversions": ColumnKind.NUMBER,
+        "fumbles_total": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"season", "week", "game_id"}),
+)
+IDP_PLAYER_STATS_CONTRACT = FrameContract(
+    name="player_stats",
+    columns={
+        "player_id": ColumnKind.TEXT,
+        "player_display_name": ColumnKind.TEXT,
+        "position_group": ColumnKind.TEXT,
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "season_type": ColumnKind.TEXT,
+        "game_id": ColumnKind.TEXT,
+        "def_tackles_solo": ColumnKind.NUMBER,
+        "def_tackles_with_assist": ColumnKind.NUMBER,
+        "def_sacks": ColumnKind.NUMBER,
+        "def_interceptions": ColumnKind.NUMBER,
+        "def_pass_defended": ColumnKind.NUMBER,
+        "def_fumbles_forced": ColumnKind.NUMBER,
+        "def_tds": ColumnKind.NUMBER,
+    },
+    non_null=frozenset({"season", "week", "game_id"}),
+)
+#: nflverse's injury-report source is only populated for these seasons: it
+#: was retired after the 2024 season with no replacement announced (verified
+#: against https://nflreadr.nflverse.com/articles/nflverse_data_schedule.html).
+#: acquire_injury_reports silently skips seasons outside this range rather
+#: than raising, so a normal multi-season history build degrades gracefully
+#: instead of failing outright once new seasons roll past the floor.
+INJURY_REPORTS_MIN_SEASON = 2009
+INJURY_REPORTS_MAX_SEASON = 2024
+#: Unlike every other nflverse frame contract in this module, the injuries
+#: table's regular/postseason indicator column is named ``game_type``, not
+#: ``season_type`` (verified live against nflreadpy 0.1.5).
+INJURY_REPORTS_CONTRACT = FrameContract(
+    name="injuries",
+    columns={
+        "season": ColumnKind.INTEGER,
+        "week": ColumnKind.INTEGER,
+        "game_type": ColumnKind.TEXT,
+        "team": ColumnKind.TEXT,
+        "gsis_id": ColumnKind.TEXT,
+        "full_name": ColumnKind.TEXT,
+        "report_status": ColumnKind.TEXT,
+        "report_primary_injury": ColumnKind.TEXT,
+    },
+    non_null=frozenset({"season", "week"}),
 )

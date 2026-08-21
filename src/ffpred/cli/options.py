@@ -10,6 +10,18 @@ from ffpred.training.mlp import Activation
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ExplainabilityOptions:
+    """Shared model-diagnostic output controls."""
+
+    path: Path | None
+    ale_bins: int
+    permutation_repeats: int
+    shap_background: int
+    shap_samples: int
+    random_state: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class BuildOptions:
     """Dataset build command options."""
 
@@ -33,6 +45,17 @@ class ForecastBuildOptions:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ReceivingBuildOptions:
+    """RB/WR/TE dataset build command options."""
+
+    output_dir: Path
+    history_start: int
+    train_start: int
+    test_year: int
+    positions: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ForecastArchiveOptions:
     """All-position forecast archive options."""
 
@@ -50,6 +73,8 @@ class SvrOptions:
     train_path: Path
     test_path: Path
     predictions_path: Path
+    position: str = "qb"
+    explainability: ExplainabilityOptions
     manual_features: bool
     select_hyperparameters: bool
     folds: int
@@ -62,11 +87,35 @@ class MlpOptions:
     train_path: Path
     test_path: Path
     predictions_path: Path
+    position: str = "qb"
+    explainability: ExplainabilityOptions
     hidden_units: int
     activation: Activation
     iterations: int
     learning_rate: float
     random_state: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class EbmOptions:
+    """EBM command options."""
+
+    train_path: Path
+    test_path: Path
+    predictions_path: Path
+    position: str = "qb"
+    explainability: ExplainabilityOptions
+    max_bins: int
+    interactions: int
+    max_rounds: int
+    learning_rate: float
+    min_samples_leaf: int
+    outer_bags: int
+    validation_size: float
+    calibration_fraction: float
+    interval_coverage: float
+    random_state: int
+    n_jobs: int
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -83,3 +132,22 @@ class ProjectionOptions:
     train_path: Path
     forecast_path: Path
     predictions_path: Path
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class InjuryReportOptions:
+    """Injury-impact report command options."""
+
+    output_path: Path
+    start_season: int
+    end_season: int
+    positions: tuple[str, ...]
+    trailing_window: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CurrentInjuriesOptions:
+    """Current (ESPN-sourced) injury snapshot command options."""
+
+    output_path: Path
+    output_path: Path

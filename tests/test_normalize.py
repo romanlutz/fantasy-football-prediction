@@ -2,10 +2,11 @@ import polars as pl
 
 from ffpred.acquisition.normalize import (
     acquire_defense_histories,
+    acquire_injury_reports,
     acquire_quarterback_histories,
 )
 from ffpred.domain.identifiers import PlayerId, Season, TeamCode, Week
-from ffpred.domain.models import GameKey
+from ffpred.domain.models import GameKey, InjuryStatus
 from ffpred.providers.fakes import FakeProvider
 
 
@@ -172,3 +173,71 @@ def test_defense_acquisition_reconciles_relocated_team_codes() -> None:
     # The Chargers' (LAC) defense allowed 16 points, scored by KC's offense.
     lac_defense = histories[TeamCode("LAC")].games[key]
     assert lac_defense.stats.points_allowed == 16
+
+
+def test_injury_acquisition_maps_recognized_statuses() -> None:
+    injuries = pl.DataFrame(
+        [
+            {
+                "season": 2023,
+                "week": 5,
+                "game_type": "REG",
+                "team": "KC",
+                "gsis_id": "00-QB",
+                "full_name": "Test Quarterback",
+                "report_status": "Out",
+                "report_primary_injury": "Ankle",
+            }
+        ]
+    )
+
+    histories = acquire_injury_reports([2023], provider=FakeProvider(injuries=injuries))
+
+    report = histories[PlayerId("00-QB")].reports[GameKey(Season(2023), Week(5))]
+    assert report.status is InjuryStatus.OUT
+    assert report.team == TeamCode("KC")
+    assert report.primary_injury == "Ankle"
+
+
+def test_injury_acquisition_skips_unreported_and_postseason_rows() -> None:
+    injuries = pl.DataFrame(
+        [
+            {
+                "season": 2023,
+                "week": 5,
+                "game_type": "REG",
+                "team": "KC",
+                "gsis_id": "00-QB",
+                "full_name": "Test Quarterback",
+                # A null report_status (e.g. a practice-only listing with no
+                # game designation) carries no game-impact information.
+                "report_status": None,
+                "report_primary_injury": None,
+            },
+            {
+                "season": 2023,
+                "week": 19,
+                "game_type": "WC",
+                "team": "KC",
+                "gsis_id": "00-QB",
+                "full_name": "Test Quarterback",
+                "report_status": "Out",
+                "report_primary_injury": "Ankle",
+            },
+        ]
+    )
+
+    histories = acquire_injury_reports([2023], provider=FakeProvider(injuries=injuries))
+
+    assert histories == {}
+
+
+def test_injury_acquisition_drops_seasons_outside_coverage_window() -> None:
+    """nflverse's injury source was retired after the 2024 season; requests
+    for later seasons should degrade gracefully instead of raising, so a
+    normal multi-season build doesn't fail outright once new seasons roll
+    past the floor.
+    """
+    histories = acquire_injury_reports([2025], provider=FakeProvider())
+
+    assert histories == {}

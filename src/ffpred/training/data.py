@@ -9,7 +9,7 @@ import numpy as np
 import polars as pl
 from numpy.typing import NDArray
 
-from ffpred.datasets.io import read_dataset
+from ffpred.datasets.io import Validator, read_dataset
 from ffpred.features.all_positions import ALL_POSITION_MODEL_FEATURE_COLUMNS
 from ffpred.features.schema import MODEL_FEATURE_COLUMNS, TARGET_COLUMN
 
@@ -53,6 +53,9 @@ def model_feature_columns(frame: pl.DataFrame) -> tuple[str, ...]:
 def load_training_data(
     path: Path,
     feature_names: tuple[str, ...] | None = None,
+    *,
+    validator: Validator | None = None,
 ) -> TrainingData:
     """Load one Parquet split for model training or evaluation."""
-    return training_data_from_frame(read_dataset(path), feature_names)
+    frame = read_dataset(path, validator=validator)
+    return training_data_from_frame(frame, feature_names)
