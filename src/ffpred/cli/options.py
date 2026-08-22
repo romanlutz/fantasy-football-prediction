@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from ffpred.training.mlp import Activation
@@ -31,6 +32,19 @@ class BuildOptions:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ForecastBuildOptions:
+    """Point-in-time forecast build command options."""
+
+    output_dir: Path
+    history_start: int
+    train_start: int
+    history_through_season: int
+    target_year: int
+    as_of: date | None
+    include_actuals: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ReceivingBuildOptions:
     """RB/WR/TE dataset build command options."""
 
@@ -39,6 +53,17 @@ class ReceivingBuildOptions:
     train_start: int
     test_year: int
     positions: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ForecastArchiveOptions:
+    """All-position forecast archive options."""
+
+    output_dir: Path
+    history_start: int
+    first_target_year: int
+    last_target_year: int
+    as_of: date | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -101,6 +126,15 @@ class EvaluateOptions:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ProjectionOptions:
+    """Shared model projection paths."""
+
+    train_path: Path
+    forecast_path: Path
+    predictions_path: Path
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class InjuryReportOptions:
     """Injury-impact report command options."""
 
@@ -115,4 +149,5 @@ class InjuryReportOptions:
 class CurrentInjuriesOptions:
     """Current (ESPN-sourced) injury snapshot command options."""
 
+    output_path: Path
     output_path: Path

@@ -7,6 +7,7 @@ import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 from typing import Never
 
@@ -29,12 +30,16 @@ from ffpred.cli.options import (
     EbmOptions,
     EvaluateOptions,
     ExplainabilityOptions,
+    ForecastArchiveOptions,
+    ForecastBuildOptions,
     InjuryReportOptions,
     MlpOptions,
+    ProjectionOptions,
     ReceivingBuildOptions,
     SvrOptions,
 )
 from ffpred.config import Settings
+from ffpred.datasets.archive import ForecastArchiveConfig, build_forecast_archive
 from ffpred.datasets.builder import (
     DatasetBuildConfig,
     DstDatasetBuildConfig,
@@ -47,6 +52,7 @@ from ffpred.datasets.builder import (
     build_kicker_datasets,
     build_receiving_datasets,
 )
+from ffpred.datasets.forecast import ForecastBuildConfig, build_forecast_datasets
 from ffpred.errors import FfpredError
 from ffpred.evaluation.cohorts import residual_cohorts
 from ffpred.evaluation.explainability import (
@@ -63,6 +69,12 @@ from ffpred.evaluation.injury_impact import (
 from ffpred.evaluation.metrics import evaluate
 from ffpred.features import dst_schema, idp_schema, kicker_schema, receiving_schema
 from ffpred.features import schema as qb_schema
+from ffpred.features.all_positions import (
+    ALL_POSITION_IDENTITY_COLUMNS,
+    ALL_POSITION_MODEL_FEATURE_COLUMNS,
+    INJURY_MISSED_COLUMN,
+    INJURY_STATUS_COLUMN,
+)
 from ffpred.features.schema import TARGET_COLUMN
 from ffpred.logging import configure_logging
 from ffpred.providers.espn import (
@@ -73,19 +85,20 @@ from ffpred.providers.espn import (
 from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
 from ffpred.training.data import TrainingData, load_training_data
-from ffpred.training.ebm import (
-    EbmConfig,
-    train_ebm,
-    write_ebm_explanations,
-)
-from ffpred.training.mlp import MlpConfig, train_mlp
+from ffpred.training.ebm import EbmConfig, train_ebm, write_ebm_explanations
+from ffpred.training.mlp import MlpConfig, create_archive_estimator, train_mlp
+from ffpred.training.mlp import create_estimator as create_mlp
+from ffpred.training.projection import load_projection_data, project
 from ffpred.training.result import TrainingResult
 from ffpred.training.svr import (
+    DEFAULT_SVR_CONFIG,
     candidate_configs,
+    create_scalable_estimator,
     select_config,
     select_manual_features,
     train_svr,
 )
+from ffpred.training.svr import create_estimator as create_svr
 
 LOGGER = logging.getLogger(__name__)
 PREDICTION_COLUMN = "prediction"
@@ -112,15 +125,6 @@ POSITION_IDENTITY_COLUMNS: dict[str, tuple[str, ...]] = {
     "wr": receiving_schema.IDENTITY_COLUMNS,
     "te": receiving_schema.IDENTITY_COLUMNS,
     "idp": idp_schema.IDENTITY_COLUMNS,
-}
-POSITION_OUTPUT_CONTEXT_COLUMNS: dict[str, tuple[str, ...]] = {
-    "qb": (),
-    "dst": (),
-    "k": (),
-    "rb": receiving_schema.OUTPUT_CONTEXT_COLUMNS,
-    "wr": receiving_schema.OUTPUT_CONTEXT_COLUMNS,
-    "te": receiving_schema.OUTPUT_CONTEXT_COLUMNS,
-    "idp": (),
 }
 POSITION_VALIDATORS = {
     "qb": qb_schema.validate_feature_frame,
@@ -188,6 +192,41 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
         build_idp, settings, history_start=2010, train_start=2011, test_year=2014
     )
 
+    forecast = subparsers.add_parser(
+        "build-forecast",
+        help="build frozen training and future schedule datasets",
+    )
+    forecast.add_argument("--output-dir", type=Path, required=True)
+    forecast.add_argument(
+        "--history-start",
+        type=int,
+        default=settings.history_start,
+    )
+    forecast.add_argument("--train-start", type=int, default=settings.train_start)
+    forecast.add_argument(
+        "--history-through",
+        type=int,
+        required=True,
+        dest="history_through_season",
+    )
+    forecast.add_argument("--target-year", type=int, required=True)
+    forecast.add_argument("--as-of", type=date.fromisoformat)
+    forecast.add_argument("--include-actuals", action="store_true")
+
+    archive = subparsers.add_parser(
+        "build-forecast-archive",
+        help="build frozen all-position forecasts for a range of seasons",
+    )
+    archive.add_argument("--output-dir", type=Path, default=settings.output_dir)
+    archive.add_argument("--history-start", type=int, default=1999)
+    archive.add_argument("--first-target-year", type=int, default=2010)
+    archive.add_argument(
+        "--last-target-year",
+        type=int,
+        default=date.today().year,
+    )
+    archive.add_argument("--as-of", type=date.fromisoformat)
+
     svr = subparsers.add_parser("train-svr", help="train an SVR model")
     _add_svr_arguments(svr)
 
@@ -199,6 +238,18 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
         help="train an Explainable Boosting Machine",
     )
     _add_ebm_arguments(ebm)
+
+    project_svr = subparsers.add_parser(
+        "project-svr",
+        help="fit SVR and predict a frozen forecast dataset",
+    )
+    _add_projection_arguments(project_svr, "svr-predictions.parquet")
+
+    project_mlp = subparsers.add_parser(
+        "project-mlp",
+        help="fit MLP and predict a frozen forecast dataset",
+    )
+    _add_projection_arguments(project_mlp, "mlp-predictions.parquet")
 
     evaluation = subparsers.add_parser(
         "evaluate",
@@ -325,6 +376,19 @@ def _add_dataset_arguments(
     )
 
 
+def _add_projection_arguments(
+    parser: argparse.ArgumentParser,
+    prediction_default: str,
+) -> None:
+    parser.add_argument("--train", type=Path, required=True)
+    parser.add_argument("--forecast", type=Path, required=True)
+    parser.add_argument(
+        "--predictions",
+        type=Path,
+        default=Path(prediction_default),
+    )
+
+
 def _add_explainability_arguments(
     parser: argparse.ArgumentParser,
     *,
@@ -349,11 +413,27 @@ def _write_predictions(
     test_frame: pl.DataFrame,
     predictions: NDArray[np.float64],
     *,
-    source_columns: tuple[str, ...],
+    identity_columns: tuple[str, ...],
     additional_columns: Mapping[str, NDArray[np.float64]] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    frame = test_frame.select(*source_columns, TARGET_COLUMN).with_columns(
+    identity = list(
+        dict.fromkeys(
+            (
+                *identity_columns,
+                "position",
+                "team",
+                "opponent",
+                "forecast_as_of",
+                "history_through_season",
+                INJURY_STATUS_COLUMN,
+                INJURY_MISSED_COLUMN,
+                TARGET_COLUMN,
+            )
+        )
+    )
+    identity = [column for column in identity if column in test_frame.columns]
+    frame = test_frame.select(identity).with_columns(
         pl.Series(PREDICTION_COLUMN, predictions, dtype=pl.Float64)
     )
     if additional_columns:
@@ -372,6 +452,36 @@ def _build_options(args: argparse.Namespace) -> BuildOptions:
         history_start=args.history_start,
         train_start=args.train_start,
         test_year=args.test_year,
+    )
+
+
+def _forecast_build_options(args: argparse.Namespace) -> ForecastBuildOptions:
+    return ForecastBuildOptions(
+        output_dir=args.output_dir,
+        history_start=args.history_start,
+        train_start=args.train_start,
+        history_through_season=args.history_through_season,
+        target_year=args.target_year,
+        as_of=args.as_of,
+        include_actuals=args.include_actuals,
+    )
+
+
+def _forecast_archive_options(args: argparse.Namespace) -> ForecastArchiveOptions:
+    return ForecastArchiveOptions(
+        output_dir=args.output_dir,
+        history_start=args.history_start,
+        first_target_year=args.first_target_year,
+        last_target_year=args.last_target_year,
+        as_of=args.as_of,
+    )
+
+
+def _projection_options(args: argparse.Namespace) -> ProjectionOptions:
+    return ProjectionOptions(
+        train_path=args.train,
+        forecast_path=args.forecast,
+        predictions_path=args.predictions,
     )
 
 
@@ -479,6 +589,31 @@ def _run_build(
     }
 
 
+def _run_forecast_build(
+    options: ForecastBuildOptions,
+    provider: NflDataProvider,
+) -> dict[str, object]:
+    result = build_forecast_datasets(
+        ForecastBuildConfig(
+            output_dir=options.output_dir,
+            history_start=options.history_start,
+            train_start=options.train_start,
+            history_through_season=options.history_through_season,
+            target_year=options.target_year,
+            as_of=options.as_of,
+            include_actuals=options.include_actuals,
+        ),
+        provider=provider,
+    )
+    return {
+        "training": result.training.path,
+        "training_rows": result.training.rows,
+        "forecast": result.forecast.path,
+        "forecast_rows": result.forecast.rows,
+        "manifest": str(result.manifest_path),
+    }
+
+
 def _run_build_dst(
     options: BuildOptions,
     provider: NflDataProvider,
@@ -560,12 +695,40 @@ def _run_build_idp(
     }
 
 
+def _run_forecast_archive(
+    options: ForecastArchiveOptions,
+    provider: NflDataProvider,
+) -> dict[str, object]:
+    result = build_forecast_archive(
+        ForecastArchiveConfig(
+            output_dir=options.output_dir,
+            history_start=options.history_start,
+            first_target_year=options.first_target_year,
+            last_target_year=options.last_target_year,
+            as_of=options.as_of,
+        ),
+        provider=provider,
+    )
+    return {
+        "seasons": [
+            {
+                "target_year": season.target_year,
+                "training": season.training.path,
+                "training_rows": season.training.rows,
+                "forecast": season.forecast.path,
+                "forecast_rows": season.forecast.rows,
+                "manifest": str(season.manifest_path),
+            }
+            for season in result.seasons
+        ]
+    }
+
+
 def _run_svr(options: SvrOptions) -> dict[str, object]:
     if options.manual_features and options.position != "qb":
         raise FfpredError("--manual-features is only supported for --position qb")
     feature_names = POSITION_FEATURE_COLUMNS[options.position]
     identity_columns = POSITION_IDENTITY_COLUMNS[options.position]
-    context_columns = POSITION_OUTPUT_CONTEXT_COLUMNS[options.position]
     validator = POSITION_VALIDATORS[options.position]
     train = load_training_data(options.train_path, feature_names, validator=validator)
     test = load_training_data(options.test_path, feature_names, validator=validator)
@@ -586,7 +749,7 @@ def _run_svr(options: SvrOptions) -> dict[str, object]:
         options.predictions_path,
         test.frame,
         result.predictions,
-        source_columns=(*identity_columns, *context_columns),
+        identity_columns=identity_columns,
     )
     explanations_path = options.explainability.path
     if explanations_path is not None:
@@ -613,7 +776,6 @@ def _run_svr(options: SvrOptions) -> dict[str, object]:
 def _run_mlp(options: MlpOptions) -> dict[str, object]:
     feature_names = POSITION_FEATURE_COLUMNS[options.position]
     identity_columns = POSITION_IDENTITY_COLUMNS[options.position]
-    context_columns = POSITION_OUTPUT_CONTEXT_COLUMNS[options.position]
     validator = POSITION_VALIDATORS[options.position]
     train = load_training_data(options.train_path, feature_names, validator=validator)
     test = load_training_data(options.test_path, feature_names, validator=validator)
@@ -629,7 +791,7 @@ def _run_mlp(options: MlpOptions) -> dict[str, object]:
         options.predictions_path,
         test.frame,
         result.predictions,
-        source_columns=(*identity_columns, *context_columns),
+        identity_columns=identity_columns,
     )
     explanations_path = options.explainability.path
     if explanations_path is not None:
@@ -653,10 +815,55 @@ def _run_mlp(options: MlpOptions) -> dict[str, object]:
     }
 
 
+def _run_projection(
+    options: ProjectionOptions,
+    *,
+    model: str,
+) -> dict[str, object]:
+    train = load_training_data(options.train_path)
+    forecast = load_projection_data(options.forecast_path)
+    is_archive = train.feature_names == ALL_POSITION_MODEL_FEATURE_COLUMNS
+    if model == "svr":
+        estimator = (
+            create_scalable_estimator()
+            if is_archive
+            else create_svr(DEFAULT_SVR_CONFIG)
+        )
+    else:
+        estimator = (
+            create_archive_estimator() if is_archive else create_mlp(MlpConfig())
+        )
+    predictions = project(estimator, train, forecast)
+    identity_columns = (
+        ALL_POSITION_IDENTITY_COLUMNS if is_archive else qb_schema.IDENTITY_COLUMNS
+    )
+    _write_predictions(
+        options.predictions_path,
+        forecast.frame,
+        predictions,
+        identity_columns=identity_columns,
+    )
+    scored = forecast.frame.with_columns(
+        pl.Series(PREDICTION_COLUMN, predictions, dtype=pl.Float64)
+    ).drop_nulls(TARGET_COLUMN)
+    metrics = (
+        asdict(evaluate(scored[TARGET_COLUMN], scored[PREDICTION_COLUMN]))
+        if not scored.is_empty()
+        else None
+    )
+    return {
+        "metrics": metrics,
+        "features": list(train.feature_names),
+        "predictions": str(options.predictions_path),
+        "forecast_rows": forecast.frame.height,
+        "history_through_season": forecast.frame["history_through_season"][0],
+        "target_year": forecast.frame["target_season"][0],
+    }
+
+
 def _run_ebm(options: EbmOptions) -> dict[str, object]:
     feature_names = POSITION_FEATURE_COLUMNS[options.position]
     identity_columns = POSITION_IDENTITY_COLUMNS[options.position]
-    context_columns = POSITION_OUTPUT_CONTEXT_COLUMNS[options.position]
     validator = POSITION_VALIDATORS[options.position]
     train = load_training_data(options.train_path, feature_names, validator=validator)
     test = load_training_data(options.test_path, feature_names, validator=validator)
@@ -686,7 +893,7 @@ def _run_ebm(options: EbmOptions) -> dict[str, object]:
         options.predictions_path,
         test.frame,
         result.predictions,
-        source_columns=(*identity_columns, *context_columns),
+        identity_columns=identity_columns,
         additional_columns=interval_columns,
     )
     diagnostics = _model_diagnostics(
@@ -919,7 +1126,7 @@ def _run_current_injuries(
     }
 
 
-def main(
+def main(  # noqa: PLR0912
     argv: Sequence[str] | None = None,
     *,
     provider: NflDataProvider | None = None,
@@ -933,6 +1140,16 @@ def main(
         if args.command == "build-dataset":
             output = _run_build(
                 _build_options(args),
+                provider or _provider(settings),
+            )
+        elif args.command == "build-forecast":
+            output = _run_forecast_build(
+                _forecast_build_options(args),
+                provider or _provider(settings),
+            )
+        elif args.command == "build-forecast-archive":
+            output = _run_forecast_archive(
+                _forecast_archive_options(args),
                 provider or _provider(settings),
             )
         elif args.command == "build-dst-dataset":
@@ -959,6 +1176,10 @@ def main(
             output = _run_svr(_svr_options(args))
         elif args.command == "train-mlp":
             output = _run_mlp(_mlp_options(args))
+        elif args.command == "project-svr":
+            output = _run_projection(_projection_options(args), model="svr")
+        elif args.command == "project-mlp":
+            output = _run_projection(_projection_options(args), model="mlp")
         elif args.command == "train-ebm":
             output = _run_ebm(_ebm_options(args))
         elif args.command == "injury-report":

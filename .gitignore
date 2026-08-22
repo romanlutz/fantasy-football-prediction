@@ -7,6 +7,7 @@ __pycache__/
 
 absolute_error_distribution.pdf
 dataset-manifest.json
+forecast-manifest.json
 neural_net_output.txt
 prediction.npy
 test.npy

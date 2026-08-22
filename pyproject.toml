@@ -12,6 +12,7 @@ dependencies = [
     "polars>=1.30",
     "requests>=2.31",
     "scikit-learn>=1.5",
+    "streamlit>=1.47,<2",
     "shap>=0.51,<0.52",
     "streamlit>=1.47,<2",
 ]

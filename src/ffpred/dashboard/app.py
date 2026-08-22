@@ -4,232 +4,423 @@ from __future__ import annotations
 
 import argparse
 import sys
-from io import BytesIO
+from collections.abc import Sequence
+from html import escape
 from pathlib import Path
-from typing import Never
+from typing import Never, TypeVar
 
 import altair as alt
 import polars as pl
 import streamlit as st
-from streamlit.runtime.uploaded_file_manager import UploadedFile
+from streamlit.delta_generator import DeltaGenerator
 from streamlit.web import cli as streamlit_cli
 
 from ffpred.dashboard.data import (
     ACTUAL_COLUMN,
+    CONSENSUS_MODEL,
     DashboardDataError,
     draft_board,
     load_prediction_files,
     model_choices,
     model_scorecard,
     player_history,
-    prepare_predictions,
     select_model,
     weekly_board,
 )
 
-PAPER = "#f3eedf"
-INK = "#17243b"
-RED = "#b7352d"
-GOLD = "#d8a928"
-BLUE = "#2f6680"
-MUTED = "#5d6670"
+CANVAS = "#0d1517"
+SURFACE = "#162326"
+TEXT = "#dce8e4"
+GREEN = "#77d584"
+CYAN = "#62b9c8"
+AMBER = "#d4af63"
+CORAL = "#d98578"
+VIOLET = "#9b91c9"
+GRID = "#294044"
+PROJECTED_BLUE = "#56b4e9"
+ACTUAL_NEUTRAL = "#e6efec"
+PROJECTED_PACE_PURPLE = "#cc79a7"
+ACTUAL_PACE_YELLOW = "#f0e442"
+
+SEASON_FILTER_KEY = "forecast-target-season"
+POSITION_FILTER_KEY = "forecast-positions"
+MODEL_FILTER_KEY = "forecast-model"
+FILTER_STATE_KEY = "_forecast-filter-state"
+FILTER_QUERY_KEYS = ("season", "position", "model")
+
+DRAFT_BAR_FIELDS = {
+    "Projected": "projected_points",
+    "Actual": "actual_points",
+    "Adjusted at projected PPG": "projected_pace_adjusted_actual",
+    "Adjusted at actual PPG": "actual_pace_adjusted_actual",
+}
+DRAFT_BAR_COLORS = {
+    "Projected": PROJECTED_BLUE,
+    "Actual": ACTUAL_NEUTRAL,
+    "Adjusted at projected PPG": PROJECTED_PACE_PURPLE,
+    "Adjusted at actual PPG": ACTUAL_PACE_YELLOW,
+}
+
+T = TypeVar("T")
 
 
 def _inject_styles() -> None:
     st.html(
         """
         <!--
-        THESIS: A working fantasy war room, not a generic analytics dashboard.
-        OWN-WORLD: Ink-blue auction sheets, red stamps, gold highlights, hard
-        rules, clipped corners, and handwritten value marks on warm paper.
-        STORY: Load model sheets, rank a season for draft day, then move to a
-        separate matchup desk for weekly choices and inspect model evidence.
-        FIRST VIEWPORT: A ledger masthead, artifact status, and three explicit
-        workspaces above a full-width ranking sheet.
-        FORM: Dense war-room ledger, fourth grounded direction; fixed-sheet
-        staging selected for scanability; seed 40420016.
+        THESIS: A night-game forecast command center that makes model provenance
+        as visible as player rank, rejecting both spreadsheet beige and neon sci-fi.
+        OWN-WORLD: Soft charcoal field layers, field-green signal, cyan comparison
+        data, amber actuals, low-contrast grid lines, and broadcast-grade typography.
+        STORY: Confirm the forecast state, select a decision horizon, filter the
+        field, and compare projected performance without losing model context.
+        FIRST VIEWPORT: A compact forecast header and live telemetry rail lead
+        directly into three persistent workspaces and the active ranking surface.
+        FORM: Stadium operations display; dense horizontal telemetry staging;
+        restrained color strategy optimized for long evening sessions.
         -->
         <style>
         :root {
-            --paper: #f3eedf;
-            --paper-deep: #e8dec7;
-            --ink: #17243b;
-            --red: #b7352d;
-            --gold: #d8a928;
-            --blue: #2f6680;
-            --muted: #5d6670;
-            --rule: #9d927b;
+            --canvas: #0d1517;
+            --panel: #121e21;
+            --surface: #162326;
+            --surface-high: #1b2b2f;
+            --line: #294044;
+            --line-strong: #3c5b60;
+            --text: #dce8e4;
+            --muted: #94aaa5;
+            --green: #77d584;
+            --green-deep: #214c34;
+            --cyan: #62b9c8;
+            --amber: #d4af63;
+            --coral: #d98578;
         }
         .stApp {
             background:
-                linear-gradient(rgba(23, 36, 59, .035) 1px, transparent 1px),
-                var(--paper);
-            background-size: 100% 28px;
-            color: var(--ink);
+                linear-gradient(rgba(119, 213, 132, .022) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(119, 213, 132, .016) 1px, transparent 1px),
+                var(--canvas);
+            background-size: 40px 40px;
+            color: var(--text);
+            overflow-x: hidden;
         }
-        [data-testid="stHeader"] { background: transparent; }
-        [data-testid="stSidebar"] {
-            background: var(--ink);
-            border-right: 1px solid #78849a;
-        }
-        [data-testid="stSidebar"] * { color: #f8f1df; }
-        [data-testid="stSidebar"] [data-baseweb="select"] > div,
-        [data-testid="stSidebar"] [data-baseweb="input"] > div {
-            background: #233552;
-            border-color: #78849a;
+        [data-testid="stHeader"] {
+            background: rgba(13, 21, 23, .92);
+            border-bottom: 1px solid rgba(60, 91, 96, .45);
         }
         .block-container {
-            max-width: 1480px;
-            padding-top: 2.25rem;
-            padding-bottom: 4rem;
-        }
-        h1, h2, h3 {
-            color: var(--ink) !important;
-            font-family: "Bahnschrift Condensed", "Franklin Gothic Medium",
-                sans-serif !important;
-            font-weight: 800 !important;
-            letter-spacing: -.035em !important;
-        }
-        h1 { font-size: clamp(2.4rem, 5vw, 5.3rem) !important; line-height: .9; }
-        h2 {
-            border-bottom: 3px solid var(--ink);
-            padding-bottom: .35rem;
-            margin-top: 2.7rem !important;
-        }
-        p, label, button, input, [data-testid="stMarkdownContainer"] {
-            font-family: "Aptos", Tahoma, sans-serif;
-        }
-        [data-testid="stMain"] label { color: var(--ink) !important; }
-        .war-masthead {
-            position: relative;
-            border-top: 10px solid var(--ink);
-            border-bottom: 3px solid var(--ink);
-            padding: 1rem 0 1.15rem;
-            margin-bottom: 1rem;
-        }
-        .war-masthead h1 { margin: 0; text-transform: uppercase; }
-        .war-masthead p {
-            color: var(--muted);
-            font-size: 1.05rem;
-            margin: .6rem 0 0;
-            max-width: 70ch;
-        }
-        .stamp {
-            position: absolute;
-            right: 0;
-            top: 1.25rem;
-            border: 3px solid var(--red);
-            color: var(--red);
-            font-family: "Bahnschrift Condensed", Tahoma, sans-serif;
-            font-size: .8rem;
-            font-weight: 900;
-            letter-spacing: .12em;
-            padding: .4rem .65rem;
-            text-transform: uppercase;
-            transform: rotate(-2deg);
-        }
-        .evidence-strip {
-            display: flex;
-            flex-wrap: wrap;
-            gap: .5rem 1.6rem;
-            background: var(--paper-deep);
-            border-bottom: 1px solid var(--rule);
-            padding: .65rem .8rem .8rem;
-            margin-bottom: 1rem;
-            font-family: "Bahnschrift Condensed", Tahoma, sans-serif;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: .04em;
-            clip-path: polygon(
-                0 0, calc(100% - 12px) 0, 100% 12px,
-                100% 100%, 12px 100%, 0 calc(100% - 12px)
-            );
-        }
-        .evidence-strip strong {
-            color: var(--red);
-            display: inline-block;
-            font-family: "Segoe Print", "Bradley Hand", cursive;
-            letter-spacing: -.04em;
-            transform: rotate(-1deg);
-        }
-        [data-testid="stRadio"] > div {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0;
-            border-bottom: 4px solid var(--ink);
-            max-width: 31rem;
-        }
-        [data-testid="stRadio"] label {
-            background: var(--paper-deep);
-            border: 1px solid var(--ink);
-            border-bottom: 0;
-            padding: .7rem 1.2rem;
-            margin-right: -1px;
-            font-weight: 800;
-            text-transform: uppercase;
+            box-sizing: border-box;
+            max-width: 1440px;
+            padding-top: 2rem;
+            padding-bottom: 4.5rem;
             width: 100%;
         }
-        [data-testid="stRadio"] label:has(input:checked) {
-            background: var(--ink);
-            color: #fff7e7;
+        h1, h2, h3 {
+            color: var(--text) !important;
+            font-family: "Bahnschrift", "Arial Narrow", "Segoe UI",
+                sans-serif !important;
         }
-        div[data-testid="stDataFrame"] {
-            border: 2px solid var(--ink);
-            box-shadow: 6px 6px 0 rgba(23, 36, 59, .16);
+        h1 {
+            font-size: clamp(2.4rem, 4vw, 4.1rem) !important;
+            font-weight: 650 !important;
+            letter-spacing: -.035em !important;
+            line-height: .94;
         }
-        .stButton > button, .stDownloadButton > button {
-            border: 2px solid var(--ink);
-            border-radius: 0;
-            background: var(--gold);
-            color: var(--ink);
-            box-shadow: 3px 3px 0 var(--ink);
-            font-weight: 800;
+        h2 {
+            font-size: clamp(1.65rem, 2.6vw, 2.3rem) !important;
+            font-weight: 620 !important;
+            letter-spacing: -.025em !important;
+            margin: 2.6rem 0 .55rem !important;
+        }
+        h3 { font-weight: 600 !important; }
+        p, label, button, input, textarea, [data-testid="stMarkdownContainer"] {
+            font-family: "Segoe UI", Arial, sans-serif;
+        }
+        p, [data-testid="stCaptionContainer"] {
+            color: var(--muted) !important;
+            line-height: 1.58;
+        }
+        [data-testid="stMain"] label { color: var(--text) !important; }
+        .command-header {
+            align-items: end;
+            background: linear-gradient(112deg, var(--surface-high), var(--panel));
+            border: 1px solid var(--line);
+            border-radius: 10px 10px 0 0;
+            display: grid;
+            gap: 2rem;
+            grid-template-columns: minmax(0, 1fr) auto;
+            overflow: hidden;
+            padding: clamp(1.4rem, 3vw, 2.5rem);
+            position: relative;
+        }
+        .command-header::before {
+            background: var(--green);
+            bottom: 0;
+            content: "";
+            height: 3px;
+            left: 0;
+            position: absolute;
+            width: 18%;
+            animation: field-lock 700ms cubic-bezier(.2, .8, .2, 1) both;
+        }
+        @keyframes field-lock {
+            from { width: 4%; filter: brightness(.7); }
+            to { width: 18%; filter: brightness(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .command-header::before { animation: none; }
+        }
+        .command-header h1 { margin: 0; }
+        .command-header > div { min-width: 0; }
+        .command-header p {
+            color: var(--muted);
+            font-size: 1rem;
+            margin: .7rem 0 0;
+            max-width: 66ch;
+        }
+        .forecast-state {
+            align-self: center;
+            background: rgba(119, 213, 132, .075);
+            border: 1px solid rgba(119, 213, 132, .38);
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            min-width: 12.5rem;
+            padding: .75rem .9rem;
+        }
+        .status-dot {
+            background: var(--green);
+            border-radius: 50%;
+            grid-row: 1 / 3;
+            height: .55rem;
+            margin: .45rem .7rem 0 0;
+            width: .55rem;
+        }
+        .forecast-state span {
+            color: var(--muted);
+            font-size: .68rem;
+            font-weight: 650;
+            letter-spacing: .1em;
             text-transform: uppercase;
         }
-        [data-testid="stFileUploader"] button {
-            background: var(--gold) !important;
-            border: 2px solid #fff7e7 !important;
-            border-radius: 0 !important;
-            color: var(--ink) !important;
-            clip-path: polygon(
-                0 0, calc(100% - 8px) 0, 100% 8px,
-                100% 100%, 8px 100%, 0 calc(100% - 8px)
-            );
-            font-weight: 800;
+        .forecast-state strong {
+            color: var(--green);
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: .93rem;
+            font-weight: 650;
+            margin-top: .12rem;
+        }
+        .telemetry-rail {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-top: 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+            margin-bottom: 1.35rem;
+        }
+        .st-key-mission-controls {
+            background: var(--panel);
+            border-left: 1px solid var(--line);
+            border-right: 1px solid var(--line);
+            padding: .78rem 1rem .9rem;
+        }
+        .st-key-mission-controls label {
+            color: var(--muted) !important;
+            font-size: .68rem !important;
+            font-weight: 650 !important;
+            letter-spacing: .095em !important;
+            text-transform: uppercase;
+        }
+        .st-key-mission-controls [data-baseweb="select"] > div {
+            background: var(--surface-high);
+        }
+        .telemetry-item {
+            border-right: 1px solid var(--line);
+            min-width: 0;
+            padding: .8rem 1rem .9rem;
+        }
+        .telemetry-item:last-child { border-right: 0; }
+        .telemetry-item span {
+            color: var(--muted);
+            display: block;
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: .65rem;
+            font-weight: 650;
+            letter-spacing: .095em;
+            margin-bottom: .28rem;
+            text-transform: uppercase;
+        }
+        .telemetry-item strong {
+            color: var(--text);
+            display: block;
+            font-family: "Bahnschrift", "Segoe UI", sans-serif;
+            font-size: .93rem;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        [data-testid="stToolbar"] .rc-overflow:has(
+            [data-testid="stTopNavLink"]
+        ) {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            box-sizing: border-box;
+            gap: .35rem;
+            max-width: 36rem;
+            padding: .3rem;
+            width: min(36rem, calc(100vw - 4rem));
+        }
+        [data-testid="stToolbar"] .rc-overflow-item:has(
+            [data-testid="stTopNavLink"]
+        ) {
+            flex: 1 1 0;
+            min-width: 0;
+        }
+        [data-testid="stTopNavLinkContainer"] {
+            min-width: 0;
+            width: 100%;
+        }
+        [data-testid="stTopNavLink"] {
+            border: 1px solid transparent;
+            border-radius: 6px;
+            color: var(--muted) !important;
+            font-family: "Segoe UI", Arial, sans-serif !important;
+            font-size: .86rem;
+            font-weight: 600;
+            justify-content: center;
+            min-width: 0;
+            padding: .2rem .7rem !important;
+            width: 100%;
+        }
+        [data-testid="stTopNavLink"] p {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        [data-testid="stTopNavLink"][aria-current="page"] {
+            background: var(--green-deep) !important;
+            border-color: rgba(119, 213, 132, .28);
+            color: #e5f3e7 !important;
+        }
+        div[data-testid="stDataFrame"] {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: 0 14px 34px rgba(0, 0, 0, .18);
+            overflow: hidden;
+        }
+        .stButton > button, .stDownloadButton > button {
+            border: 1px solid rgba(119, 213, 132, .48);
+            border-radius: 7px;
+            background: var(--green-deep);
+            color: #e5f3e7;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, .16);
+            font-weight: 650;
         }
         .stButton > button:hover, .stDownloadButton > button:hover {
-            border-color: var(--red);
-            color: var(--red);
-            transform: translate(1px, 1px);
-            box-shadow: 2px 2px 0 var(--red);
+            background: #2a6140;
+            border-color: var(--green);
+            color: #eef8ef;
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, .22);
         }
         .stButton > button:focus-visible, .stDownloadButton > button:focus-visible {
-            outline: 3px solid var(--blue);
-            outline-offset: 3px;
+            outline: 2px solid var(--cyan);
+            outline-offset: 2px;
         }
         [data-testid="stAlert"] {
-            border-radius: 0;
-            border: 2px solid var(--ink);
-            background: #faf4e5;
+            border-radius: 8px;
+            border: 1px solid var(--line-strong);
+            background: var(--surface);
         }
         [data-baseweb="select"] > div, [data-baseweb="input"] > div {
-            border-radius: 0;
+            background: var(--surface);
+            border-color: var(--line-strong);
+            border-radius: 7px;
+            color: var(--text);
+        }
+        [data-testid="stExpander"] {
+            background: rgba(22, 35, 38, .68);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+        }
+        [data-testid="stSlider"] [role="slider"] {
+            background: var(--green);
+            border-color: var(--green);
+        }
+        [data-testid="stToggle"] [data-checked="true"] {
+            background: var(--green-deep);
+        }
+        hr { border-color: var(--line) !important; }
+        code {
+            background: var(--surface-high) !important;
+            color: var(--cyan) !important;
         }
         @media (max-width: 760px) {
-            .block-container { padding: 1rem .75rem 3rem; }
-            .stamp { position: static; display: inline-block; margin-top: 1rem; }
-            [data-testid="stRadio"] > div { max-width: none; }
-            [data-testid="stRadio"] label {
-                font-size: .7rem;
-                justify-content: center;
-                padding: .55rem .2rem;
-                text-align: center;
+            .block-container { padding: 3.35rem .8rem 3rem; }
+            .command-header {
+                align-items: start;
+                grid-template-columns: 1fr;
+                gap: 1.2rem;
+                padding: 1.35rem;
             }
-            .evidence-strip { display: grid; grid-template-columns: 1fr 1fr; }
+            .command-header h1 {
+                font-size: 2.15rem !important;
+                max-width: 100%;
+                overflow-wrap: normal;
+                word-break: normal;
+            }
+            .command-header p { overflow-wrap: anywhere; }
+            .forecast-state { min-width: 0; width: fit-content; }
+            .st-key-mission-controls { padding: .7rem .8rem .8rem; }
+            .st-key-mission-controls [data-testid="stHorizontalBlock"] {
+                flex-wrap: wrap;
+            }
+            .st-key-mission-controls [data-testid="stColumn"] {
+                flex: 1 1 13rem !important;
+                min-width: min(13rem, 100%);
+            }
+            .telemetry-rail {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+            .telemetry-item {
+                padding: .72rem .8rem;
+            }
+            [data-testid="stTopNavLink"] {
+                font-size: .74rem;
+                padding-inline: .25rem !important;
+            }
         }
         </style>
         """
     )
+
+
+def _chart_theme(
+    chart: alt.Chart | alt.LayerChart,
+) -> alt.Chart | alt.LayerChart:
+    themed = (
+        chart.configure(background=SURFACE)
+        .configure_view(fill=SURFACE, stroke=None)
+        .configure_axis(
+            domainColor=GRID,
+            gridColor=GRID,
+            labelColor=TEXT,
+            labelFont="Segoe UI",
+            tickColor=GRID,
+            titleColor=TEXT,
+            titleFont="Segoe UI",
+        )
+        .configure_legend(
+            labelColor=TEXT,
+            labelFont="Segoe UI",
+            titleColor=TEXT,
+            titleFont="Segoe UI",
+        )
+    )
+    assert isinstance(themed, (alt.Chart, alt.LayerChart))
+    return themed
 
 
 def _arguments() -> argparse.Namespace:
@@ -240,7 +431,8 @@ def _arguments() -> argparse.Namespace:
 
 
 def _discover_prediction_files() -> list[Path]:
-    candidates = [
+    forecast_candidates = list(Path.cwd().glob("artifacts/*/*-predictions.parquet"))
+    candidates = forecast_candidates or [
         *Path.cwd().glob("*-predictions.parquet"),
         *Path.cwd().glob("artifacts/*-predictions.parquet"),
     ]
@@ -252,42 +444,16 @@ def _load_paths(paths: tuple[str, ...]) -> pl.DataFrame:
     return load_prediction_files([Path(path) for path in paths])
 
 
-def _load_uploaded_files(files: list[UploadedFile]) -> pl.DataFrame:
-    frames = [
-        prepare_predictions(
-            pl.read_parquet(BytesIO(upload.getvalue())),
-            model_name=Path(upload.name).stem.removesuffix("-predictions").upper(),
-        )
-        for upload in files
-    ]
-    return pl.concat(frames, how="diagonal_relaxed")
-
-
 def _load_data() -> pl.DataFrame:
     arguments = _arguments()
     paths = arguments.predictions or _discover_prediction_files()
 
-    with st.sidebar:
-        st.markdown("## Model sheets")
-        uploads = st.file_uploader(
-            "Add prediction Parquet files",
-            type=["parquet"],
-            accept_multiple_files=True,
-            help="Each file needs player, season, week, and prediction columns.",
-        )
-        if paths:
-            st.caption("Loaded from disk")
-            for path in paths:
-                st.code(path.name, language=None)
-
-    if uploads:
-        return _load_uploaded_files(uploads)
     if paths:
         return _load_paths(tuple(str(path) for path in paths))
 
     st.warning(
-        "No prediction sheets found. Upload a Parquet file in the sidebar, "
-        "or start with `--predictions PATH`."
+        "No prediction sheets were found. Build the forecast archive or start "
+        "the dashboard with `--predictions PATH`."
     )
     st.code(
         "uv run ffpred-dashboard --predictions artifacts/svr-predictions.parquet",
@@ -296,69 +462,202 @@ def _load_data() -> pl.DataFrame:
     st.stop()
 
 
-def _global_filters(frame: pl.DataFrame) -> tuple[pl.DataFrame, int, list[str], str]:
+def _matching_option(
+    value: str | None,
+    options: Sequence[T],
+    fallback: T,
+) -> T:
+    if value is None:
+        return fallback
+    normalized = value.casefold()
+    return next(
+        (option for option in options if str(option).casefold() == normalized),
+        fallback,
+    )
+
+
+def _query_positions(positions: Sequence[str]) -> list[str]:
+    raw = st.query_params.get_all("position")
+    requested = {
+        position.strip().casefold()
+        for value in raw
+        for position in value.split(",")
+        if position.strip()
+    }
+    return [position for position in positions if position.casefold() in requested]
+
+
+def _write_filter_query() -> None:
+    season = st.session_state[SEASON_FILTER_KEY]
+    chosen_positions = st.session_state[POSITION_FILTER_KEY]
+    model = st.session_state[MODEL_FILTER_KEY]
+    st.session_state[FILTER_STATE_KEY] = {
+        "season": season,
+        "positions": chosen_positions,
+        "model": model,
+    }
+    st.query_params["season"] = str(season)
+    st.query_params["position"] = chosen_positions or [""]
+    st.query_params["model"] = model
+
+
+def _hydrate_filter_state(
+    seasons: Sequence[int],
+    positions: Sequence[str],
+    models: Sequence[str],
+) -> None:
+    query_present = any(key in st.query_params for key in FILTER_QUERY_KEYS)
+    if query_present:
+        season = _matching_option(st.query_params.get("season"), seasons, seasons[0])
+        chosen_positions = (
+            _query_positions(positions)
+            if "position" in st.query_params
+            else list(positions)
+        )
+        model = _matching_option(st.query_params.get("model"), models, models[0])
+    else:
+        saved = st.session_state.get(FILTER_STATE_KEY, {})
+        season = saved.get("season", seasons[0])
+        if season not in seasons:
+            season = seasons[0]
+        saved_positions = saved.get("positions", positions)
+        chosen_positions = [
+            position for position in positions if position in saved_positions
+        ]
+        model = saved.get("model", models[0])
+        if model not in models:
+            model = models[0]
+
+    st.session_state[SEASON_FILTER_KEY] = season
+    st.session_state[POSITION_FILTER_KEY] = chosen_positions
+    st.session_state[MODEL_FILTER_KEY] = model
+    st.session_state[FILTER_STATE_KEY] = {
+        "season": season,
+        "positions": chosen_positions,
+        "model": model,
+    }
+
+
+def _global_filters(
+    frame: pl.DataFrame,
+    *,
+    header: st.delta_generator.DeltaGenerator,
+) -> tuple[pl.DataFrame, int, list[str], str]:
     seasons = sorted(frame["target_season"].unique().to_list(), reverse=True)
     positions = sorted(frame["position"].unique().to_list())
     models = model_choices(frame)
+    _hydrate_filter_state(seasons, positions, models)
 
-    with st.sidebar:
-        st.markdown("## Board controls")
-        season = int(st.selectbox("Season", seasons))
+    with st.container(key="mission-controls"):
+        season_control, position_control, model_control = st.columns([1, 2, 1])
+        season = int(
+            season_control.selectbox(
+                "Target season",
+                seasons,
+                key=SEASON_FILTER_KEY,
+                on_change=_write_filter_query,
+                help="Choose an upcoming forecast or a frozen historical replay.",
+            )
+        )
         chosen_positions = [
             str(position)
-            for position in st.multiselect(
+            for position in position_control.multiselect(
                 "Position",
                 positions,
-                default=positions,
-                help="The current training pipeline produces quarterback rows.",
+                key=POSITION_FILTER_KEY,
+                on_change=_write_filter_query,
+                help="Filter every workspace to one or more fantasy positions.",
             )
         ]
-        model = st.selectbox(
-            "Model sheet",
+        model = model_control.selectbox(
+            "Model view",
             models,
-            index=0,
-            help="Consensus averages predictions when multiple sheets are loaded.",
-        )
-        st.divider()
-        st.caption(
-            "Predictions support decisions; they do not guarantee player outcomes."
+            key=MODEL_FILTER_KEY,
+            on_change=_write_filter_query,
+            help="Consensus averages matching SVR and MLP predictions.",
         )
 
-    selected = select_model(frame, model)
+    _write_filter_query()
+    selected = select_model(
+        frame.filter(pl.col("target_season") == season),
+        model,
+    )
+    _command_header(header, selected)
     return selected, season, chosen_positions, model
 
 
-def _masthead(frame: pl.DataFrame, model: str) -> None:
-    positions = ", ".join(sorted(frame["position"].unique().to_list()))
+def _command_header(
+    header: DeltaGenerator,
+    frame: pl.DataFrame,
+) -> None:
     actual_rows = frame[ACTUAL_COLUMN].count()
-    artifact_mode = "Historical backtest" if actual_rows else "Forward projection"
+    is_frozen_forecast = "history_through_season" in frame.columns
+    if is_frozen_forecast and actual_rows:
+        artifact_mode = "Point-in-time replay"
+    elif is_frozen_forecast:
+        artifact_mode = "Upcoming forecast"
+    else:
+        artifact_mode = "Rolling backtest"
+    header.html(
+        f"""
+        <section class="command-header">
+          <div>
+            <h1>Fantasy Forecast Center</h1>
+            <p>Season-long draft value and weekly matchup signals, kept in
+            separate decision lanes and tied to the same model evidence.</p>
+          </div>
+          <div class="forecast-state">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span>Forecast state</span>
+            <strong>{artifact_mode}</strong>
+          </div>
+        </section>
+        """
+    )
+
+
+def _masthead(frame: pl.DataFrame, model: str) -> None:
+    actual_rows = frame[ACTUAL_COLUMN].count()
+    is_frozen_forecast = "history_through_season" in frame.columns
+    provenance_items = ""
+    if is_frozen_forecast:
+        history_through = int(frame["history_through_season"][0])
+        forecast_as_of = escape(str(frame["forecast_as_of"][0]))
+        provenance_items = (
+            "<div class='telemetry-item'>"
+            f"<span>History through</span><strong>{history_through}</strong></div>"
+            "<div class='telemetry-item'>"
+            f"<span>Forecast lock</span><strong>{forecast_as_of}</strong></div>"
+        )
     st.html(
         f"""
-        <section class="war-masthead">
-          <h1>Fantasy War Room</h1>
-          <p>Season value belongs on the draft board. Weekly matchups belong on
-          their own desk. Use the same evidence without mixing the decisions.</p>
-          <span class="stamp">{artifact_mode}</span>
-        </section>
-        <div class="evidence-strip">
-          <span>Sheet <strong>{model}</strong></span>
-          <span>Rows <strong>{frame.height:,}</strong></span>
-          <span>Positions <strong>{positions}</strong></span>
-          <span>Mode <strong>{artifact_mode}</strong></span>
+        <div class="telemetry-rail">
+          <div class="telemetry-item">
+            <span>Matchup rows</span><strong>{frame.height:,}</strong>
+          </div>
+          {provenance_items}
         </div>
         """
     )
-    if positions == "QB":
-        with st.expander("Why does this artifact only show QB?"):
-            st.write(
-                "The current model pipeline only trains quarterback predictions. "
-                "The position control expands automatically when future artifacts "
-                "include other positions."
-            )
-    if actual_rows:
+    if is_frozen_forecast and actual_rows:
         st.caption(
-            "This sheet includes completed-game outcomes, so ranks shown here are "
-            "a model backtest, not a live upcoming-season forecast."
+            "This historical forecast is frozen before the target season. "
+            "Actual results are shown only for comparison."
+        )
+    elif is_frozen_forecast:
+        st.caption(
+            "This upcoming forecast uses only completed seasons through the "
+            "history cutoff shown above."
+        )
+    elif actual_rows:
+        st.caption(
+            "This rolling backtest updates player history during the selected "
+            "season; it is not a preseason projection."
+        )
+    if model == CONSENSUS_MODEL:
+        st.caption(
+            "Consensus is the per-game average of the loaded SVR and MLP "
+            "predictions. Choose either model in the controls above to view it alone."
         )
 
 
@@ -371,155 +670,220 @@ def _draft_view(
 ) -> None:
     st.header("Draft board")
     st.write(
-        "Rank total season value here. Weekly volatility and model disagreement "
-        "stay visible, but they do not replace projected points. Opportunity "
-        "share and team volume expose fragile production behind recent scores."
+        "Projected and actual totals sit together. Two availability-adjusted "
+        "scores fill each source-backed injury absence at either the preseason "
+        "projected pace or the player's actual scoring pace."
     )
     if not positions:
         st.warning("Choose at least one position to build the draft board.")
         return
 
-    controls = st.columns([1.25, 1, 1, 1])
-    search = controls[0].text_input("Find player", placeholder="Search the board")
-    minimum_games = controls[1].number_input(
-        "Minimum projected games",
-        min_value=1,
-        max_value=18,
-        value=8,
-    )
-    top_n = controls[2].selectbox("Board depth", [12, 24, 50, 100], index=1)
-    hide_drafted = controls[3].toggle("Hide drafted", value=True)
-
     board = draft_board(
         frame,
         season=season,
         positions=positions,
-        minimum_games=minimum_games,
+    )
+    has_actuals = board["actual_points"].count() > 0
+    controls = st.columns([2, 1, 1.6] if has_actuals else [2, 1])
+    search = controls[0].text_input("Find player", placeholder="Search the board")
+    top_n = controls[1].selectbox("Board depth", [12, 24, 50, 100], index=1)
+    sort_label = (
+        controls[2].selectbox("Sort players by", list(DRAFT_BAR_FIELDS))
+        if has_actuals
+        else "Projected"
     )
     if search:
         board = board.filter(
             pl.col("player_name").str.contains(search, literal=True, strict=False)
         )
-    drafted = st.multiselect(
-        "Drafted players",
-        board["player_name"].to_list(),
-        help="Mark players as the room takes them. Hidden players remain selected.",
-    )
-    if hide_drafted and drafted:
-        board = board.filter(~pl.col("player_name").is_in(drafted))
-    display = board.head(top_n)
+    display = board.sort(
+        DRAFT_BAR_FIELDS[sort_label],
+        descending=True,
+        nulls_last=True,
+    ).head(top_n)
 
     if display.is_empty():
-        st.warning("No players match these draft-board controls.")
+        st.warning("No players match this search.")
         return
 
-    chart_frame = display.head(18).sort("projected_points").to_pandas()
-    tooltips = [
-        alt.Tooltip("player_name:N", title="Player"),
-        alt.Tooltip("projected_points:Q", title="Projected", format=".1f"),
-        alt.Tooltip("points_per_game:Q", title="Per game", format=".1f"),
-        alt.Tooltip("volatility:Q", title="Weekly swing", format=".1f"),
-    ]
-    if "team" in display.columns:
-        tooltips.append(alt.Tooltip("team:N", title="Team"))
-    if "target_share" in display.columns:
-        tooltips.append(
-            alt.Tooltip("target_share:Q", title="Target share", format=".1%")
-        )
-    if "carry_share" in display.columns:
-        tooltips.append(alt.Tooltip("carry_share:Q", title="Carry share", format=".1%"))
-    if "team_offensive_plays" in display.columns:
-        tooltips.append(
-            alt.Tooltip(
-                "team_offensive_plays:Q",
-                title="Play volume",
-                format=".1f",
+    chart_rows = display.head(18)
+    player_order = chart_rows["player_name"].to_list()
+    identity = ["player_name", "injury_games"]
+    regular_bars = pl.concat(
+        [
+            chart_rows.select(
+                *identity,
+                pl.lit(label).alias("measure"),
+                pl.col(field).alias("base_points"),
+                pl.col(field).alias("total_points"),
+                pl.lit(0.0).alias("addition_points"),
             )
-        )
-    bars = (
+            for label, field in list(DRAFT_BAR_FIELDS.items())[:2]
+        ],
+        how="vertical",
+    )
+    adjusted_bars = pl.concat(
+        [
+            chart_rows.select(
+                *identity,
+                pl.lit(label).alias("measure"),
+                pl.col("actual_points").alias("base_points"),
+                pl.col(total_field).alias("total_points"),
+                pl.col(addition_field).alias("addition_points"),
+            )
+            for label, total_field, addition_field in (
+                (
+                    "Adjusted at projected PPG",
+                    "projected_pace_adjusted_actual",
+                    "projected_pace_injury_points",
+                ),
+                (
+                    "Adjusted at actual PPG",
+                    "actual_pace_adjusted_actual",
+                    "actual_pace_injury_points",
+                ),
+            )
+        ],
+        how="vertical",
+    ).filter(pl.col("injury_games") > 0)
+    chart_data = pl.concat([regular_bars, adjusted_bars], how="vertical").drop_nulls(
+        ["base_points", "total_points"]
+    )
+    chart_frame = chart_data.to_pandas()
+    available_measures = set(chart_data["measure"].to_list())
+    bar_order = [label for label in DRAFT_BAR_FIELDS if label in available_measures]
+    color = alt.Color(
+        "measure:N",
+        scale=alt.Scale(
+            domain=bar_order,
+            range=[DRAFT_BAR_COLORS[label] for label in bar_order],
+        ),
+        sort=bar_order,
+        legend=alt.Legend(
+            columns=2,
+            direction="horizontal",
+            labelLimit=240,
+            orient="bottom",
+            symbolType="square",
+            title=None,
+        ),
+    )
+    y = alt.Y(
+        "player_name:N",
+        sort=player_order,
+        title=None,
+        scale=alt.Scale(paddingInner=0.34, paddingOuter=0.16),
+    )
+    y_offset = alt.YOffset(
+        "measure:N",
+        sort=bar_order,
+        scale=alt.Scale(paddingInner=0.12),
+        title=None,
+    )
+    tooltip = [
+        alt.Tooltip("player_name:N", title="Player"),
+        alt.Tooltip("measure:N", title="Measure"),
+        alt.Tooltip("total_points:Q", title="Total", format=".1f"),
+        alt.Tooltip("addition_points:Q", title="Injury addition", format=".1f"),
+        alt.Tooltip("injury_games:Q", title="Injury misses"),
+    ]
+    base_bars = (
         alt.Chart(chart_frame)
-        .mark_bar(color=INK, cornerRadiusEnd=0)
+        .mark_bar(cornerRadiusEnd=3)
         .encode(
-            x=alt.X("projected_points:Q", title="Projected season points"),
-            y=alt.Y("player_name:N", sort=None, title=None),
-            tooltip=tooltips,
+            x=alt.X("base_points:Q", title="Season points"),
+            y=y,
+            yOffset=y_offset,
+            color=color,
+            tooltip=tooltip,
         )
     )
-    labels = bars.mark_text(
-        align="left",
-        baseline="middle",
-        dx=5,
-        color=INK,
-        font="Segoe Print",
-        fontWeight="bold",
-    ).encode(text=alt.Text("projected_points:Q", format=".0f"))
-    actual = (
-        alt.Chart(chart_frame.dropna(subset=["actual_points"]))
-        .mark_tick(color=RED, thickness=3, size=18)
-        .encode(x="actual_points:Q", y=alt.Y("player_name:N", sort=None))
+    additions = (
+        alt.Chart(chart_frame)
+        .transform_filter(alt.datum.addition_points > 0)
+        .mark_bar(
+            cornerRadiusEnd=3,
+            fillOpacity=0.2,
+            strokeWidth=1.5,
+            strokeDash=[6, 3],
+        )
+        .encode(
+            x=alt.X("base_points:Q"),
+            x2=alt.X2("total_points:Q"),
+            y=y,
+            yOffset=y_offset,
+            color=color,
+            stroke=color,
+            tooltip=tooltip,
+        )
     )
     st.altair_chart(
-        (bars + labels + actual)
-        .properties(height=max(360, len(chart_frame) * 28))
-        .configure(background=PAPER)
-        .configure_view(fill=PAPER, stroke=None)
-        .configure_axis(gridColor="#cfc5ae", labelColor=INK, titleColor=INK),
+        _chart_theme(
+            (base_bars + additions).properties(height=max(420, len(player_order) * 58))
+        ),
         width="stretch",
     )
-    st.caption("Ink bar: projection. Red mark: actual total when available.")
+    st.caption(
+        "Solid bars show recorded or modeled points. On adjusted bars, the "
+        "translucent dashed extension estimates points for injury misses. "
+        "Adjusted bars appear only for players with source-backed Out or "
+        "reserve-list absences."
+    )
 
-    table_columns: list[pl.Expr] = [
+    table = display.select(
         pl.col("position_rank").alias("Rank"),
         pl.col("position").alias("Pos"),
         pl.col("player_name").alias("Player"),
         pl.col("projected_points").alias("Projected"),
-        pl.col("points_per_game").alias("Per game"),
-        pl.col("projected_games").alias("Games"),
+        pl.col("actual_points").alias("Actual"),
+        pl.col("injury_games").alias("Inj. missed"),
+        pl.col("projected_pace_adjusted_actual").alias("Adj. at proj. PPG"),
+        pl.col("projected_pace_adjusted_delta_percent").alias("Proj. pace gap %"),
+        pl.col("actual_pace_adjusted_actual").alias("Adj. at actual PPG"),
+        pl.col("actual_pace_adjusted_delta_percent").alias("Actual pace gap %"),
+        pl.col("points_per_game").alias("Projected PPG"),
+        pl.col("actual_points_per_game").alias("Actual PPG"),
+        pl.col("actual_games").alias("Played"),
+        pl.col("projected_games").alias("Scheduled"),
         pl.col("volatility").alias("Weekly swing"),
         pl.col("model_spread").alias("Model spread"),
-        pl.col("actual_points").alias("Actual"),
-    ]
-    if "team" in display.columns:
-        table_columns.insert(3, pl.col("team").alias("Team"))
-    opportunity_display_columns = {
-        "target_share": (pl.col("target_share") * 100).alias("Target share"),
-        "carry_share": (pl.col("carry_share") * 100).alias("Carry share"),
-        "team_offensive_plays": pl.col("team_offensive_plays").alias("Play volume"),
-        "team_pass_rate": (pl.col("team_pass_rate") * 100).alias("Pass rate"),
-        "usage_warning": pl.col("usage_warning").alias("Volume flag"),
-        "opportunity_basis": pl.col("opportunity_basis").alias("Usage basis"),
-    }
-    table_columns.extend(
-        expression
-        for column, expression in opportunity_display_columns.items()
-        if column in display.columns
     )
-    table = display.select(table_columns)
-    column_config = {
-        "Projected": st.column_config.NumberColumn(format="%.1f"),
-        "Per game": st.column_config.NumberColumn(format="%.1f"),
-        "Weekly swing": st.column_config.NumberColumn(format="%.1f"),
-        "Model spread": st.column_config.NumberColumn(format="%.1f"),
-        "Actual": st.column_config.NumberColumn(format="%.1f"),
-        "Target share": st.column_config.NumberColumn(format="%.1f%%"),
-        "Carry share": st.column_config.NumberColumn(format="%.1f%%"),
-        "Play volume": st.column_config.NumberColumn(format="%.1f"),
-        "Pass rate": st.column_config.NumberColumn(format="%.1f%%"),
-    }
     st.dataframe(
         table,
         hide_index=True,
         width="stretch",
-        column_config=column_config,
+        column_config={
+            "Projected": st.column_config.NumberColumn(format="%.1f"),
+            "Actual": st.column_config.NumberColumn(format="%.1f"),
+            "Inj. missed": st.column_config.NumberColumn(
+                format="%d",
+                help="Scheduled games missed with an Out injury report or "
+                "reserve-list roster status.",
+            ),
+            "Adj. at proj. PPG": st.column_config.NumberColumn(
+                format="%.1f",
+                help="Actual points plus injury misses multiplied by preseason "
+                "projected points per game.",
+            ),
+            "Proj. pace gap %": st.column_config.NumberColumn(
+                format="%+.1f%%",
+                help="Projected-pace adjusted total versus the original projection.",
+            ),
+            "Adj. at actual PPG": st.column_config.NumberColumn(
+                format="%.1f",
+                help="Actual points plus injury misses multiplied by actual points "
+                "per game in games played.",
+            ),
+            "Actual pace gap %": st.column_config.NumberColumn(
+                format="%+.1f%%",
+                help="Actual-pace adjusted total versus the original projection.",
+            ),
+            "Projected PPG": st.column_config.NumberColumn(format="%.1f"),
+            "Actual PPG": st.column_config.NumberColumn(format="%.1f"),
+            "Weekly swing": st.column_config.NumberColumn(format="%.1f"),
+            "Model spread": st.column_config.NumberColumn(format="%.1f"),
+        },
     )
-    if "opportunity_basis" in display.columns:
-        st.caption(
-            "Shares and rates use depth-chart projections when projected_* "
-            "columns are supplied; otherwise they are leakage-safe trailing "
-            "10-game values. Play volume is pass attempts plus carries. "
-            "Draft-season roster changes still require a depth-chart "
-            "projection source."
-        )
     st.download_button(
         "Export draft sheet",
         table.write_csv(),
@@ -574,7 +938,7 @@ def _weekly_view(
     if not comparison.is_empty():
         comparison_chart = (
             alt.Chart(comparison.to_pandas())
-            .mark_bar(color=BLUE)
+            .mark_bar(color=CYAN, cornerRadiusEnd=3)
             .encode(
                 x=alt.X("prediction:Q", title=f"Week {week} projected points"),
                 y=alt.Y("player_name:N", sort="-x", title=None),
@@ -592,9 +956,7 @@ def _weekly_view(
             .properties(height=max(160, len(compared) * 52))
         )
         st.altair_chart(
-            comparison_chart.configure(background=PAPER)
-            .configure_view(fill=PAPER, stroke=None)
-            .configure_axis(gridColor="#cfc5ae", labelColor=INK, titleColor=INK),
+            _chart_theme(comparison_chart),
             width="stretch",
         )
 
@@ -624,7 +986,7 @@ def _weekly_view(
                     "player_name:N",
                     title="Player",
                     scale=alt.Scale(
-                        range=[INK, RED, BLUE, GOLD, "#6d5b87"],
+                        range=[GREEN, CYAN, AMBER, CORAL, VIOLET],
                     ),
                 ),
                 strokeDash=alt.StrokeDash(
@@ -645,9 +1007,7 @@ def _weekly_view(
             .properties(height=340)
         )
         st.altair_chart(
-            trend.configure(background=PAPER)
-            .configure_view(fill=PAPER, stroke=None)
-            .configure_axis(gridColor="#cfc5ae", labelColor=INK, titleColor=INK),
+            _chart_theme(trend),
             width="stretch",
         )
 
@@ -706,7 +1066,7 @@ def _model_room(frame: pl.DataFrame) -> None:
     chart_frame = scorecard.to_pandas()
     chart = (
         alt.Chart(chart_frame)
-        .mark_bar(color=RED)
+        .mark_bar(color=CORAL, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
         .encode(
             x=alt.X("model:N", title=None, sort="y"),
             y=alt.Y("mae:Q", title="Mean absolute error"),
@@ -720,20 +1080,36 @@ def _model_room(frame: pl.DataFrame) -> None:
         .properties(height=320)
     )
     st.altair_chart(
-        chart.configure(background=PAPER)
-        .configure_view(fill=PAPER, stroke=None)
-        .configure_axis(gridColor="#cfc5ae", labelColor=INK, titleColor=INK),
+        _chart_theme(chart),
         width="stretch",
     )
+
+
+def _workspace_page(source: pl.DataFrame, workspace: str) -> None:
+    header = st.empty()
+    selected, season, positions, model = _global_filters(source, header=header)
+    selected_season = selected.filter(pl.col("target_season") == season)
+    _masthead(selected_season, model)
+    if workspace == "draft":
+        _draft_view(
+            selected,
+            season=season,
+            positions=positions,
+            model=model,
+        )
+    elif workspace == "weekly":
+        _weekly_view(selected, season=season, positions=positions)
+    else:
+        _model_room(source.filter(pl.col("target_season") == season))
 
 
 def render() -> None:
     """Render the dashboard."""
     st.set_page_config(
-        page_title="Fantasy War Room",
+        page_title="Fantasy Forecast Center",
         page_icon="F",
         layout="wide",
-        initial_sidebar_state="auto",
+        initial_sidebar_state="collapsed",
     )
     _inject_styles()
     try:
@@ -742,25 +1118,36 @@ def render() -> None:
         st.error(f"Could not open the prediction sheet: {error}")
         st.stop()
 
-    selected, season, positions, model = _global_filters(source)
-    _masthead(selected, model)
-    workspace = st.radio(
-        "Workspace",
-        ["Draft Board", "Weekly Decisions", "Model Room"],
-        horizontal=True,
-        label_visibility="collapsed",
+    draft_page = st.Page(
+        lambda: _workspace_page(source, "draft"),
+        title="Draft Board",
+        url_path="draft",
     )
-    if workspace == "Draft Board":
-        _draft_view(
-            selected,
-            season=season,
-            positions=positions,
-            model=model,
-        )
-    elif workspace == "Weekly Decisions":
-        _weekly_view(selected, season=season, positions=positions)
-    else:
-        _model_room(source)
+    weekly_page = st.Page(
+        lambda: _workspace_page(source, "weekly"),
+        title="Weekly Decisions",
+        url_path="weekly",
+    )
+    model_page = st.Page(
+        lambda: _workspace_page(source, "model"),
+        title="Model Room",
+        url_path="model",
+    )
+
+    def open_draft_board() -> None:
+        st.switch_page(draft_page)
+
+    landing_page = st.Page(
+        open_draft_board,
+        title="Fantasy Forecast Center",
+        default=True,
+        visibility="hidden",
+    )
+    page = st.navigation(
+        [landing_page, draft_page, weekly_page, model_page],
+        position="top",
+    )
+    page.run()
 
 
 def run() -> Never:

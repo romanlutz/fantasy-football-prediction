@@ -10,8 +10,8 @@ import polars as pl
 from numpy.typing import NDArray
 
 from ffpred.datasets.io import Validator, read_dataset
+from ffpred.features.all_positions import ALL_POSITION_MODEL_FEATURE_COLUMNS
 from ffpred.features.schema import MODEL_FEATURE_COLUMNS, TARGET_COLUMN
-from ffpred.features.schema import validate_feature_frame as validate_qb_frame
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -26,11 +26,12 @@ class TrainingData:
 
 def training_data_from_frame(
     frame: pl.DataFrame,
-    feature_names: tuple[str, ...] = MODEL_FEATURE_COLUMNS,
+    feature_names: tuple[str, ...] | None = None,
 ) -> TrainingData:
     """Convert named, schema-validated columns to typed NumPy arrays."""
+    resolved_features = feature_names or model_feature_columns(frame)
     features = np.asarray(
-        frame.select(feature_names).to_numpy(),
+        frame.select(resolved_features).to_numpy(),
         dtype=np.float64,
     )
     target = np.asarray(frame[TARGET_COLUMN].to_numpy(), dtype=np.float64)
@@ -38,15 +39,22 @@ def training_data_from_frame(
         frame=frame,
         features=features,
         target=target,
-        feature_names=feature_names,
+        feature_names=resolved_features,
     )
+
+
+def model_feature_columns(frame: pl.DataFrame) -> tuple[str, ...]:
+    """Resolve the feature contract represented by a persisted frame."""
+    if set(ALL_POSITION_MODEL_FEATURE_COLUMNS) <= set(frame.columns):
+        return ALL_POSITION_MODEL_FEATURE_COLUMNS
+    return MODEL_FEATURE_COLUMNS
 
 
 def load_training_data(
     path: Path,
-    feature_names: tuple[str, ...] = MODEL_FEATURE_COLUMNS,
+    feature_names: tuple[str, ...] | None = None,
     *,
-    validator: Validator = validate_qb_frame,
+    validator: Validator | None = None,
 ) -> TrainingData:
     """Load one Parquet split for model training or evaluation."""
     frame = read_dataset(path, validator=validator)

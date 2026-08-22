@@ -9,6 +9,10 @@ from pathlib import Path
 import polars as pl
 
 from ffpred.errors import FfpredError
+from ffpred.features.all_positions import (
+    INJURY_MISSED_COLUMN,
+    INJURY_STATUS_COLUMN,
+)
 
 PREDICTION_COLUMN = "prediction"
 ACTUAL_COLUMN = "fantasy_points"
@@ -26,51 +30,6 @@ VIEW_COLUMNS = ("position", "team", "opponent")
 SHORT_MODEL_NAME_LENGTH = 4
 TIGHT_MODEL_SPREAD = 1.5
 MIXED_MODEL_SPREAD = 3.0
-COMMITTEE_CARRY_SHARE = 0.45
-LOW_TARGET_SHARE = 0.15
-LOW_TEAM_PLAYS = 58.0
-OPPORTUNITY_SOURCES = {
-    "target_share": (
-        "projected_target_share",
-        "receiving_last_10_target_share",
-        "receiving_last_1_target_share",
-    ),
-    "carry_share": (
-        "projected_carry_share",
-        "receiving_last_10_carry_share",
-        "receiving_last_1_carry_share",
-    ),
-    "team_targets": (
-        "projected_team_targets",
-        "receiving_last_10_team_targets",
-        "receiving_last_1_team_targets",
-    ),
-    "team_pass_attempts": (
-        "projected_team_pass_attempts",
-        "receiving_last_10_team_pass_attempts",
-        "receiving_last_1_team_pass_attempts",
-    ),
-    "team_rushing_attempts": (
-        "projected_team_rushing_attempts",
-        "receiving_last_10_team_rushing_attempts",
-        "receiving_last_1_team_rushing_attempts",
-    ),
-    "team_offensive_plays": (
-        "projected_team_offensive_plays",
-        "receiving_last_10_team_offensive_plays",
-        "receiving_last_1_team_offensive_plays",
-    ),
-    "team_pass_rate": (
-        "projected_team_pass_rate",
-        "receiving_last_10_team_pass_rate",
-        "receiving_last_1_team_pass_rate",
-    ),
-    "team_rush_rate": (
-        "projected_team_rush_rate",
-        "receiving_last_10_team_rush_rate",
-        "receiving_last_1_team_rush_rate",
-    ),
-}
 
 
 class DashboardDataError(FfpredError):
@@ -104,6 +63,19 @@ def prepare_predictions(frame: pl.DataFrame, *, model_name: str) -> pl.DataFrame
         expressions.append(pl.col(ACTUAL_COLUMN).cast(pl.Float64))
     else:
         expressions.append(pl.lit(None, dtype=pl.Float64).alias(ACTUAL_COLUMN))
+    if INJURY_MISSED_COLUMN in frame.columns:
+        expressions.append(
+            pl.col(INJURY_MISSED_COLUMN)
+            .cast(pl.Boolean)
+            .fill_null(False)
+            .alias(INJURY_MISSED_COLUMN)
+        )
+    else:
+        expressions.append(pl.lit(False).alias(INJURY_MISSED_COLUMN))
+    if INJURY_STATUS_COLUMN in frame.columns:
+        expressions.append(pl.col(INJURY_STATUS_COLUMN).cast(pl.String))
+    else:
+        expressions.append(pl.lit(None, dtype=pl.String).alias(INJURY_STATUS_COLUMN))
 
     defaults = {"position": "QB", "team": "N/A", "opponent": "N/A"}
     for column, default in defaults.items():
@@ -117,29 +89,6 @@ def prepare_predictions(frame: pl.DataFrame, *, model_name: str) -> pl.DataFrame
             )
         else:
             expressions.append(pl.lit(default).alias(column))
-
-    available_opportunity_columns: list[str] = []
-    for canonical, sources in OPPORTUNITY_SOURCES.items():
-        available = [source for source in sources if source in frame.columns]
-        if available:
-            expressions.append(pl.coalesce(available).cast(pl.Float64).alias(canonical))
-            available_opportunity_columns.append(canonical)
-
-    projected = [
-        source
-        for sources in OPPORTUNITY_SOURCES.values()
-        for source in sources
-        if source.startswith("projected_") and source in frame.columns
-    ]
-    if available_opportunity_columns:
-        basis = (
-            pl.when(pl.any_horizontal(pl.col(projected).is_not_null()))
-            .then(pl.lit("Depth-chart estimate"))
-            .otherwise(pl.lit("Trailing usage"))
-            if projected
-            else pl.lit("Trailing usage")
-        )
-        expressions.append(basis.alias("opportunity_basis"))
 
     return frame.with_columns(expressions).with_columns(
         (pl.col(PREDICTION_COLUMN) - pl.col(ACTUAL_COLUMN)).alias("error"),
@@ -188,17 +137,13 @@ def select_model(frame: pl.DataFrame, model: str) -> pl.DataFrame:
             "target_season",
             "target_week",
             "target_game_id",
+            "forecast_as_of",
+            "history_through_season",
+            INJURY_STATUS_COLUMN,
+            INJURY_MISSED_COLUMN,
         )
         if column in frame.columns
     ]
-    opportunity_columns = [
-        column for column in OPPORTUNITY_SOURCES if column in frame.columns
-    ]
-    opportunity_aggregations: list[pl.Expr] = [
-        pl.col(column).mean().alias(column) for column in opportunity_columns
-    ]
-    if opportunity_columns:
-        opportunity_aggregations.append(pl.col("opportunity_basis").first())
     result = (
         frame.group_by(identity)
         .agg(
@@ -206,7 +151,6 @@ def select_model(frame: pl.DataFrame, model: str) -> pl.DataFrame:
             pl.col(PREDICTION_COLUMN).std().fill_null(0.0).alias("model_spread"),
             pl.col("model").n_unique().alias("model_count"),
             pl.col(ACTUAL_COLUMN).drop_nulls().first(),
-            *opportunity_aggregations,
         )
         .with_columns(
             pl.lit(CONSENSUS_MODEL).alias("model"),
@@ -229,25 +173,14 @@ def draft_board(
     *,
     season: int,
     positions: Sequence[str],
-    minimum_games: int,
 ) -> pl.DataFrame:
     """Aggregate weekly predictions into a season-long draft board."""
     selected = frame.filter(
         (pl.col("target_season") == season) & pl.col("position").is_in(list(positions))
     )
-    opportunity_columns = [
-        column for column in OPPORTUNITY_SOURCES if column in selected.columns
-    ]
-    opportunity_aggregations: list[pl.Expr] = [
-        pl.col(column).mean().alias(column) for column in opportunity_columns
-    ]
-    if opportunity_columns:
-        opportunity_aggregations.append(pl.col("opportunity_basis").first())
-    group_columns = ["player_id", "player_name", "position"]
-    if "team" in selected.columns:
-        group_columns.append("team")
+    season_has_results = selected[ACTUAL_COLUMN].count() > 0
     board = (
-        selected.group_by(group_columns)
+        selected.group_by("player_id", "player_name", "position")
         .agg(
             pl.col(PREDICTION_COLUMN).sum().alias("projected_points"),
             pl.col(PREDICTION_COLUMN).mean().alias("points_per_game"),
@@ -256,14 +189,24 @@ def draft_board(
             pl.len().alias("projected_games"),
             pl.col(ACTUAL_COLUMN).count().alias("actual_games"),
             pl.col(ACTUAL_COLUMN).sum().alias("actual_points"),
-            *opportunity_aggregations,
+            pl.col(INJURY_MISSED_COLUMN).sum().cast(pl.Int64).alias("injury_games"),
         )
-        .filter(pl.col("projected_games") >= minimum_games)
         .with_columns(
-            pl.when(pl.col("actual_games") > 0)
-            .then(pl.col("actual_points"))
+            pl.when(
+                pl.lit(season_has_results)
+                & ((pl.col("actual_games") > 0) | (pl.col("injury_games") > 0))
+            )
+            .then(pl.col("actual_points").fill_null(0.0))
             .otherwise(None)
             .alias("actual_points"),
+            pl.when(pl.lit(season_has_results))
+            .then(pl.col("injury_games"))
+            .otherwise(None)
+            .alias("injury_games"),
+            pl.when(pl.lit(season_has_results))
+            .then(pl.col("actual_games"))
+            .otherwise(None)
+            .alias("actual_games"),
             pl.col("projected_points")
             .rank(method="ordinal", descending=True)
             .over("position")
@@ -271,49 +214,50 @@ def draft_board(
             .alias("position_rank"),
         )
         .with_columns(
+            pl.when(pl.col("actual_games") > 0)
+            .then(pl.col("actual_points") / pl.col("actual_games"))
+            .otherwise(None)
+            .alias("actual_points_per_game"),
             (pl.col("actual_points") - pl.col("projected_points")).alias(
                 "projection_delta"
-            )
+            ),
+        )
+        .with_columns(
+            (pl.col("injury_games") * pl.col("points_per_game")).alias(
+                "projected_pace_injury_points"
+            ),
+            (pl.col("injury_games") * pl.col("actual_points_per_game")).alias(
+                "actual_pace_injury_points"
+            ),
+        )
+        .with_columns(
+            (pl.col("actual_points") + pl.col("projected_pace_injury_points")).alias(
+                "projected_pace_adjusted_actual"
+            ),
+            (pl.col("actual_points") + pl.col("actual_pace_injury_points")).alias(
+                "actual_pace_adjusted_actual"
+            ),
+        )
+        .with_columns(
+            (
+                pl.col("projected_pace_adjusted_actual") - pl.col("projected_points")
+            ).alias("projected_pace_adjusted_delta"),
+            (
+                (pl.col("projected_pace_adjusted_actual") - pl.col("projected_points"))
+                / pl.col("projected_points")
+                * 100.0
+            ).alias("projected_pace_adjusted_delta_percent"),
+            (pl.col("actual_pace_adjusted_actual") - pl.col("projected_points")).alias(
+                "actual_pace_adjusted_delta"
+            ),
+            (
+                (pl.col("actual_pace_adjusted_actual") - pl.col("projected_points"))
+                / pl.col("projected_points")
+                * 100.0
+            ).alias("actual_pace_adjusted_delta_percent"),
         )
         .sort("projected_points", descending=True)
     )
-    if opportunity_columns:
-        warnings: list[pl.Expr] = []
-        if "carry_share" in opportunity_columns:
-            warnings.append(
-                pl.when(
-                    (pl.col("position") == "RB")
-                    & (pl.col("carry_share") < COMMITTEE_CARRY_SHARE)
-                )
-                .then(pl.lit("Committee risk"))
-                .otherwise(None)
-            )
-        if "target_share" in opportunity_columns:
-            warnings.append(
-                pl.when(
-                    pl.col("position").is_in(["WR", "TE"])
-                    & (pl.col("target_share") < LOW_TARGET_SHARE)
-                )
-                .then(pl.lit("Low target share"))
-                .otherwise(None)
-            )
-        if "team_offensive_plays" in opportunity_columns:
-            warnings.append(
-                pl.when(pl.col("team_offensive_plays") < LOW_TEAM_PLAYS)
-                .then(pl.lit("Low-volume offense"))
-                .otherwise(None)
-            )
-        if warnings:
-            board = board.with_columns(
-                pl.concat_str(warnings, separator="; ", ignore_nulls=True).alias(
-                    "usage_warning"
-                )
-            ).with_columns(
-                pl.when(pl.col("usage_warning") == "")
-                .then(pl.lit("No volume flag"))
-                .otherwise(pl.col("usage_warning"))
-                .alias("usage_warning")
-            )
     return board
 
 

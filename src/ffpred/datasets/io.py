@@ -10,7 +10,8 @@ import polars as pl
 
 from ffpred.datasets.manifest import DatasetArtifact
 from ffpred.errors import DatasetIntegrityError, EmptyDatasetError
-from ffpred.features.schema import validate_feature_frame
+from ffpred.features.all_positions import validate_all_position_frame
+from ffpred.features.schema import validate_feature_frame, validate_forecast_frame
 
 Validator = Callable[[pl.DataFrame], pl.DataFrame]
 
@@ -50,7 +51,7 @@ def read_dataset(
     path: Path,
     *,
     expected_sha256: str | None = None,
-    validator: Validator = validate_feature_frame,
+    validator: Validator | None = None,
 ) -> pl.DataFrame:
     """Read and validate a persisted feature table."""
     if expected_sha256 is not None:
@@ -60,4 +61,17 @@ def read_dataset(
                 f"Checksum mismatch for {path}: "
                 f"expected {expected_sha256}, got {actual}"
             )
-    return validator(pl.read_parquet(path))
+    frame = pl.read_parquet(path)
+    if validator is not None:
+        return validator(frame)
+    if "player_history_through_season" in frame.columns:
+        return validate_all_position_frame(frame, target_required=True)
+    return validate_feature_frame(frame)
+
+
+def read_forecast(path: Path) -> pl.DataFrame:
+    """Read and validate a persisted point-in-time forecast table."""
+    frame = pl.read_parquet(path)
+    if "player_history_through_season" in frame.columns:
+        return validate_all_position_frame(frame, target_required=False)
+    return validate_forecast_frame(frame)

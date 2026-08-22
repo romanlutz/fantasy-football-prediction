@@ -40,14 +40,20 @@ class NflReadPyProvider:
     def load_schedules(self, seasons: Sequence[int]) -> pl.DataFrame:
         return nfl.load_schedules(list(seasons))
 
+    def load_depth_charts(self, seasons: Sequence[int]) -> pl.DataFrame:
+        return nfl.load_depth_charts(list(seasons))
+
+    def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame:
+        return nfl.load_injuries(list(seasons))
+
+    def load_rosters_weekly(self, seasons: Sequence[int]) -> pl.DataFrame:
+        return nfl.load_rosters_weekly(list(seasons))
+
     def load_players(self) -> pl.DataFrame:
         return nfl.load_players()
 
     def load_pbp(self, season: int) -> pl.DataFrame:
         return nfl.load_pbp(season)
-
-    def load_injuries(self, seasons: Sequence[int]) -> pl.DataFrame:
-        return nfl.load_injuries(list(seasons))
 
     def metadata(self) -> Mapping[str, str]:
         return {

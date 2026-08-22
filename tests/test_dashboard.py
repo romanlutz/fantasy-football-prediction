@@ -69,6 +69,23 @@ def test_consensus_averages_models_and_preserves_actuals() -> None:
     assert consensus["model_spread"].min() == pytest.approx(2**0.5)
 
 
+def test_consensus_preserves_forecast_provenance() -> None:
+    frame = pl.concat(
+        [
+            prepare_predictions(_predictions(), model_name="SVR"),
+            prepare_predictions(_predictions(2.0), model_name="MLP"),
+        ]
+    ).with_columns(
+        pl.lit("2025-09-03").alias("forecast_as_of"),
+        pl.lit(2024).alias("history_through_season"),
+    )
+
+    consensus = select_model(frame, CONSENSUS_MODEL)
+
+    assert consensus["forecast_as_of"].unique().to_list() == ["2025-09-03"]
+    assert consensus["history_through_season"].unique().to_list() == [2024]
+
+
 def test_draft_and_weekly_boards_rank_the_selected_horizon() -> None:
     prepared = select_model(
         prepare_predictions(_predictions(), model_name="SVR"),
@@ -79,7 +96,6 @@ def test_draft_and_weekly_boards_rank_the_selected_horizon() -> None:
         prepared,
         season=2025,
         positions=["QB"],
-        minimum_games=2,
     )
     weekly = weekly_board(
         prepared,
@@ -95,53 +111,33 @@ def test_draft_and_weekly_boards_rank_the_selected_horizon() -> None:
     assert weekly["model_agreement"].unique().to_list() == ["Single model"]
 
 
-def test_draft_board_surfaces_depth_chart_share_and_volume_risk() -> None:
-    predictions = _predictions().with_columns(
-        pl.lit("WR").alias("position"),
-        pl.lit(0.10).alias("projected_target_share"),
-        pl.lit(55.0).alias("projected_team_offensive_plays"),
-        pl.lit(0.62).alias("projected_team_pass_rate"),
-    )
-    prepared = select_model(
-        prepare_predictions(predictions, model_name="SVR"),
-        "SVR",
+def test_draft_board_adds_injury_adjusted_actual() -> None:
+    prepared = prepare_predictions(
+        _predictions().with_columns(
+            pl.Series("fantasy_points", [12.0, None, 18.0, 16.0]),
+            pl.Series("injury_missed_game", [False, True, False, False]),
+            pl.Series("injury_status", [None, "Out", None, None]),
+        ),
+        model_name="SVR",
+    ).with_columns(
+        pl.lit(0.0).alias("model_spread"),
+        pl.lit(1).alias("model_count"),
     )
 
-    draft = draft_board(
+    player = draft_board(
         prepared,
         season=2025,
-        positions=["WR"],
-        minimum_games=2,
-    )
+        positions=["QB"],
+    ).filter(pl.col("player_id") == "a")
 
-    assert draft["target_share"].to_list() == [0.10, 0.10]
-    assert draft["team_offensive_plays"].to_list() == [55.0, 55.0]
-    assert draft["opportunity_basis"].unique().to_list() == ["Depth-chart estimate"]
-    assert draft["usage_warning"].unique().to_list() == [
-        "Low target share; Low-volume offense"
-    ]
-
-
-def test_draft_board_flags_running_back_committee_risk() -> None:
-    predictions = _predictions().with_columns(
-        pl.lit("RB").alias("position"),
-        pl.lit(0.35).alias("projected_carry_share"),
-        pl.lit(64.0).alias("projected_team_offensive_plays"),
-    )
-    prepared = select_model(
-        prepare_predictions(predictions, model_name="SVR"),
-        "SVR",
-    )
-
-    draft = draft_board(
-        prepared,
-        season=2025,
-        positions=["RB"],
-        minimum_games=2,
-    )
-
-    assert draft["carry_share"].to_list() == [0.35, 0.35]
-    assert draft["usage_warning"].unique().to_list() == ["Committee risk"]
+    assert player["projected_points"][0] == 40.0
+    assert player["actual_points"][0] == 12.0
+    assert player["injury_games"][0] == 1
+    assert player["actual_points_per_game"][0] == 12.0
+    assert player["projected_pace_adjusted_actual"][0] == 32.0
+    assert player["projected_pace_adjusted_delta_percent"][0] == -20.0
+    assert player["actual_pace_adjusted_actual"][0] == 24.0
+    assert player["actual_pace_adjusted_delta_percent"][0] == -40.0
 
 
 def test_model_scorecard_includes_consensus() -> None:
@@ -170,7 +166,7 @@ def test_model_name_from_path_is_concise() -> None:
     )
 
 
-def test_dashboard_app_renders_all_workspaces(
+def test_dashboard_app_renders_draft_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -181,17 +177,61 @@ def test_dashboard_app_renders_all_workspaces(
     app = AppTest.from_file(app_path, default_timeout=30).run()
 
     assert not app.exception
-    assert app.radio[0].options == [
-        "Draft Board",
-        "Weekly Decisions",
-        "Model Room",
+    assert not app.file_uploader
+    assert not app.number_input
+    assert [widget.label for widget in app.multiselect] == ["Position"]
+    assert next(widget for widget in app.selectbox if widget.label == "Target season")
+    sort = next(widget for widget in app.selectbox if widget.label == "Sort players by")
+    assert sort.options == [
+        "Projected",
+        "Actual",
+        "Adjusted at projected PPG",
+        "Adjusted at actual PPG",
     ]
-    headings = {
-        "Draft Board": "Draft board",
-        "Weekly Decisions": "Weekly decisions",
-        "Model Room": "Model room",
-    }
-    for workspace in app.radio[0].options:
-        app.radio[0].set_value(workspace).run()
-        assert not app.exception
-        assert headings[workspace] in [header.value for header in app.header]
+    sort.set_value("Adjusted at actual PPG").run()
+    assert not app.exception
+    assert "Draft board" in [header.value for header in app.header]
+
+
+def test_dashboard_exposes_all_artifact_seasons_and_positions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    positions = ["QB", "RB", "WR", "TE", "K", "DST"]
+    pl.DataFrame(
+        {
+            "player_id": [f"player-{index}" for index in range(len(positions))] * 2,
+            "player_name": [f"Player {position}" for position in positions] * 2,
+            "position": positions * 2,
+            "target_season": [2025] * len(positions) + [2026] * len(positions),
+            "target_week": [1] * (len(positions) * 2),
+            "target_game_id": [
+                f"{season}-{position}"
+                for season in (2025, 2026)
+                for position in positions
+            ],
+            "fantasy_points": [10.0] * len(positions) + [None] * len(positions),
+            "prediction": [9.0] * (len(positions) * 2),
+        }
+    ).write_parquet(tmp_path / "svr-predictions.parquet")
+    app_path = Path(__file__).parents[1] / "src" / "ffpred" / "dashboard" / "app.py"
+    monkeypatch.chdir(tmp_path)
+
+    app = AppTest.from_file(app_path, default_timeout=30).run()
+    season = next(widget for widget in app.selectbox if widget.label == "Target season")
+    position = next(widget for widget in app.multiselect if widget.label == "Position")
+
+    assert not app.exception
+    assert season.options == ["2026", "2025"]
+    assert position.options == ["DST", "K", "QB", "RB", "TE", "WR"]
+
+    season.set_value("2025").run()
+    assert app.session_state["_forecast-filter-state"]["season"] == 2025
+
+    position = next(widget for widget in app.multiselect if widget.label == "Position")
+    position.set_value(["QB", "WR"]).run()
+    assert app.session_state["_forecast-filter-state"]["positions"] == ["QB", "WR"]
+
+    model = next(widget for widget in app.selectbox if widget.label == "Model view")
+    model.set_value("SVR").run()
+    assert app.session_state["_forecast-filter-state"]["model"] == "SVR"

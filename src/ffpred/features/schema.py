@@ -88,6 +88,43 @@ FEATURE_SCHEMA = {
     TARGET_COLUMN: pl.Float64,
 }
 
+FORECAST_IDENTITY_COLUMNS = (
+    "player_id",
+    "player_name",
+    "position",
+    "team",
+    "opponent",
+    "target_season",
+    "target_week",
+    "target_game_id",
+    "forecast_as_of",
+    "history_through_season",
+)
+FORECAST_COLUMNS = (
+    *FORECAST_IDENTITY_COLUMNS,
+    *LINEAGE_COLUMNS,
+    *MODEL_FEATURE_COLUMNS,
+    TARGET_COLUMN,
+)
+FORECAST_SCHEMA = {
+    "player_id": pl.String,
+    "player_name": pl.String,
+    "position": pl.String,
+    "team": pl.String,
+    "opponent": pl.String,
+    "target_season": pl.Int64,
+    "target_week": pl.Int64,
+    "target_game_id": pl.String,
+    "forecast_as_of": pl.String,
+    "history_through_season": pl.Int64,
+    "qb_history_through_season": pl.Int64,
+    "qb_history_through_week": pl.Int64,
+    "defense_history_through_season": pl.Int64,
+    "defense_history_through_week": pl.Int64,
+    **dict.fromkeys(MODEL_FEATURE_COLUMNS, pl.Float64),
+    TARGET_COLUMN: pl.Float64,
+}
+
 
 def validate_feature_frame(frame: pl.DataFrame) -> pl.DataFrame:
     """Enforce the persisted training-data contract."""
@@ -105,4 +142,23 @@ def validate_feature_frame(frame: pl.DataFrame) -> pl.DataFrame:
             problems.append(f"{column!r} contains null values")
     if problems:
         raise SchemaValidationError("feature_frame", problems)
+    return frame
+
+
+def validate_forecast_frame(frame: pl.DataFrame) -> pl.DataFrame:
+    """Enforce the persisted point-in-time forecast contract."""
+    problems: list[str] = []
+    if tuple(frame.columns) != FORECAST_COLUMNS:
+        problems.append("column order does not match FORECAST_COLUMNS")
+    for column, expected in FORECAST_SCHEMA.items():
+        if column not in frame.schema:
+            continue
+        if frame.schema[column] != expected:
+            problems.append(
+                f"{column!r} is {frame.schema[column]}, expected {expected}"
+            )
+        if column != TARGET_COLUMN and frame[column].null_count():
+            problems.append(f"{column!r} contains null values")
+    if problems:
+        raise SchemaValidationError("forecast_frame", problems)
     return frame

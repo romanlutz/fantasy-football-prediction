@@ -36,12 +36,14 @@ narrow the field for roster decisions.
 - Support filtering by position and other useful player, team, season, week, and
   performance attributes when those fields are present in an artifact.
 - Work with the project's Parquet datasets and prediction artifacts.
-- The prediction pipeline supports QB, D/ST, kicker, RB/WR/TE, and IDP
-  artifacts. The interface must communicate positions unavailable in a loaded
-  artifact honestly.
-- RB/WR/TE draft evidence includes target share, carry share, team volume, and
-  pass/rush tendency. Preseason roster changes require explicit depth-chart
-  estimates rather than silent extrapolation from last season.
+- Preserve point-in-time provenance: a target season's features may use only
+  completed game statistics through the recorded prior-season cutoff.
+- Use preseason schedule and QB1 depth-chart assignments for upcoming seasons,
+  and keep historical outcomes separate from the features used to predict them.
+- Cover the standard fantasy roster: QB, RB, WR, TE, K, and team defense/special
+  teams (DST), using explicit position-aware scoring.
+- Retain point-in-time forecasts for every supported target season from 2010
+  onward, not only the upcoming season.
 - Model output is decision support, not a guarantee of fantasy performance.
 
 ## Evidence on Hand

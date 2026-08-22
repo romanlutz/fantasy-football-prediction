@@ -13,6 +13,7 @@ def test_nflreadpy_adapter_delegates_all_operations(monkeypatch) -> None:
     load_player_stats = Mock(return_value=frame)
     load_team_stats = Mock(return_value=frame)
     load_schedules = Mock(return_value=frame)
+    load_depth_charts = Mock(return_value=frame)
     load_players = Mock(return_value=frame)
     load_pbp = Mock(return_value=frame)
     load_injuries = Mock(return_value=frame)
@@ -29,6 +30,10 @@ def test_nflreadpy_adapter_delegates_all_operations(monkeypatch) -> None:
         load_schedules,
     )
     monkeypatch.setattr(
+        "ffpred.providers.nflreadpy.nfl.load_depth_charts",
+        load_depth_charts,
+    )
+    monkeypatch.setattr(
         "ffpred.providers.nflreadpy.nfl.load_players",
         load_players,
     )
@@ -42,12 +47,14 @@ def test_nflreadpy_adapter_delegates_all_operations(monkeypatch) -> None:
     assert provider.load_player_stats((2024, 2025)) is frame
     assert provider.load_team_stats((2025,)) is frame
     assert provider.load_schedules((2025,)) is frame
+    assert provider.load_depth_charts((2025,)) is frame
     assert provider.load_players() is frame
     assert provider.load_pbp(2025) is frame
     assert provider.load_injuries((2024, 2025)) is frame
     load_player_stats.assert_called_once_with([2024, 2025])
     load_team_stats.assert_called_once_with([2025])
     load_schedules.assert_called_once_with([2025])
+    load_depth_charts.assert_called_once_with([2025])
     load_players.assert_called_once_with()
     load_pbp.assert_called_once_with(2025)
     load_injuries.assert_called_once_with([2024, 2025])

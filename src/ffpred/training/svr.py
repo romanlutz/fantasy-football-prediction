@@ -11,7 +11,7 @@ import numpy as np
 from sklearn.metrics import mean_absolute_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVR
+from sklearn.svm import SVR, LinearSVR
 
 from ffpred.evaluation.metrics import evaluate
 from ffpred.evaluation.splits import chronological_folds
@@ -81,6 +81,25 @@ def create_estimator(config: SvrConfig) -> Pipeline:
                     kernel=config.kernel,
                     gamma=config.gamma,
                     degree=config.degree,
+                ),
+            ),
+        ]
+    )
+
+
+def create_scalable_estimator(config: SvrConfig = DEFAULT_SVR_CONFIG) -> Pipeline:
+    """Create a linear SVR suitable for the larger all-position archive."""
+    return Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "regressor",
+                LinearSVR(
+                    C=config.c,
+                    epsilon=config.epsilon,
+                    dual="auto",
+                    max_iter=20_000,
+                    random_state=42,
                 ),
             ),
         ]
