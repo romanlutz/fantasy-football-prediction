@@ -197,6 +197,26 @@ def test_standard_scoring_includes_kickers_and_defenses() -> None:
     assert defense["fantasy_points"][0] == 17.0
 
 
+def test_actuals_capture_player_share_and_team_volume() -> None:
+    provider = _provider()
+    actuals = build_actual_frame(
+        provider.player_stats,
+        provider.team_stats,
+        provider.schedules,
+    )
+
+    receiver = actuals.filter(
+        (pl.col("player_id") == "GB-WR") & (pl.col("season") == 2008)
+    )
+
+    assert receiver["target_share"][0] == pytest.approx(0.5)
+    assert receiver["team_targets"][0] == 16.0
+    assert receiver["team_pass_attempts"][0] == 25.0
+    assert receiver["team_rushing_attempts"][0] == 12.0
+    assert receiver["team_offensive_plays"][0] == 37.0
+    assert receiver["team_pass_rate"][0] == pytest.approx(25 / 37)
+
+
 def test_injury_absences_require_out_or_reserve_status() -> None:
     injuries = pl.DataFrame(
         {
@@ -316,6 +336,16 @@ def test_archive_builds_every_position_with_frozen_lineage(
     assert forecast["opponent_history_through_season"].max() == 2009
     null_counts = forecast.select(ALL_POSITION_MODEL_FEATURE_COLUMNS).null_count()
     assert sum(null_counts.row(0)) == 0
+    offensive = forecast.filter(pl.col("position").is_in(("QB", "RB", "WR", "TE")))
+    shares = offensive.group_by("team", "target_week").agg(
+        pl.col("projected_target_share").sum(),
+        pl.col("projected_carry_share").sum(),
+    )
+    assert shares["projected_target_share"].to_list() == pytest.approx([1.0, 1.0])
+    assert shares["projected_carry_share"].to_list() == pytest.approx([1.0, 1.0])
+    assert offensive["team_previous_season_offensive_plays"].unique().to_list() == [
+        37.0
+    ]
     assert training["target_season"].max() == 2009
     assert season.manifest_path.exists()
 
@@ -350,7 +380,10 @@ def test_projection_commands_detect_all_position_features(
 
     assert exit_code == 0
     assert output["features"] == list(ALL_POSITION_MODEL_FEATURE_COLUMNS)
-    assert set(pl.read_parquet(predictions)["position"]) == set(FANTASY_POSITIONS)
+    prediction_frame = pl.read_parquet(predictions)
+    assert set(prediction_frame["position"]) == set(FANTASY_POSITIONS)
+    assert "projected_target_share" in prediction_frame
+    assert "team_previous_season_offensive_plays" in prediction_frame
     assert load_training_data(Path(season.training.path)).features.shape[1] == len(
         ALL_POSITION_MODEL_FEATURE_COLUMNS
     )

@@ -140,6 +140,38 @@ def test_draft_board_adds_injury_adjusted_actual() -> None:
     assert player["actual_pace_adjusted_delta_percent"][0] == -40.0
 
 
+def test_draft_board_flags_fragile_opportunity() -> None:
+    prepared = prepare_predictions(
+        _predictions().with_columns(
+            pl.Series("position", ["RB", "RB", "WR", "WR"]),
+            pl.Series("team", ["GB", "GB", "SEA", "SEA"]),
+            pl.Series("projected_target_share", [0.1, 0.1, 0.1, 0.1]),
+            pl.Series("projected_carry_share", [0.4, 0.4, 0.0, 0.0]),
+            pl.Series(
+                "team_previous_season_offensive_plays",
+                [55.0, 55.0, 55.0, 55.0],
+            ),
+            pl.Series("team_previous_season_pass_rate", [0.6, 0.6, 0.6, 0.6]),
+        ),
+        model_name="SVR",
+    ).with_columns(
+        pl.lit(0.0).alias("model_spread"),
+        pl.lit(1).alias("model_count"),
+    )
+
+    board = draft_board(
+        prepared,
+        season=2025,
+        positions=["RB", "WR"],
+    )
+    running_back = board.filter(pl.col("position") == "RB")
+    receiver = board.filter(pl.col("position") == "WR")
+
+    assert running_back["opportunity_risk"][0] == ("RB committee; Low-volume offense")
+    assert receiver["opportunity_risk"][0] == ("Low target share; Low-volume offense")
+    assert running_back["opportunity_basis"][0] == "Depth-chart estimate"
+
+
 def test_model_scorecard_includes_consensus() -> None:
     frame = pl.concat(
         [

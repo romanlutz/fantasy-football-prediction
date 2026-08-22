@@ -287,21 +287,19 @@ Artifacts with a `position` column automatically add their positions to the
 interface. Historical artifacts include completed game outcomes and are labeled
 as backtests, not live future projections.
 
-RB/WR/TE models include leakage-safe target share, carry share, team targets,
-pass attempts, rush attempts, pass/rush rate, and offensive opportunity volume.
-The volume measure is pass attempts plus carries, so it deliberately excludes
-sacks and penalty-nullified plays. Prediction artifacts retain both last-game
-and trailing-10-game opportunity context, and the Draft Board shows the
-trailing values with explicit low-target-share, committee, and low-volume
-flags.
+The all-position archive includes leakage-safe target share, carry share, team
+targets, pass attempts, rush attempts, pass/rush rate, and offensive opportunity
+volume. The volume measure is pass attempts plus carries, so it deliberately
+excludes sacks and penalty-nullified plays.
 
-For a true preseason board, an artifact can supply `projected_*` opportunity
-columns, such as `projected_target_share`, `projected_carry_share`,
-`projected_team_offensive_plays`, and `projected_team_pass_rate`. The dashboard
-prefers those depth-chart estimates over trailing history. Producing those
-estimates still requires a point-in-time roster/depth-chart source so coaching,
-quarterback, injury, departure, and draft changes are not silently guessed from
-last season's box scores.
+Preseason target and carry shares are estimated from recent player usage,
+discounted by current depth-chart rank, and normalized across the current
+roster. That reallocates vacated opportunity after departures and gives rookies
+or other players without NFL history a position baseline. Team volume and
+pass/run tendency remain prior-season per-game averages because the current
+sources do not identify coaching-system changes. Prediction artifacts retain
+these estimates, and the Draft Board flags RB carry shares below 45%, WR/TE
+target shares below 15%, and offenses below 58 opportunities per game.
 
 Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as

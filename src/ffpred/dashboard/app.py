@@ -672,7 +672,9 @@ def _draft_view(
     st.write(
         "Projected and actual totals sit together. Two availability-adjusted "
         "scores fill each source-backed injury absence at either the preseason "
-        "projected pace or the player's actual scoring pace."
+        "projected pace or the player's actual scoring pace. Opportunity estimates "
+        "use the current depth chart, recent player shares, and the offense's prior "
+        "season volume."
     )
     if not positions:
         st.warning("Choose at least one position to build the draft board.")
@@ -708,7 +710,15 @@ def _draft_view(
 
     chart_rows = display.head(18)
     player_order = chart_rows["player_name"].to_list()
-    identity = ["player_name", "injury_games"]
+    identity = [
+        "player_name",
+        "injury_games",
+        "projected_target_share",
+        "projected_carry_share",
+        "team_previous_season_offensive_plays",
+        "team_previous_season_pass_rate",
+        "opportunity_risk",
+    ]
     regular_bars = pl.concat(
         [
             chart_rows.select(
@@ -786,6 +796,27 @@ def _draft_view(
         alt.Tooltip("total_points:Q", title="Total", format=".1f"),
         alt.Tooltip("addition_points:Q", title="Injury addition", format=".1f"),
         alt.Tooltip("injury_games:Q", title="Injury misses"),
+        alt.Tooltip(
+            "projected_target_share:Q",
+            title="Target share",
+            format=".1%",
+        ),
+        alt.Tooltip(
+            "projected_carry_share:Q",
+            title="Carry share",
+            format=".1%",
+        ),
+        alt.Tooltip(
+            "team_previous_season_offensive_plays:Q",
+            title="Offensive plays/game",
+            format=".1f",
+        ),
+        alt.Tooltip(
+            "team_previous_season_pass_rate:Q",
+            title="Pass rate",
+            format=".1%",
+        ),
+        alt.Tooltip("opportunity_risk:N", title="Usage watch"),
     ]
     base_bars = (
         alt.Chart(chart_frame)
@@ -834,7 +865,14 @@ def _draft_view(
         pl.col("position_rank").alias("Rank"),
         pl.col("position").alias("Pos"),
         pl.col("player_name").alias("Player"),
+        pl.col("team").alias("Team"),
         pl.col("projected_points").alias("Projected"),
+        (pl.col("projected_target_share") * 100.0).alias("Target share %"),
+        (pl.col("projected_carry_share") * 100.0).alias("Carry share %"),
+        pl.col("team_previous_season_offensive_plays").alias("Off. plays/game"),
+        (pl.col("team_previous_season_pass_rate") * 100.0).alias("Pass rate %"),
+        pl.col("opportunity_risk").alias("Usage watch"),
+        pl.col("opportunity_basis").alias("Usage basis"),
         pl.col("actual_points").alias("Actual"),
         pl.col("injury_games").alias("Inj. missed"),
         pl.col("projected_pace_adjusted_actual").alias("Adj. at proj. PPG"),
@@ -854,6 +892,35 @@ def _draft_view(
         width="stretch",
         column_config={
             "Projected": st.column_config.NumberColumn(format="%.1f"),
+            "Target share %": st.column_config.NumberColumn(
+                format="%.1f%%",
+                help="Estimated share of team targets. Current depth-chart roles "
+                "reallocate opportunity when teammates arrive or leave.",
+            ),
+            "Carry share %": st.column_config.NumberColumn(
+                format="%.1f%%",
+                help="Estimated share of team rushing attempts. RB values below 45% "
+                "are marked as committee risk.",
+            ),
+            "Off. plays/game": st.column_config.NumberColumn(
+                format="%.1f",
+                help="Prior-season team pass attempts plus carries per game. Sacks "
+                "and nullified plays are excluded.",
+            ),
+            "Pass rate %": st.column_config.NumberColumn(
+                format="%.1f%%",
+                help=(
+                    "Prior-season pass attempts divided by pass attempts plus carries."
+                ),
+            ),
+            "Usage watch": st.column_config.TextColumn(
+                help="Flags RB committee risk, sub-15% WR/TE target share, and "
+                "offenses below 58 plays per game.",
+            ),
+            "Usage basis": st.column_config.TextColumn(
+                help="Depth-chart estimates are normalized across the current roster; "
+                "older artifacts use trailing history.",
+            ),
             "Actual": st.column_config.NumberColumn(format="%.1f"),
             "Inj. missed": st.column_config.NumberColumn(
                 format="%d",

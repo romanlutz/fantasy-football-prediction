@@ -16,6 +16,8 @@ from ffpred.features.schema import TARGET_COLUMN
 LOGGER = logging.getLogger(__name__)
 FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DST")
 PLAYER_POSITIONS = FANTASY_POSITIONS[:-1]
+TARGET_POSITIONS = ("RB", "WR", "TE")
+CARRY_POSITIONS = ("QB", "RB")
 POSITION_DEPTH_LIMITS: Mapping[str, int] = {
     "QB": 1,
     "RB": 3,
@@ -24,6 +26,42 @@ POSITION_DEPTH_LIMITS: Mapping[str, int] = {
     "K": 1,
 }
 DST_POINTS_ALLOWED_LIMITS = (0, 6, 13, 20, 27, 34)
+OPPORTUNITY_ACTUAL_COLUMNS = (
+    "player_targets",
+    "player_carries",
+    "team_targets",
+    "team_pass_attempts",
+    "team_rushing_attempts",
+    "team_offensive_plays",
+    "target_share",
+    "carry_share",
+    "team_pass_rate",
+    "team_rush_rate",
+)
+OPPORTUNITY_MODEL_FEATURE_COLUMNS = (
+    "player_last_1_target_share",
+    "player_last_5_target_share",
+    "player_last_10_target_share",
+    "player_last_1_carry_share",
+    "player_last_5_carry_share",
+    "player_last_10_carry_share",
+    "team_previous_season_targets",
+    "team_previous_season_pass_attempts",
+    "team_previous_season_rushing_attempts",
+    "team_previous_season_offensive_plays",
+    "team_previous_season_pass_rate",
+    "team_previous_season_rush_rate",
+)
+OPPORTUNITY_OUTPUT_COLUMNS = (
+    "projected_target_share",
+    "projected_carry_share",
+    "team_previous_season_targets",
+    "team_previous_season_pass_attempts",
+    "team_previous_season_rushing_attempts",
+    "team_previous_season_offensive_plays",
+    "team_previous_season_pass_rate",
+    "team_previous_season_rush_rate",
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -49,6 +87,7 @@ ALL_POSITION_MODEL_FEATURE_COLUMNS = (
     "target_week_normalized",
     "is_home",
     *(f"position_{position.lower()}" for position in FANTASY_POSITIONS),
+    *OPPORTUNITY_MODEL_FEATURE_COLUMNS,
 )
 ALL_POSITION_IDENTITY_COLUMNS = (
     "player_id",
@@ -74,6 +113,7 @@ ALL_POSITION_COLUMNS = (
     INJURY_MISSED_COLUMN,
     *ALL_POSITION_LINEAGE_COLUMNS,
     *ALL_POSITION_MODEL_FEATURE_COLUMNS,
+    *OPPORTUNITY_OUTPUT_COLUMNS[:2],
     TARGET_COLUMN,
 )
 ALL_POSITION_SCHEMA = {
@@ -92,6 +132,7 @@ ALL_POSITION_SCHEMA = {
     "player_history_through_season": pl.Int64,
     "opponent_history_through_season": pl.Int64,
     **dict.fromkeys(ALL_POSITION_MODEL_FEATURE_COLUMNS, pl.Float64),
+    **dict.fromkeys(OPPORTUNITY_OUTPUT_COLUMNS[:2], pl.Float64),
     TARGET_COLUMN: pl.Float64,
 }
 
@@ -105,6 +146,7 @@ _ACTUAL_COLUMNS = (
     "week",
     "game_id",
     "is_home",
+    *OPPORTUNITY_ACTUAL_COLUMNS,
     TARGET_COLUMN,
 )
 
@@ -223,18 +265,34 @@ def _player_actuals(
         )
         > 0
     )
-    return (
-        player_stats.filter(
-            (pl.col("season_type") == REGULAR_SEASON)
-            & pl.col("position").is_in(PLAYER_POSITIONS)
-            & pl.col("player_id").is_not_null()
-            & participated
+    normalized = player_stats.filter(
+        (pl.col("season_type") == REGULAR_SEASON)
+        & pl.col("position").is_in(PLAYER_POSITIONS)
+        & pl.col("player_id").is_not_null()
+    ).with_columns(
+        _normalized_team("team").alias("team"),
+        _normalized_team("opponent_team").alias("opponent"),
+        pl.col("attempts").fill_null(0).cast(pl.Float64).alias("_attempts"),
+        pl.col("carries").fill_null(0).cast(pl.Float64).alias("_carries"),
+        pl.col("targets").fill_null(0).cast(pl.Float64).alias("_targets"),
+    )
+    team_volume = (
+        normalized.group_by("game_id", "team")
+        .agg(
+            pl.col("_targets").sum().alias("team_targets"),
+            pl.col("_attempts").sum().alias("team_pass_attempts"),
+            pl.col("_carries").sum().alias("team_rushing_attempts"),
         )
-        .join(schedule, on="game_id", how="inner")
         .with_columns(
-            _normalized_team("team").alias("team"),
-            _normalized_team("opponent_team").alias("opponent"),
+            (pl.col("team_pass_attempts") + pl.col("team_rushing_attempts")).alias(
+                "team_offensive_plays"
+            )
         )
+    )
+    return (
+        normalized.filter(participated)
+        .join(schedule, on="game_id", how="inner")
+        .join(team_volume, on=["game_id", "team"], how="left")
         .with_columns(
             (pl.col("team") == pl.col("home_team")).cast(pl.Float64).alias("is_home"),
             pl.when(pl.col("position") == "K")
@@ -242,6 +300,24 @@ def _player_actuals(
             .otherwise(pl.col("fantasy_points").fill_null(0))
             .cast(pl.Float64)
             .alias(TARGET_COLUMN),
+            pl.col("_targets").alias("player_targets"),
+            pl.col("_carries").alias("player_carries"),
+            pl.when(pl.col("team_targets") > 0)
+            .then(pl.col("_targets") / pl.col("team_targets"))
+            .otherwise(0.0)
+            .alias("target_share"),
+            pl.when(pl.col("team_rushing_attempts") > 0)
+            .then(pl.col("_carries") / pl.col("team_rushing_attempts"))
+            .otherwise(0.0)
+            .alias("carry_share"),
+            pl.when(pl.col("team_offensive_plays") > 0)
+            .then(pl.col("team_pass_attempts") / pl.col("team_offensive_plays"))
+            .otherwise(0.0)
+            .alias("team_pass_rate"),
+            pl.when(pl.col("team_offensive_plays") > 0)
+            .then(pl.col("team_rushing_attempts") / pl.col("team_offensive_plays"))
+            .otherwise(0.0)
+            .alias("team_rush_rate"),
         )
         .select(
             pl.col("player_id").cast(pl.String),
@@ -253,6 +329,7 @@ def _player_actuals(
             pl.col("week").cast(pl.Int64),
             pl.col("game_id").cast(pl.String),
             pl.col("is_home").cast(pl.Float64),
+            *(pl.col(column).cast(pl.Float64) for column in OPPORTUNITY_ACTUAL_COLUMNS),
             pl.col(TARGET_COLUMN).cast(pl.Float64),
         )
     )
@@ -335,6 +412,7 @@ def _dst_actuals(
         pl.col("week").cast(pl.Int64),
         pl.col("game_id").cast(pl.String),
         pl.col("is_home").cast(pl.Float64),
+        *(pl.lit(0.0).alias(column) for column in OPPORTUNITY_ACTUAL_COLUMNS),
         pl.col(TARGET_COLUMN).cast(pl.Float64),
     )
 
@@ -553,7 +631,7 @@ def _depth_candidates(
             .then(pl.col("_rank") == pl.col("_minimum_rank"))
             .otherwise(pl.col("_rank") <= limit)
         )
-        .drop("_rank", "_minimum_rank")
+        .drop("_minimum_rank")
         .sort("team", "position", "player_name")
     )
 
@@ -590,11 +668,12 @@ def _complete_roster(
             pl.col("_previous_points")
             .rank(method="ordinal", descending=True)
             .over("team", "position")
+            .cast(pl.Int64)
             .alias("_rank")
         )
         .filter(pl.col("_rank") <= limit)
         .join(missing, on=["team", "position"], how="inner")
-        .select("team", "player_id", "player_name", "position")
+        .select("team", "player_id", "player_name", "position", "_rank")
     )
     completed = pl.concat([candidates, fallback], how="vertical").unique(
         ("team", "player_id", "position")
@@ -621,10 +700,87 @@ def _complete_roster(
     return completed.sort("team", "position", "player_name")
 
 
+def _depth_opportunity_estimates(
+    candidates: pl.DataFrame,
+    actuals: pl.DataFrame,
+    *,
+    target_year: int,
+) -> pl.DataFrame:
+    history = actuals.filter(
+        (pl.col("season") < target_year) & pl.col("position").is_in(PLAYER_POSITIONS)
+    ).sort("player_id", "position", "season", "week")
+    recent = history.filter(pl.col("season") >= max(0, target_year - 3))
+    keys = ["player_id", "position"]
+    player_shares = (
+        history.group_by(keys, maintain_order=True)
+        .tail(10)
+        .group_by(keys)
+        .agg(
+            pl.col("target_share").mean().alias("_target_share"),
+            pl.col("carry_share").mean().alias("_carry_share"),
+        )
+    )
+    position_shares = recent.group_by("position").agg(
+        pl.col("target_share").mean().alias("_position_target_share"),
+        pl.col("carry_share").mean().alias("_position_carry_share"),
+    )
+    weighted = (
+        candidates.join(player_shares, on=keys, how="left")
+        .join(position_shares, on="position", how="left")
+        .with_columns(
+            pl.col("_rank")
+            .clip(lower_bound=1)
+            .cast(pl.Float64)
+            .sqrt()
+            .alias("_rank_discount")
+        )
+        .with_columns(
+            pl.when(pl.col("position").is_in(TARGET_POSITIONS))
+            .then(
+                pl.coalesce("_target_share", "_position_target_share", pl.lit(0.0))
+                / pl.col("_rank_discount")
+            )
+            .otherwise(0.0)
+            .alias("_target_weight"),
+            pl.when(pl.col("position").is_in(CARRY_POSITIONS))
+            .then(
+                pl.coalesce("_carry_share", "_position_carry_share", pl.lit(0.0))
+                / pl.col("_rank_discount")
+            )
+            .otherwise(0.0)
+            .alias("_carry_weight"),
+        )
+        .with_columns(
+            pl.col("_target_weight").sum().over("team").alias("_team_target_weight"),
+            pl.col("_carry_weight").sum().over("team").alias("_team_carry_weight"),
+        )
+        .with_columns(
+            pl.when(pl.col("_team_target_weight") > 0)
+            .then(pl.col("_target_weight") / pl.col("_team_target_weight"))
+            .otherwise(0.0)
+            .alias("projected_target_share"),
+            pl.when(pl.col("_team_carry_weight") > 0)
+            .then(pl.col("_carry_weight") / pl.col("_team_carry_weight"))
+            .otherwise(0.0)
+            .alias("projected_carry_share"),
+        )
+    )
+    return weighted.select(
+        "team",
+        "player_id",
+        "player_name",
+        "position",
+        "projected_target_share",
+        "projected_carry_share",
+    )
+
+
 def _position_baselines(history: pl.DataFrame, target_year: int) -> pl.DataFrame:
     recent = history.filter(pl.col("season") >= max(0, target_year - 3))
     return recent.group_by("position").agg(
         pl.col(TARGET_COLUMN).mean().alias("_baseline_ppg"),
+        pl.col("target_share").mean().alias("_baseline_target_share"),
+        pl.col("carry_share").mean().alias("_baseline_carry_share"),
         pl.col("season").max().cast(pl.Int64).alias("_baseline_lineage"),
     )
 
@@ -637,18 +793,28 @@ def _player_profiles(history: pl.DataFrame, target_year: int) -> pl.DataFrame:
         pl.len().cast(pl.Float64).alias("player_career_games"),
         pl.col("season").max().cast(pl.Int64).alias("_player_lineage"),
         pl.col(TARGET_COLUMN).last().alias("player_last_1_points"),
+        pl.col("target_share").last().alias("player_last_1_target_share"),
+        pl.col("carry_share").last().alias("player_last_1_carry_share"),
     )
     last_five = (
         ordered.group_by(keys, maintain_order=True)
         .tail(5)
         .group_by(keys)
-        .agg(pl.col(TARGET_COLUMN).mean().alias("player_last_5_points"))
+        .agg(
+            pl.col(TARGET_COLUMN).mean().alias("player_last_5_points"),
+            pl.col("target_share").mean().alias("player_last_5_target_share"),
+            pl.col("carry_share").mean().alias("player_last_5_carry_share"),
+        )
     )
     last_ten = (
         ordered.group_by(keys, maintain_order=True)
         .tail(10)
         .group_by(keys)
-        .agg(pl.col(TARGET_COLUMN).mean().alias("player_last_10_points"))
+        .agg(
+            pl.col(TARGET_COLUMN).mean().alias("player_last_10_points"),
+            pl.col("target_share").mean().alias("player_last_10_target_share"),
+            pl.col("carry_share").mean().alias("player_last_10_carry_share"),
+        )
     )
     previous = (
         ordered.filter(pl.col("season") == target_year - 1)
@@ -667,6 +833,45 @@ def _player_profiles(history: pl.DataFrame, target_year: int) -> pl.DataFrame:
             how="left",
         )
     )
+
+
+def _team_volume_profiles(
+    history: pl.DataFrame,
+    target_year: int,
+) -> pl.DataFrame:
+    previous = history.filter(
+        (pl.col("season") == target_year - 1) & (pl.col("position") != "DST")
+    )
+    if previous.is_empty():
+        previous = history.filter(
+            (pl.col("season") == history["season"].max())
+            & (pl.col("position") != "DST")
+        )
+    team_games = previous.unique(("team", "game_id")).select(
+        "team",
+        "game_id",
+        "team_targets",
+        "team_pass_attempts",
+        "team_rushing_attempts",
+        "team_offensive_plays",
+        "team_pass_rate",
+        "team_rush_rate",
+    )
+    source_columns = {
+        "team_targets": "team_previous_season_targets",
+        "team_pass_attempts": "team_previous_season_pass_attempts",
+        "team_rushing_attempts": "team_previous_season_rushing_attempts",
+        "team_offensive_plays": "team_previous_season_offensive_plays",
+        "team_pass_rate": "team_previous_season_pass_rate",
+        "team_rush_rate": "team_previous_season_rush_rate",
+    }
+    profiles = team_games.group_by("team").agg(
+        *(
+            pl.col(source).mean().alias(output)
+            for source, output in source_columns.items()
+        )
+    )
+    return profiles
 
 
 def _context_profiles(
@@ -698,6 +903,9 @@ def _feature_rows(
         )
     if INJURY_MISSED_COLUMN not in base.columns:
         base = base.with_columns(pl.lit(False).alias(INJURY_MISSED_COLUMN))
+    for column in ("projected_target_share", "projected_carry_share"):
+        if column not in base.columns:
+            base = base.with_columns(pl.lit(None, dtype=pl.Float64).alias(column))
     history = actuals.filter(pl.col("season") < target_year)
     if history.is_empty():
         raise DataAcquisitionError(
@@ -706,11 +914,13 @@ def _feature_rows(
     profiles = _player_profiles(history, target_year)
     baselines = _position_baselines(history, target_year)
     team_context, opponent_context = _context_profiles(history, target_year)
+    team_volume = _team_volume_profiles(history, target_year)
     frame = (
         base.join(profiles, on=["player_id", "position"], how="left")
         .join(baselines, on="position", how="left")
         .join(team_context, on=["team", "position"], how="left")
         .join(opponent_context, on=["opponent", "position"], how="left")
+        .join(team_volume, on="team", how="left")
         .with_columns(
             pl.col("player_last_1_points")
             .fill_null(pl.col("_baseline_ppg"))
@@ -737,6 +947,24 @@ def _feature_rows(
             pl.col("opponent_position_points_allowed")
             .fill_null(pl.col("_baseline_ppg"))
             .alias("opponent_position_points_allowed"),
+            pl.col("player_last_1_target_share")
+            .fill_null(pl.col("_baseline_target_share"))
+            .alias("player_last_1_target_share"),
+            pl.col("player_last_5_target_share")
+            .fill_null(pl.col("_baseline_target_share"))
+            .alias("player_last_5_target_share"),
+            pl.col("player_last_10_target_share")
+            .fill_null(pl.col("_baseline_target_share"))
+            .alias("player_last_10_target_share"),
+            pl.col("player_last_1_carry_share")
+            .fill_null(pl.col("_baseline_carry_share"))
+            .alias("player_last_1_carry_share"),
+            pl.col("player_last_5_carry_share")
+            .fill_null(pl.col("_baseline_carry_share"))
+            .alias("player_last_5_carry_share"),
+            pl.col("player_last_10_carry_share")
+            .fill_null(pl.col("_baseline_carry_share"))
+            .alias("player_last_10_carry_share"),
             (pl.col("week") / 18.0).cast(pl.Float64).alias("target_week_normalized"),
             pl.col("is_home").cast(pl.Float64),
             pl.coalesce("_player_lineage", "_baseline_lineage")
@@ -753,6 +981,22 @@ def _feature_rows(
             ),
             pl.lit(forecast_as_of.isoformat()).alias("forecast_as_of"),
             pl.lit(target_year - 1).cast(pl.Int64).alias("history_through_season"),
+            *(
+                pl.col(column)
+                .fill_null(pl.col(column).mean())
+                .fill_null(0.0)
+                .cast(pl.Float64)
+                .alias(column)
+                for column in OPPORTUNITY_OUTPUT_COLUMNS[2:]
+            ),
+        )
+        .with_columns(
+            pl.col("projected_target_share")
+            .fill_null(pl.col("player_last_10_target_share"))
+            .alias("projected_target_share"),
+            pl.col("projected_carry_share")
+            .fill_null(pl.col("player_last_10_carry_share"))
+            .alias("projected_carry_share"),
         )
         .select(
             pl.col("player_id").cast(pl.String),
@@ -770,6 +1014,7 @@ def _feature_rows(
             "player_history_through_season",
             "opponent_history_through_season",
             *ALL_POSITION_MODEL_FEATURE_COLUMNS,
+            *OPPORTUNITY_OUTPUT_COLUMNS[:2],
             pl.col(TARGET_COLUMN).cast(pl.Float64),
         )
     )
@@ -848,6 +1093,11 @@ def build_all_position_forecast_frame(
         matchups,
         target_year=target_year,
     )
+    candidates = _depth_opportunity_estimates(
+        candidates,
+        actuals,
+        target_year=target_year,
+    )
     dst = (
         matchups.select("team")
         .unique()
@@ -855,6 +1105,8 @@ def build_all_position_forecast_frame(
             (pl.lit("DST-") + pl.col("team")).alias("player_id"),
             (pl.col("team") + pl.lit(" D/ST")).alias("player_name"),
             pl.lit("DST").alias("position"),
+            pl.lit(0.0).alias("projected_target_share"),
+            pl.lit(0.0).alias("projected_carry_share"),
         )
     )
     roster = pl.concat([candidates, dst], how="vertical")
@@ -902,6 +1154,8 @@ def build_all_position_forecast_frame(
             "is_home",
             INJURY_STATUS_COLUMN,
             INJURY_MISSED_COLUMN,
+            "projected_target_share",
+            "projected_carry_share",
             TARGET_COLUMN,
         )
     )

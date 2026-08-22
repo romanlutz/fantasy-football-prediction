@@ -30,6 +30,31 @@ VIEW_COLUMNS = ("position", "team", "opponent")
 SHORT_MODEL_NAME_LENGTH = 4
 TIGHT_MODEL_SPREAD = 1.5
 MIXED_MODEL_SPREAD = 3.0
+OPPORTUNITY_COLUMNS = (
+    "projected_target_share",
+    "projected_carry_share",
+    "team_previous_season_targets",
+    "team_previous_season_pass_attempts",
+    "team_previous_season_rushing_attempts",
+    "team_previous_season_offensive_plays",
+    "team_previous_season_pass_rate",
+    "team_previous_season_rush_rate",
+)
+OPPORTUNITY_SOURCES = {
+    "projected_target_share": ("receiving_last_10_target_share",),
+    "projected_carry_share": ("receiving_last_10_carry_share",),
+    "team_previous_season_targets": ("receiving_last_10_team_targets",),
+    "team_previous_season_pass_attempts": ("receiving_last_10_team_pass_attempts",),
+    "team_previous_season_rushing_attempts": (
+        "receiving_last_10_team_rushing_attempts",
+    ),
+    "team_previous_season_offensive_plays": ("receiving_last_10_team_offensive_plays",),
+    "team_previous_season_pass_rate": ("receiving_last_10_team_pass_rate",),
+    "team_previous_season_rush_rate": ("receiving_last_10_team_rush_rate",),
+}
+RB_COMMITTEE_THRESHOLD = 0.45
+LOW_TARGET_SHARE_THRESHOLD = 0.15
+LOW_VOLUME_THRESHOLD = 58.0
 
 
 class DashboardDataError(FfpredError):
@@ -40,6 +65,33 @@ def model_name_from_path(path: Path) -> str:
     """Derive a concise display name from a prediction artifact path."""
     name = path.stem.removesuffix("-predictions").replace("-", " ").strip()
     return name.upper() if len(name) <= SHORT_MODEL_NAME_LENGTH else name.title()
+
+
+def _opportunity_expressions(frame: pl.DataFrame) -> list[pl.Expr]:
+    expressions: list[pl.Expr] = []
+    for column, alternatives in OPPORTUNITY_SOURCES.items():
+        source = next(
+            (candidate for candidate in (column, *alternatives) if candidate in frame),
+            None,
+        )
+        expressions.append(
+            (
+                pl.col(source).cast(pl.Float64)
+                if source is not None
+                else pl.lit(None, dtype=pl.Float64)
+            ).alias(column)
+        )
+    if any(column in frame for column in OPPORTUNITY_COLUMNS):
+        basis = "Depth-chart estimate"
+    elif any(
+        alternative in frame
+        for alternatives in OPPORTUNITY_SOURCES.values()
+        for alternative in alternatives
+    ):
+        basis = "Trailing history"
+    else:
+        basis = "Unavailable"
+    return [*expressions, pl.lit(basis).alias("opportunity_basis")]
 
 
 def prepare_predictions(frame: pl.DataFrame, *, model_name: str) -> pl.DataFrame:
@@ -76,6 +128,8 @@ def prepare_predictions(frame: pl.DataFrame, *, model_name: str) -> pl.DataFrame
         expressions.append(pl.col(INJURY_STATUS_COLUMN).cast(pl.String))
     else:
         expressions.append(pl.lit(None, dtype=pl.String).alias(INJURY_STATUS_COLUMN))
+
+    expressions.extend(_opportunity_expressions(frame))
 
     defaults = {"position": "QB", "team": "N/A", "opponent": "N/A"}
     for column, default in defaults.items():
@@ -151,6 +205,8 @@ def select_model(frame: pl.DataFrame, model: str) -> pl.DataFrame:
             pl.col(PREDICTION_COLUMN).std().fill_null(0.0).alias("model_spread"),
             pl.col("model").n_unique().alias("model_count"),
             pl.col(ACTUAL_COLUMN).drop_nulls().first(),
+            *(pl.col(column).mean().alias(column) for column in OPPORTUNITY_COLUMNS),
+            pl.col("opportunity_basis").first().alias("opportunity_basis"),
         )
         .with_columns(
             pl.lit(CONSENSUS_MODEL).alias("model"),
@@ -180,7 +236,7 @@ def draft_board(
     )
     season_has_results = selected[ACTUAL_COLUMN].count() > 0
     board = (
-        selected.group_by("player_id", "player_name", "position")
+        selected.group_by("player_id", "player_name", "position", "team")
         .agg(
             pl.col(PREDICTION_COLUMN).sum().alias("projected_points"),
             pl.col(PREDICTION_COLUMN).mean().alias("points_per_game"),
@@ -190,6 +246,8 @@ def draft_board(
             pl.col(ACTUAL_COLUMN).count().alias("actual_games"),
             pl.col(ACTUAL_COLUMN).sum().alias("actual_points"),
             pl.col(INJURY_MISSED_COLUMN).sum().cast(pl.Int64).alias("injury_games"),
+            *(pl.col(column).mean().alias(column) for column in OPPORTUNITY_COLUMNS),
+            pl.col("opportunity_basis").first().alias("opportunity_basis"),
         )
         .with_columns(
             pl.when(
@@ -255,6 +313,31 @@ def draft_board(
                 / pl.col("projected_points")
                 * 100.0
             ).alias("actual_pace_adjusted_delta_percent"),
+            pl.concat_str(
+                pl.when(
+                    (pl.col("position") == "RB")
+                    & (pl.col("projected_carry_share") < RB_COMMITTEE_THRESHOLD)
+                )
+                .then(pl.lit("RB committee"))
+                .otherwise(None),
+                pl.when(
+                    pl.col("position").is_in(("WR", "TE"))
+                    & (pl.col("projected_target_share") < LOW_TARGET_SHARE_THRESHOLD)
+                )
+                .then(pl.lit("Low target share"))
+                .otherwise(None),
+                pl.when(
+                    pl.col("position").is_in(("QB", "RB", "WR", "TE"))
+                    & (
+                        pl.col("team_previous_season_offensive_plays")
+                        < LOW_VOLUME_THRESHOLD
+                    )
+                )
+                .then(pl.lit("Low-volume offense"))
+                .otherwise(None),
+                separator="; ",
+                ignore_nulls=True,
+            ).alias("opportunity_risk"),
         )
         .sort("projected_points", descending=True)
     )

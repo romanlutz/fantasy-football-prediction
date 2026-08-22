@@ -74,6 +74,7 @@ from ffpred.features.all_positions import (
     ALL_POSITION_MODEL_FEATURE_COLUMNS,
     INJURY_MISSED_COLUMN,
     INJURY_STATUS_COLUMN,
+    OPPORTUNITY_OUTPUT_COLUMNS,
 )
 from ffpred.features.schema import TARGET_COLUMN
 from ffpred.logging import configure_logging
@@ -428,6 +429,8 @@ def _write_predictions(
                 "history_through_season",
                 INJURY_STATUS_COLUMN,
                 INJURY_MISSED_COLUMN,
+                *OPPORTUNITY_OUTPUT_COLUMNS,
+                *receiving_schema.OUTPUT_CONTEXT_COLUMNS,
                 TARGET_COLUMN,
             )
         )
