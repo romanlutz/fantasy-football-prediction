@@ -6,6 +6,8 @@ import argparse
 import sys
 from collections.abc import Sequence
 from html import escape
+from math import isfinite
+from numbers import Real
 from pathlib import Path
 from typing import Never, TypeVar
 
@@ -41,6 +43,9 @@ PROJECTED_BLUE = "#56b4e9"
 ACTUAL_NEUTRAL = "#e6efec"
 PROJECTED_PACE_PURPLE = "#cc79a7"
 ACTUAL_PACE_YELLOW = "#f0e442"
+VOLUME_LOW = "#e1a39a"
+VOLUME_NEUTRAL = "#f0f4f2"
+VOLUME_HIGH = "#a9d8b2"
 
 SEASON_FILTER_KEY = "forecast-target-season"
 POSITION_FILTER_KEY = "forecast-positions"
@@ -62,6 +67,55 @@ DRAFT_BAR_COLORS = {
 }
 
 T = TypeVar("T")
+
+
+def _numeric_value(value: object) -> float:
+    if isinstance(value, Real):
+        return float(value)
+    raise TypeError(f"Expected a numeric table value, got {type(value).__name__}")
+
+
+def _volume_scale(frame: pl.DataFrame, column: str) -> tuple[float, float, float]:
+    values = frame.select("team", column).drop_nulls().unique()[column]
+    if values.is_empty():
+        return 0.0, 0.0, 0.0
+    return (
+        _numeric_value(values.quantile(0.1)),
+        _numeric_value(values.median()),
+        _numeric_value(values.quantile(0.9)),
+    )
+
+
+def _mix_hex(start: str, end: str, amount: float) -> str:
+    clamped = min(max(amount, 0.0), 1.0)
+    start_rgb = tuple(int(start[index : index + 2], 16) for index in (1, 3, 5))
+    end_rgb = tuple(int(end[index : index + 2], 16) for index in (1, 3, 5))
+    channels = (
+        round(start_channel + (end_channel - start_channel) * clamped)
+        for start_channel, end_channel in zip(start_rgb, end_rgb, strict=True)
+    )
+    return "#" + "".join(f"{channel:02x}" for channel in channels)
+
+
+def _volume_cell_style(
+    value: object,
+    scale: tuple[float, float, float],
+) -> str:
+    if not isinstance(value, Real):
+        return ""
+    numeric = float(value)
+    if not isfinite(numeric):
+        return ""
+    low, neutral, high = scale
+    if numeric <= neutral:
+        span = neutral - low
+        amount = (numeric - low) / span if span > 0 else 1.0
+        background = _mix_hex(VOLUME_LOW, VOLUME_NEUTRAL, amount)
+    else:
+        span = high - neutral
+        amount = (numeric - neutral) / span if span > 0 else 1.0
+        background = _mix_hex(VOLUME_NEUTRAL, VOLUME_HIGH, amount)
+    return f"background-color: {background}; color: {CANVAS}; font-weight: 650;"
 
 
 def _inject_styles() -> None:
@@ -685,6 +739,14 @@ def _draft_view(
         season=season,
         positions=positions,
     )
+    pass_volume_scale = _volume_scale(
+        board,
+        "team_previous_season_pass_attempts",
+    )
+    rush_volume_scale = _volume_scale(
+        board,
+        "team_previous_season_rushing_attempts",
+    )
     has_actuals = board["actual_points"].count() > 0
     controls = st.columns([2, 1, 1.6] if has_actuals else [2, 1])
     search = controls[0].text_input("Find player", placeholder="Search the board")
@@ -715,8 +777,8 @@ def _draft_view(
         "injury_games",
         "projected_target_share",
         "projected_carry_share",
-        "team_previous_season_offensive_plays",
-        "team_previous_season_pass_rate",
+        "team_previous_season_pass_attempts",
+        "team_previous_season_rushing_attempts",
         "opportunity_risk",
     ]
     regular_bars = pl.concat(
@@ -807,14 +869,14 @@ def _draft_view(
             format=".1%",
         ),
         alt.Tooltip(
-            "team_previous_season_offensive_plays:Q",
-            title="Offensive plays/game",
+            "team_previous_season_pass_attempts:Q",
+            title="Pass attempts/game",
             format=".1f",
         ),
         alt.Tooltip(
-            "team_previous_season_pass_rate:Q",
-            title="Pass rate",
-            format=".1%",
+            "team_previous_season_rushing_attempts:Q",
+            title="Rush attempts/game",
+            format=".1f",
         ),
         alt.Tooltip("opportunity_risk:N", title="Usage watch"),
     ]
@@ -869,8 +931,8 @@ def _draft_view(
         pl.col("projected_points").alias("Projected"),
         (pl.col("projected_target_share") * 100.0).alias("Target share %"),
         (pl.col("projected_carry_share") * 100.0).alias("Carry share %"),
-        pl.col("team_previous_season_offensive_plays").alias("Off. plays/game"),
-        (pl.col("team_previous_season_pass_rate") * 100.0).alias("Pass rate %"),
+        pl.col("team_previous_season_pass_attempts").alias("Pass att./game"),
+        pl.col("team_previous_season_rushing_attempts").alias("Rush att./game"),
         pl.col("opportunity_risk").alias("Usage watch"),
         pl.col("opportunity_basis").alias("Usage basis"),
         pl.col("actual_points").alias("Actual"),
@@ -886,8 +948,24 @@ def _draft_view(
         pl.col("volatility").alias("Weekly swing"),
         pl.col("model_spread").alias("Model spread"),
     )
+    styled_table = (
+        table.to_pandas()
+        .style.map(
+            lambda value: _volume_cell_style(value, pass_volume_scale),
+            subset=["Pass att./game"],
+        )
+        .map(
+            lambda value: _volume_cell_style(value, rush_volume_scale),
+            subset=["Rush att./game"],
+        )
+    )
+    st.caption(
+        "Team volume: red is below the league midpoint, white is neutral, and "
+        "green is above it. Color intensity is anchored to the 10th and 90th "
+        "percentiles; the numbers remain the source of truth."
+    )
     st.dataframe(
-        table,
+        styled_table,
         hide_index=True,
         width="stretch",
         column_config={
@@ -902,20 +980,16 @@ def _draft_view(
                 help="Estimated share of team rushing attempts. RB values below 45% "
                 "are marked as committee risk.",
             ),
-            "Off. plays/game": st.column_config.NumberColumn(
+            "Pass att./game": st.column_config.NumberColumn(
                 format="%.1f",
-                help="Prior-season team pass attempts plus carries per game. Sacks "
-                "and nullified plays are excluded.",
+                help="Prior-season team pass attempts per game.",
             ),
-            "Pass rate %": st.column_config.NumberColumn(
-                format="%.1f%%",
-                help=(
-                    "Prior-season pass attempts divided by pass attempts plus carries."
-                ),
+            "Rush att./game": st.column_config.NumberColumn(
+                format="%.1f",
+                help="Prior-season team rushing attempts per game.",
             ),
             "Usage watch": st.column_config.TextColumn(
-                help="Flags RB committee risk, sub-15% WR/TE target share, and "
-                "offenses below 55 plays per game.",
+                help="Flags RB committee risk and sub-15% WR/TE target share.",
             ),
             "Usage basis": st.column_config.TextColumn(
                 help="Depth-chart estimates are normalized across the current roster; "

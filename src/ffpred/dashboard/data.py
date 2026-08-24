@@ -54,7 +54,6 @@ OPPORTUNITY_SOURCES = {
 }
 RB_COMMITTEE_THRESHOLD = 0.45
 LOW_TARGET_SHARE_THRESHOLD = 0.15
-LOW_VOLUME_THRESHOLD = 55.0
 
 
 class DashboardDataError(FfpredError):
@@ -325,15 +324,6 @@ def draft_board(
                     & (pl.col("projected_target_share") < LOW_TARGET_SHARE_THRESHOLD)
                 )
                 .then(pl.lit("Low target share"))
-                .otherwise(None),
-                pl.when(
-                    pl.col("position").is_in(("QB", "RB", "WR", "TE"))
-                    & (
-                        pl.col("team_previous_season_offensive_plays")
-                        < LOW_VOLUME_THRESHOLD
-                    )
-                )
-                .then(pl.lit("Low-volume offense"))
                 .otherwise(None),
                 separator="; ",
                 ignore_nulls=True,

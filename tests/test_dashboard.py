@@ -167,8 +167,8 @@ def test_draft_board_flags_fragile_opportunity() -> None:
     running_back = board.filter(pl.col("position") == "RB")
     receiver = board.filter(pl.col("position") == "WR")
 
-    assert running_back["opportunity_risk"][0] == ("RB committee; Low-volume offense")
-    assert receiver["opportunity_risk"][0] == ("Low target share; Low-volume offense")
+    assert running_back["opportunity_risk"][0] == "RB committee"
+    assert receiver["opportunity_risk"][0] == "Low target share"
     assert running_back["opportunity_basis"][0] == "Depth-chart estimate"
 
 
