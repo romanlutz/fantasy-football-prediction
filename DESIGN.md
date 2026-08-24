@@ -20,9 +20,9 @@ colors:
   actual-neutral: "#e6efec"
   projected-pace-purple: "#cc79a7"
   actual-pace-yellow: "#f0e442"
-  volume-low: "#e1a39a"
-  volume-neutral: "#f0f4f2"
-  volume-high: "#a9d8b2"
+  heatmap-low: "#e1a39a"
+  heatmap-neutral: "#f0f4f2"
+  heatmap-high: "#a9d8b2"
 typography:
   display:
     fontFamily: "Bahnschrift, Arial Narrow, Segoe UI, sans-serif"
@@ -126,11 +126,11 @@ A charcoal, night-game palette where nearly all of the interface is dark neutral
 - **Actual-Pace Yellow** (`#f0e442`): Actual total adjusted with observed PPG.
 - Injury additions use translucent fill and a dashed outline; solid fill is the recorded or modeled base. Labels, tooltips, and pattern reinforce every color.
 
-### Team Volume Scale
-- **Volume Low** (`#e1a39a`): Low pass or rush attempts per game, anchored at the league's 10th percentile.
-- **Volume Neutral** (`#f0f4f2`): The league median, deliberately near-white.
-- **Volume High** (`#a9d8b2`): High pass or rush attempts per game, anchored at the league's 90th percentile.
-- The numeric attempts-per-game values remain visible, so the scale never communicates by color alone.
+### Opportunity Heatmap Scale
+- **Heatmap Low** (`#e1a39a`): The low end of a player-share or team-volume distribution, anchored at its 10th percentile.
+- **Heatmap Neutral** (`#f0f4f2`): The relevant median, deliberately near-white.
+- **Heatmap High** (`#a9d8b2`): The high end of a player-share or team-volume distribution, anchored at its 90th percentile.
+- Target and carry shares are compared within position; pass and rush attempts are compared across teams. Numeric values remain visible, so the scale never communicates by color alone.
 
 ### Neutral
 - **Charcoal Field** (`#0d1517`): The base canvas, overlaid with a faint two-axis 40px grid of green-tinted hairlines (`rgba(119, 213, 132, .022)` / `rgba(119, 213, 132, .016)`) so the page itself reads as a night-lit field.
@@ -143,7 +143,7 @@ A charcoal, night-game palette where nearly all of the interface is dark neutral
 - **Telemetry Muted** (`#94aaa5`): Captions, paragraph copy, and telemetry-item labels.
 
 ### Named Rules
-**The Field Signal Rule.** Field Green (and its Green Deep variant) is reserved for state and action chrome — the status dot, the forecast-state badge, the active workspace pill, buttons, the slider thumb, and the active toggle. It never appears as a comparison or actual-value color inside a chart. The distinct, desaturated Volume High token may encode the upper end of the team-volume table scale.
+**The Field Signal Rule.** Field Green (and its Green Deep variant) is reserved for state and action chrome — the status dot, the forecast-state badge, the active workspace pill, buttons, the slider thumb, and the active toggle. It never appears as a comparison or actual-value color inside a chart. The distinct, desaturated Heatmap High token may encode the upper end of the opportunity table scale.
 
 **The Historical Comparison Redundancy Rule.** The Draft Board never relies on green-versus-amber or any color pair alone. Its four measures use labeled color roles, and injury additions are always distinguished from the solid base by a dashed outline and translucent fill.
 

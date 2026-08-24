@@ -140,7 +140,7 @@ def test_draft_board_adds_injury_adjusted_actual() -> None:
     assert player["actual_pace_adjusted_delta_percent"][0] == -40.0
 
 
-def test_draft_board_flags_fragile_opportunity() -> None:
+def test_draft_board_preserves_opportunity_context() -> None:
     prepared = prepare_predictions(
         _predictions().with_columns(
             pl.Series("position", ["RB", "RB", "WR", "WR"]),
@@ -165,10 +165,9 @@ def test_draft_board_flags_fragile_opportunity() -> None:
         positions=["RB", "WR"],
     )
     running_back = board.filter(pl.col("position") == "RB")
-    receiver = board.filter(pl.col("position") == "WR")
 
-    assert running_back["opportunity_risk"][0] == "RB committee"
-    assert receiver["opportunity_risk"][0] == "Low target share"
+    assert running_back["projected_target_share"][0] == 0.1
+    assert running_back["projected_carry_share"][0] == 0.4
     assert running_back["opportunity_basis"][0] == "Depth-chart estimate"
 
 

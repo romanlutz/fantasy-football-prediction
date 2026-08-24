@@ -14,6 +14,7 @@ from typing import Never, TypeVar
 import altair as alt
 import polars as pl
 import streamlit as st
+from pandas.io.formats.style import Styler
 from streamlit.delta_generator import DeltaGenerator
 from streamlit.web import cli as streamlit_cli
 
@@ -43,9 +44,9 @@ PROJECTED_BLUE = "#56b4e9"
 ACTUAL_NEUTRAL = "#e6efec"
 PROJECTED_PACE_PURPLE = "#cc79a7"
 ACTUAL_PACE_YELLOW = "#f0e442"
-VOLUME_LOW = "#e1a39a"
-VOLUME_NEUTRAL = "#f0f4f2"
-VOLUME_HIGH = "#a9d8b2"
+HEATMAP_LOW = "#e1a39a"
+HEATMAP_NEUTRAL = "#f0f4f2"
+HEATMAP_HIGH = "#a9d8b2"
 
 SEASON_FILTER_KEY = "forecast-target-season"
 POSITION_FILTER_KEY = "forecast-positions"
@@ -75,8 +76,7 @@ def _numeric_value(value: object) -> float:
     raise TypeError(f"Expected a numeric table value, got {type(value).__name__}")
 
 
-def _volume_scale(frame: pl.DataFrame, column: str) -> tuple[float, float, float]:
-    values = frame.select("team", column).drop_nulls().unique()[column]
+def _metric_scale(values: pl.Series) -> tuple[float, float, float]:
     if values.is_empty():
         return 0.0, 0.0, 0.0
     return (
@@ -84,6 +84,34 @@ def _volume_scale(frame: pl.DataFrame, column: str) -> tuple[float, float, float
         _numeric_value(values.median()),
         _numeric_value(values.quantile(0.9)),
     )
+
+
+def _volume_scale(frame: pl.DataFrame, column: str) -> tuple[float, float, float]:
+    values = frame.select("team", column).drop_nulls().unique()[column]
+    return _metric_scale(values)
+
+
+def _position_share_scales(
+    frame: pl.DataFrame,
+    column: str,
+    positions: Sequence[str],
+) -> dict[str, tuple[float, float, float]]:
+    scales: dict[str, tuple[float, float, float]] = {}
+    for position in positions:
+        values = (
+            frame.filter(pl.col("position") == position)
+            .select("player_id", column)
+            .drop_nulls()
+            .unique()[column]
+        )
+        if not values.is_empty():
+            low, neutral, high = _metric_scale(values)
+            scales[position] = (
+                low * 100.0,
+                neutral * 100.0,
+                high * 100.0,
+            )
+    return scales
 
 
 def _mix_hex(start: str, end: str, amount: float) -> str:
@@ -97,7 +125,7 @@ def _mix_hex(start: str, end: str, amount: float) -> str:
     return "#" + "".join(f"{channel:02x}" for channel in channels)
 
 
-def _volume_cell_style(
+def _heatmap_cell_style(
     value: object,
     scale: tuple[float, float, float],
 ) -> str:
@@ -110,12 +138,54 @@ def _volume_cell_style(
     if numeric <= neutral:
         span = neutral - low
         amount = (numeric - low) / span if span > 0 else 1.0
-        background = _mix_hex(VOLUME_LOW, VOLUME_NEUTRAL, amount)
+        background = _mix_hex(HEATMAP_LOW, HEATMAP_NEUTRAL, amount)
     else:
         span = high - neutral
         amount = (numeric - neutral) / span if span > 0 else 1.0
-        background = _mix_hex(VOLUME_NEUTRAL, VOLUME_HIGH, amount)
+        background = _mix_hex(HEATMAP_NEUTRAL, HEATMAP_HIGH, amount)
     return f"background-color: {background}; color: {CANVAS}; font-weight: 650;"
+
+
+def _style_opportunity_table(
+    table: pl.DataFrame,
+    *,
+    target_scales: dict[str, tuple[float, float, float]],
+    carry_scales: dict[str, tuple[float, float, float]],
+    pass_scale: tuple[float, float, float],
+    rush_scale: tuple[float, float, float],
+) -> Styler:
+    style_columns = {column: [""] * table.height for column in table.columns}
+    style_values = table.select(
+        "Pos",
+        "Target share %",
+        "Carry share %",
+        "Pass att./game",
+        "Rush att./game",
+    )
+    for index, row in enumerate(style_values.iter_rows(named=True)):
+        position = str(row["Pos"])
+        target_scale = target_scales.get(position)
+        carry_scale = carry_scales.get(position)
+        if target_scale is not None:
+            style_columns["Target share %"][index] = _heatmap_cell_style(
+                row["Target share %"],
+                target_scale,
+            )
+        if carry_scale is not None:
+            style_columns["Carry share %"][index] = _heatmap_cell_style(
+                row["Carry share %"],
+                carry_scale,
+            )
+        style_columns["Pass att./game"][index] = _heatmap_cell_style(
+            row["Pass att./game"],
+            pass_scale,
+        )
+        style_columns["Rush att./game"][index] = _heatmap_cell_style(
+            row["Rush att./game"],
+            rush_scale,
+        )
+    style_frame = pl.DataFrame(style_columns).to_pandas()
+    return table.to_pandas().style.apply(lambda _: style_frame, axis=None)
 
 
 def _inject_styles() -> None:
@@ -747,6 +817,16 @@ def _draft_view(
         board,
         "team_previous_season_rushing_attempts",
     )
+    target_share_scales = _position_share_scales(
+        board,
+        "projected_target_share",
+        ("RB", "WR", "TE"),
+    )
+    carry_share_scales = _position_share_scales(
+        board,
+        "projected_carry_share",
+        ("QB", "RB"),
+    )
     has_actuals = board["actual_points"].count() > 0
     controls = st.columns([2, 1, 1.6] if has_actuals else [2, 1])
     search = controls[0].text_input("Find player", placeholder="Search the board")
@@ -779,7 +859,6 @@ def _draft_view(
         "projected_carry_share",
         "team_previous_season_pass_attempts",
         "team_previous_season_rushing_attempts",
-        "opportunity_risk",
     ]
     regular_bars = pl.concat(
         [
@@ -878,7 +957,6 @@ def _draft_view(
             title="Rush attempts/game",
             format=".1f",
         ),
-        alt.Tooltip("opportunity_risk:N", title="Usage watch"),
     ]
     base_bars = (
         alt.Chart(chart_frame)
@@ -929,12 +1007,16 @@ def _draft_view(
         pl.col("player_name").alias("Player"),
         pl.col("team").alias("Team"),
         pl.col("projected_points").alias("Projected"),
-        (pl.col("projected_target_share") * 100.0).alias("Target share %"),
-        (pl.col("projected_carry_share") * 100.0).alias("Carry share %"),
+        pl.when(pl.col("position").is_in(("RB", "WR", "TE")))
+        .then(pl.col("projected_target_share") * 100.0)
+        .otherwise(None)
+        .alias("Target share %"),
+        pl.when(pl.col("position").is_in(("QB", "RB")))
+        .then(pl.col("projected_carry_share") * 100.0)
+        .otherwise(None)
+        .alias("Carry share %"),
         pl.col("team_previous_season_pass_attempts").alias("Pass att./game"),
         pl.col("team_previous_season_rushing_attempts").alias("Rush att./game"),
-        pl.col("opportunity_risk").alias("Usage watch"),
-        pl.col("opportunity_basis").alias("Usage basis"),
         pl.col("actual_points").alias("Actual"),
         pl.col("injury_games").alias("Inj. missed"),
         pl.col("projected_pace_adjusted_actual").alias("Adj. at proj. PPG"),
@@ -948,21 +1030,23 @@ def _draft_view(
         pl.col("volatility").alias("Weekly swing"),
         pl.col("model_spread").alias("Model spread"),
     )
-    styled_table = (
-        table.to_pandas()
-        .style.map(
-            lambda value: _volume_cell_style(value, pass_volume_scale),
-            subset=["Pass att./game"],
-        )
-        .map(
-            lambda value: _volume_cell_style(value, rush_volume_scale),
-            subset=["Rush att./game"],
-        )
+    styled_table = _style_opportunity_table(
+        table,
+        target_scales=target_share_scales,
+        carry_scales=carry_share_scales,
+        pass_scale=pass_volume_scale,
+        rush_scale=rush_volume_scale,
     )
+    basis_values = sorted(
+        str(value)
+        for value in display["opportunity_basis"].drop_nulls().unique().to_list()
+    )
+    basis_summary = ", ".join(basis_values) or "Unavailable"
     st.caption(
-        "Team volume: red is below the league midpoint, white is neutral, and "
-        "green is above it. Color intensity is anchored to the 10th and 90th "
-        "percentiles; the numbers remain the source of truth."
+        "Player shares are graded within position; team pass and rush volume are "
+        "graded across the league. Red is lower, white is neutral, and green is "
+        "higher, with color intensity anchored to the 10th and 90th percentiles. "
+        f"Usage basis: {basis_summary}."
     )
     st.dataframe(
         styled_table,
@@ -977,8 +1061,7 @@ def _draft_view(
             ),
             "Carry share %": st.column_config.NumberColumn(
                 format="%.1f%%",
-                help="Estimated share of team rushing attempts. RB values below 45% "
-                "are marked as committee risk.",
+                help="Estimated share of team rushing attempts.",
             ),
             "Pass att./game": st.column_config.NumberColumn(
                 format="%.1f",
@@ -987,13 +1070,6 @@ def _draft_view(
             "Rush att./game": st.column_config.NumberColumn(
                 format="%.1f",
                 help="Prior-season team rushing attempts per game.",
-            ),
-            "Usage watch": st.column_config.TextColumn(
-                help="Flags RB committee risk and sub-15% WR/TE target share.",
-            ),
-            "Usage basis": st.column_config.TextColumn(
-                help="Depth-chart estimates are normalized across the current roster; "
-                "older artifacts use trailing history.",
             ),
             "Actual": st.column_config.NumberColumn(format="%.1f"),
             "Inj. missed": st.column_config.NumberColumn(

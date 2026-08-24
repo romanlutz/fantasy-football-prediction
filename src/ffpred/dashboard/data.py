@@ -52,8 +52,6 @@ OPPORTUNITY_SOURCES = {
     "team_previous_season_pass_rate": ("receiving_last_10_team_pass_rate",),
     "team_previous_season_rush_rate": ("receiving_last_10_team_rush_rate",),
 }
-RB_COMMITTEE_THRESHOLD = 0.45
-LOW_TARGET_SHARE_THRESHOLD = 0.15
 
 
 class DashboardDataError(FfpredError):
@@ -312,22 +310,6 @@ def draft_board(
                 / pl.col("projected_points")
                 * 100.0
             ).alias("actual_pace_adjusted_delta_percent"),
-            pl.concat_str(
-                pl.when(
-                    (pl.col("position") == "RB")
-                    & (pl.col("projected_carry_share") < RB_COMMITTEE_THRESHOLD)
-                )
-                .then(pl.lit("RB committee"))
-                .otherwise(None),
-                pl.when(
-                    pl.col("position").is_in(("WR", "TE"))
-                    & (pl.col("projected_target_share") < LOW_TARGET_SHARE_THRESHOLD)
-                )
-                .then(pl.lit("Low target share"))
-                .otherwise(None),
-                separator="; ",
-                ignore_nulls=True,
-            ).alias("opportunity_risk"),
         )
         .sort("projected_points", descending=True)
     )

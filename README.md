@@ -298,9 +298,9 @@ roster. That reallocates vacated opportunity after departures and gives rookies
 or other players without NFL history a position baseline. Team volume and
 pass/run tendency remain prior-season per-game averages because the current
 sources do not identify coaching-system changes. Prediction artifacts retain
-these estimates, and the Draft Board flags RB carry shares below 45%, WR/TE
-target shares below 15%, and shows team pass and rush attempts per game on a
-red-to-white-to-green league-relative scale.
+these estimates. The Draft Board color-codes target and carry share relative to
+the selected position and team pass and rush attempts per game relative to the
+league, using a red-to-white-to-green scale.
 
 Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as
