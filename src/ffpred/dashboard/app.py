@@ -915,7 +915,7 @@ def _draft_view(
             ),
             "Usage watch": st.column_config.TextColumn(
                 help="Flags RB committee risk, sub-15% WR/TE target share, and "
-                "offenses below 58 plays per game.",
+                "offenses below 55 plays per game.",
             ),
             "Usage basis": st.column_config.TextColumn(
                 help="Depth-chart estimates are normalized across the current roster; "

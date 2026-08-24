@@ -299,7 +299,7 @@ or other players without NFL history a position baseline. Team volume and
 pass/run tendency remain prior-season per-game averages because the current
 sources do not identify coaching-system changes. Prediction artifacts retain
 these estimates, and the Draft Board flags RB carry shares below 45%, WR/TE
-target shares below 15%, and offenses below 58 opportunities per game.
+target shares below 15%, and offenses below 55 opportunities per game.
 
 Every command writes machine-readable JSON to standard output. Diagnostics use
 Python logging on standard error. Environment defaults are available as

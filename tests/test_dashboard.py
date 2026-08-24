@@ -149,7 +149,7 @@ def test_draft_board_flags_fragile_opportunity() -> None:
             pl.Series("projected_carry_share", [0.4, 0.4, 0.0, 0.0]),
             pl.Series(
                 "team_previous_season_offensive_plays",
-                [55.0, 55.0, 55.0, 55.0],
+                [54.0, 54.0, 54.0, 54.0],
             ),
             pl.Series("team_previous_season_pass_rate", [0.6, 0.6, 0.6, 0.6]),
         ),
