@@ -1052,6 +1052,13 @@ def _draft_view(
         "higher, with color intensity anchored to the 10th and 90th percentiles. "
         f"Usage basis: {basis_summary}."
     )
+    st.info(
+        "Projection note: Team pass and run volume is prior-season context and is "
+        "not adjusted for coaching, quarterback, or scheme changes. Depth-chart "
+        "shares reallocate recent opportunity across current roles, but do not yet "
+        "use route participation, snap shares, or explicit vacated-opportunity "
+        "modeling."
+    )
     st.dataframe(
         styled_table,
         hide_index=True,
