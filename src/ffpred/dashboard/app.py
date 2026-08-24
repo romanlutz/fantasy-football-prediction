@@ -54,6 +54,10 @@ MODEL_FILTER_KEY = "forecast-model"
 FILTER_STATE_KEY = "_forecast-filter-state"
 FILTER_QUERY_KEYS = ("season", "position", "model")
 
+DRAFT_BOARD_VISIBLE_ROWS = 50
+DATAFRAME_HEADER_HEIGHT = 38
+DATAFRAME_ROW_HEIGHT = 35
+
 DRAFT_BAR_FIELDS = {
     "Projected": "projected_points",
     "Actual": "actual_points",
@@ -1052,6 +1056,10 @@ def _draft_view(
         styled_table,
         hide_index=True,
         width="stretch",
+        height=(
+            DATAFRAME_HEADER_HEIGHT
+            + DATAFRAME_ROW_HEIGHT * min(DRAFT_BOARD_VISIBLE_ROWS, table.height)
+        ),
         column_config={
             "Projected": st.column_config.NumberColumn(format="%.1f"),
             "Target share %": st.column_config.NumberColumn(
