@@ -4,6 +4,8 @@ import pytest
 from ffpred.acquisition.coaching import (
     acquire_season_head_coaches,
     head_coach_changed,
+    season_head_coaches_from_schedules,
+    team_head_coach_change_frame,
 )
 from ffpred.domain.identifiers import Season, TeamCode
 from ffpred.errors import SchemaValidationError
@@ -125,3 +127,105 @@ def test_missing_coach_columns_raise_schema_validation_error() -> None:
 
     with pytest.raises(SchemaValidationError):
         acquire_season_head_coaches([2014], provider=provider)
+
+
+def test_season_head_coaches_from_schedules_matches_provider_wrapper() -> None:
+    schedules = pl.DataFrame(
+        [
+            {
+                "season": 2014,
+                "week": 1,
+                "home_team": "SEA",
+                "away_team": "GB",
+                "home_coach": "Pete Carroll",
+                "away_coach": "Mike McCarthy",
+            }
+        ]
+    )
+
+    coaches = season_head_coaches_from_schedules(schedules)
+
+    assert coaches[(TeamCode("SEA"), Season(2014))] == "Pete Carroll"
+    assert coaches[(TeamCode("GB"), Season(2014))] == "Mike McCarthy"
+
+
+def test_null_coach_rows_are_skipped_not_recorded() -> None:
+    # nflverse only populates home_coach/away_coach once a game has been
+    # played, so a schedules frame spanning a not-yet-played season (e.g.
+    # forecasting before Week 1) has null coaches for its future weeks.
+    schedules = pl.DataFrame(
+        [
+            {
+                "season": 2024,
+                "week": 1,
+                "home_team": "SEA",
+                "away_team": "GB",
+                "home_coach": None,
+                "away_coach": None,
+            }
+        ],
+        schema={
+            "season": pl.Int64,
+            "week": pl.Int64,
+            "home_team": pl.String,
+            "away_team": pl.String,
+            "home_coach": pl.String,
+            "away_coach": pl.String,
+        },
+    )
+
+    coaches = season_head_coaches_from_schedules(schedules)
+
+    assert coaches == {}
+    # An entirely unknown season must not be treated as evidence of change.
+    assert head_coach_changed(coaches, TeamCode("SEA"), Season(2024)) is False
+
+
+def test_team_head_coach_change_frame_flags_changed_teams() -> None:
+    schedules = pl.DataFrame(
+        [
+            {
+                "season": 2013,
+                "week": 1,
+                "home_team": "SEA",
+                "away_team": "GB",
+                "home_coach": "Pete Carroll",
+                "away_coach": "Old Coach",
+            },
+            {
+                "season": 2014,
+                "week": 1,
+                "home_team": "SEA",
+                "away_team": "GB",
+                "home_coach": "Pete Carroll",
+                "away_coach": "New Coach",
+            },
+        ]
+    )
+
+    frame = team_head_coach_change_frame(schedules)
+
+    changed = {
+        (row["team"], row["season"]): row["team_head_coach_changed"]
+        for row in frame.iter_rows(named=True)
+    }
+    assert changed[("GB", 2014)] == 1.0
+    assert changed[("SEA", 2014)] == 0.0
+    # 2013 has no prior season in this frame, so it defaults to "no change".
+    assert changed[("SEA", 2013)] == 0.0
+    assert frame["team_head_coach_changed"].null_count() == 0
+
+
+def test_team_head_coach_change_frame_is_empty_without_coach_columns() -> None:
+    schedules = pl.DataFrame(
+        [{"season": 2014, "week": 1, "home_team": "SEA", "away_team": "GB"}]
+    )
+
+    frame = team_head_coach_change_frame(schedules)
+
+    assert frame.is_empty()
+    assert frame.schema == {
+        "team": pl.String,
+        "season": pl.Int64,
+        "team_head_coach_changed": pl.Float64,
+    }

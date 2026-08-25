@@ -296,9 +296,18 @@ Preseason target and carry shares are estimated from recent player usage,
 discounted by current depth-chart rank, and normalized across the current
 roster. That reallocates vacated opportunity after departures and gives rookies
 or other players without NFL history a position baseline. Team volume and
-pass/run tendency remain prior-season per-game averages because the current
-sources do not identify coaching-system changes. Prediction artifacts retain
-these estimates. The Draft Board color-codes target and carry share relative to
+pass/run tendency remain prior-season per-game averages, since a coach or
+scheme change does not by itself imply a specific new tendency. A
+`team_head_coach_changed` feature separately flags, using nflverse's
+`home_coach`/`away_coach` schedule fields, whether a team enters the target
+season with a different head coach than the year before, so a model can at
+least down-weight that carried-forward average rather than being blind to the
+discontinuity. Offensive-coordinator/play-caller-level scheme detail is not
+available in nflverse's open data, and nflverse only populates the coach
+fields once a game has been played, so this flag is reliably known for
+completed training seasons but often defaults to "no change" for a season's
+forecast built before its Week 1 game. Prediction artifacts retain these
+estimates. The Draft Board color-codes target and carry share relative to
 the selected position and team pass and rush attempts per game relative to the
 league, using a red-to-white-to-green scale.
 

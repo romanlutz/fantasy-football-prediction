@@ -350,6 +350,72 @@ def test_archive_builds_every_position_with_frozen_lineage(
     assert season.manifest_path.exists()
 
 
+def test_team_head_coach_change_flows_into_forecast_features(
+    tmp_path: Path,
+) -> None:
+    seasons = (2008, 2009, 2010)
+    # SEA hires a new head coach entering 2010; GB keeps the same coach the
+    # whole time, so only SEA's 2010 forecast rows should flag a change.
+    seattle_coach = {2008: "Pete Carroll", 2009: "Pete Carroll", 2010: "New Coach"}
+    schedules = pl.DataFrame(
+        [
+            {
+                **_schedule(season),
+                "home_coach": seattle_coach[season],
+                "away_coach": "Mike McCarthy",
+            }
+            for season in seasons
+        ]
+    )
+    player_stats = pl.DataFrame(
+        [
+            _player_row(
+                season,
+                position=position,
+                team=team,
+                opponent=("SEA" if team == "GB" else "GB"),
+            )
+            for season in seasons
+            for team in ("GB", "SEA")
+            for position in ("QB", "RB", "WR", "TE", "K")
+        ]
+    )
+    team_stats = pl.DataFrame(
+        [
+            _team_row(season, team=team, opponent=("SEA" if team == "GB" else "GB"))
+            for season in seasons
+            for team in ("GB", "SEA")
+        ]
+    )
+    provider = FakeProvider(
+        player_stats=player_stats,
+        team_stats=team_stats,
+        schedules=schedules,
+        depth_charts=_depth_charts(2010),
+    )
+
+    result = build_forecast_archive(
+        ForecastArchiveConfig(
+            output_dir=tmp_path,
+            history_start=2008,
+            first_target_year=2010,
+            last_target_year=2010,
+        ),
+        provider=provider,
+    )
+    forecast = pl.read_parquet(result.seasons[0].forecast.path)
+
+    flags = {
+        row["team"]: row["team_head_coach_changed"]
+        for row in forecast.select("team", "team_head_coach_changed")
+        .unique()
+        .iter_rows(named=True)
+    }
+    assert flags["SEA"] == 1.0
+    assert flags["GB"] == 0.0
+    assert forecast["team_head_coach_changed"].null_count() == 0
+
+
 def test_projection_commands_detect_all_position_features(
     tmp_path: Path,
     capsys,

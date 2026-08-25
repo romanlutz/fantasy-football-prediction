@@ -1053,11 +1053,15 @@ def _draft_view(
         f"Usage basis: {basis_summary}."
     )
     st.info(
-        "Projection note: Team pass and run volume is prior-season context and is "
-        "not adjusted for coaching, quarterback, or scheme changes. Depth-chart "
-        "shares reallocate recent opportunity across current roles, but do not yet "
-        "use route participation, snap shares, or explicit vacated-opportunity "
-        "modeling."
+        "Projection note: Team pass and run volume shown here is prior-season "
+        "context and is not itself adjusted for coaching, quarterback, or scheme "
+        "changes -- the model separately receives a head-coach-change indicator "
+        "(from nflverse's home_coach/away_coach schedule fields) so it can "
+        "down-weight that context when a team enters the season with a new head "
+        "coach, but offensive-coordinator/play-caller-level scheme detail is not "
+        "available in nflverse's open data. Depth-chart shares reallocate recent "
+        "opportunity across current roles, but do not yet use route "
+        "participation, snap shares, or explicit vacated-opportunity modeling."
     )
     st.dataframe(
         styled_table,

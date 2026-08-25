@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 
 import polars as pl
 
+from ffpred.acquisition.coaching import team_head_coach_change_frame
 from ffpred.acquisition.contracts import REGULAR_SEASON
 from ffpred.errors import DataAcquisitionError, SchemaValidationError
 from ffpred.features.schema import TARGET_COLUMN
@@ -84,6 +85,7 @@ ALL_POSITION_MODEL_FEATURE_COLUMNS = (
     "player_career_games",
     "team_position_ppg",
     "opponent_position_points_allowed",
+    "team_head_coach_changed",
     "target_week_normalized",
     "is_home",
     *(f"position_{position.lower()}" for position in FANTASY_POSITIONS),
@@ -874,6 +876,26 @@ def _team_volume_profiles(
     return profiles
 
 
+def _team_head_coach_changes(schedules: pl.DataFrame, target_year: int) -> pl.DataFrame:
+    """Return each team's head-coach-change flag entering ``target_year``.
+
+    Prior-season team pass/rush tendency (``_team_volume_profiles``) is a
+    per-game average that cannot express a discontinuity like a new head
+    coach installing a new offensive scheme; this is a companion signal a
+    model can use to down-weight that carried-forward average. Defaults to
+    "no change" (rather than null) whenever the comparison can't be made,
+    which includes: ``schedules`` lacking the optional coach columns at
+    all; a team with no prior-season coach on record; and -- because
+    nflverse only populates ``home_coach``/``away_coach`` once a game has
+    been played -- a target season that has not started yet, which is the
+    common case for a forecast frame built before Week 1.
+    """
+    changes = team_head_coach_change_frame(schedules).filter(
+        pl.col("season") == target_year
+    )
+    return changes.select("team", "team_head_coach_changed")
+
+
 def _context_profiles(
     history: pl.DataFrame, target_year: int
 ) -> tuple[
@@ -896,6 +918,7 @@ def _feature_rows(
     *,
     target_year: int,
     forecast_as_of: date,
+    schedules: pl.DataFrame,
 ) -> pl.DataFrame:
     if INJURY_STATUS_COLUMN not in base.columns:
         base = base.with_columns(
@@ -915,12 +938,14 @@ def _feature_rows(
     baselines = _position_baselines(history, target_year)
     team_context, opponent_context = _context_profiles(history, target_year)
     team_volume = _team_volume_profiles(history, target_year)
+    coach_changes = _team_head_coach_changes(schedules, target_year)
     frame = (
         base.join(profiles, on=["player_id", "position"], how="left")
         .join(baselines, on="position", how="left")
         .join(team_context, on=["team", "position"], how="left")
         .join(opponent_context, on=["opponent", "position"], how="left")
         .join(team_volume, on="team", how="left")
+        .join(coach_changes, on="team", how="left")
         .with_columns(
             pl.col("player_last_1_points")
             .fill_null(pl.col("_baseline_ppg"))
@@ -947,6 +972,9 @@ def _feature_rows(
             pl.col("opponent_position_points_allowed")
             .fill_null(pl.col("_baseline_ppg"))
             .alias("opponent_position_points_allowed"),
+            pl.col("team_head_coach_changed")
+            .fill_null(0.0)
+            .alias("team_head_coach_changed"),
             pl.col("player_last_1_target_share")
             .fill_null(pl.col("_baseline_target_share"))
             .alias("player_last_1_target_share"),
@@ -1040,6 +1068,7 @@ def build_all_position_training_frame(
                 actuals,
                 target_year=target_year,
                 forecast_as_of=_forecast_date(schedule, target_year, None),
+                schedules=schedules,
             )
         )
     if not frames:
@@ -1164,6 +1193,7 @@ def build_all_position_forecast_frame(
         actuals,
         target_year=target_year,
         forecast_as_of=forecast_as_of,
+        schedules=schedules,
     )
 
 
