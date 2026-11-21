@@ -85,6 +85,7 @@ from ffpred.providers.espn import (
 )
 from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
+from ffpred.study.run import LAST_COMPLETE, run_study
 from ffpred.training.data import TrainingData, load_training_data
 from ffpred.training.ebm import EbmConfig, train_ebm, write_ebm_explanations
 from ffpred.training.mlp import MlpConfig, create_archive_estimator, train_mlp
@@ -167,6 +168,17 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
 
     build = subparsers.add_parser("build-dataset", help="build QB train/test datasets")
     _add_build_arguments(build, settings)
+
+    study = subparsers.add_parser(
+        "weekly-study", help="rebuild the weekly player forecast study"
+    )
+    study.add_argument("--end-year", type=int, default=LAST_COMPLETE)
+    study.add_argument(
+        "--exact-svr", action="store_true", help="use the slower paper libsvm solver"
+    )
+    study.add_argument(
+        "--output-dir", type=Path, default=Path("artifacts/weekly-study")
+    )
 
     build_dst = subparsers.add_parser(
         "build-dst-dataset", help="build team D/ST train/test datasets"
@@ -1144,6 +1156,13 @@ def main(  # noqa: PLR0912
             output = _run_build(
                 _build_options(args),
                 provider or _provider(settings),
+            )
+        elif args.command == "weekly-study":
+            output = run_study(
+                args.output_dir,
+                args.end_year,
+                provider or _provider(settings),
+                exact_svr=args.exact_svr,
             )
         elif args.command == "build-forecast":
             output = _run_forecast_build(

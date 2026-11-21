@@ -28,6 +28,18 @@ uv sync --all-groups
 
 ## Commands
 
+Rebuild the [weekly QB/RB/WR/TE forecast study and its scorecards](research/weekly-study/README.md):
+
+```console
+uv run --locked ffpred weekly-study --end-year 2025
+```
+
+This is the paper follow-up: it forecasts a player-week **before** knowing who
+will record a touch, uses one corrected non-PPR scoring rule, and tests three
+sets of opponent statistics on identical rows. It is not a preseason
+projection or a start/sit classifier. The separate historical builders below
+retain their original sample and scoring definitions.
+
 Build the default quarterback dataset (the historical 2010-2013 training set
 and 2014 test set):
 

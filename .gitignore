@@ -13,3 +13,4 @@ prediction.npy
 test.npy
 train.npy
 *.parquet
+/artifacts/weekly-study/
