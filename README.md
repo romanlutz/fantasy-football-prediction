@@ -28,7 +28,15 @@ uv sync --all-groups
 
 ## Commands
 
-Rebuild the [weekly QB/RB/WR/TE forecast study and its scorecards](research/weekly-study/README.md):
+Rebuild the [weekly QB/RB/WR/TE forecast study and its scorecards](research/weekly-study/README.md).
+The primary experiment selects one QB, two RBs, three WRs and one TE per
+playing team one hour before kickoff, and audits returns from injury:
+
+```console
+uv run --locked ffpred weekly-roles --end-year 2025
+```
+
+To reproduce the full-roster comparison and original-paper reconciliation:
 
 ```console
 uv run --locked ffpred weekly-study --end-year 2025

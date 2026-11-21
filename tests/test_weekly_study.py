@@ -2,6 +2,7 @@ import gzip
 import io
 import json
 import tarfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 import polars as pl
@@ -23,6 +24,13 @@ from ffpred.study.panel import (
     player_panel,
     schedule_sides,
 )
+from ffpred.study.role_evidence import (
+    depth_evidence,
+    game_clocks,
+    official_news,
+    read_news,
+)
+from ffpred.study.roles import run_roles
 from ffpred.study.run import run_study
 
 
@@ -270,3 +278,133 @@ def test_study_replay_audit_and_paired_predictions(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError):
         run_study(tmp_path, 2026, p)
     assert backtest(panel, range(2014, 2015), exact_svr=True).height == pred.height
+
+
+def role_provider() -> FakeProvider:
+    p = provider()
+    c = pl.col
+    p.schedules = p.schedules.with_columns(
+        pl.concat_str(
+            c("season"),
+            pl.lit("-09-"),
+            (c("week") * 7).cast(pl.String).str.pad_start(2, "0"),
+        ).alias("gameday"),
+        pl.lit("13:00").alias("gametime"),
+        pl.lit("OAKQB").alias("home_qb_id"),
+        pl.when((c("season") == 2014) & (c("week") == 4))
+        .then(pl.lit("NEW"))
+        .otherwise(pl.lit("ARZQB"))
+        .alias("away_qb_id"),
+    )
+    p.rosters_weekly = p.rosters_weekly.with_columns(
+        pl.when((c("gsis_id") == "ARZRB") & (c("week") == 2))
+        .then(pl.lit("R01"))
+        .otherwise(c("status_description_abbr"))
+        .alias("status_description_abbr")
+    )
+    p.player_stats = p.player_stats.filter(
+        ~((c("player_id") == "ARZRB") & (c("week") == 2))
+    )
+    p.depth_charts = p.rosters_weekly.select(
+        "season",
+        "week",
+        "game_type",
+        c("team").alias("club_code"),
+        "gsis_id",
+        "full_name",
+        "position",
+        pl.lit("1").alias("depth_team"),
+    )
+    p.injuries = pl.DataFrame(
+        {
+            "season": [2014] * 3,
+            "week": [4] * 3,
+            "team": ["ARI", "ARI", "LV"],
+            "game_type": ["REG"] * 3,
+            "gsis_id": ["ARZRB", "ARZQB", "OAKWR"],
+            "full_name": ["ARZRB", "ARZQB", "OAKWR"],
+            "position": ["RB", "QB", "WR"],
+            "report_status": ["Questionable", "Out", "Out"],
+            "practice_status": ["Full Participation in Practice", None, None],
+            "report_primary_injury": ["knee"] * 3,
+            "practice_primary_injury": [None] * 3,
+            # 13:00 Eastern in September: the cutoff is 16:00 UTC.
+            "date_modified": [
+                datetime(2014, 9, 28, 15, 0, tzinfo=UTC),
+                datetime(2014, 9, 28, 16, 0, tzinfo=UTC),
+                datetime(2014, 9, 28, 16, 1, tzinfo=UTC),
+            ],
+        }
+    )
+    return p
+
+
+def test_roles_freeze_news_keep_returns_and_audit_misses(tmp_path: Path) -> None:
+    p = role_provider()
+    csv = tmp_path / "news.csv"
+    csv.write_text(
+        "game_id,team,player_id,name,position,kind,published_at,source,max_opportunities\n"
+        "2014_4_ARI_LV,ARI,NEW,New,QB,starter,2014-09-28T15:55:00Z,https://example.org/1,\n"
+        "2014_4_ARI_LV,ARI,NEW,New,QB,inactive,2014-09-28T16:01:00Z,https://example.org/2,\n"
+        "2014_4_ARI_LV,LV,OAKRB,OAKRB,RB,limited,2014-09-27T12:00:00Z,https://example.org/3,0\n",
+        encoding="utf-8",
+    )
+    run_roles(tmp_path, 2014, p, news_file=csv)
+    c = pl.col
+    rows = pl.read_parquet(tmp_path / "candidates.parquet").filter(c("week") == 4)
+    selected = rows.filter(c("team_role"))
+    assert selected.filter(c("player_id") == "NEW")["announced"].item()
+    assert not rows.filter(c("player_id") == "ARZQB")["team_role"].item()
+    assert selected.filter(c("player_id") == "OAKWR")["report_at"].item() is None
+    rb = selected.filter(c("player_id") == "ARZRB").row(0, named=True)
+    assert (
+        rb["roster_source"] is None
+        and rb["practice_status"] == "Full Participation in Practice"
+    )
+    assert rb["prior3_targets"] == 1  # Previous injury absence was not a zero.
+    assert selected.filter(c("player_id") == "OAKRB")["expected_usage"].item() == 0
+    truth = pl.read_parquet(tmp_path / "realized-roles.parquet")
+    assert truth.filter((c("player_id") == "ARZRB") & (c("week") == 4))[
+        "injury_return"
+    ].item()
+    preds = pl.read_parquet(tmp_path / "predictions.parquet")
+    # A rostered game with no box is still scored, not excluded in hindsight.
+    assert preds.filter(c("player_id") == "NEW")["points"].item() == 0
+    selection = pl.read_csv(tmp_path / "selection-pooled.csv")
+    assert (selection["selected"] <= selection["planned"]).all()
+    assert selection.filter(c("position") == "RB")["correct_returns"].item() == 1
+    assert pl.read_csv(tmp_path / "scores-pooled.csv").height == 56
+    invalid = read_news(csv).with_columns(pl.lit("2014-09-28").alias("published_at"))
+    clocks = game_clocks(schedule_sides(p.schedules), p.schedules)
+    with pytest.raises(DataAcquisitionError, match="Invalid timestamped"):
+        official_news(clocks, invalid)
+
+
+def test_daily_depth_is_a_whole_snapshot_before_the_cutoff() -> None:
+    p = role_provider()
+    clocks = (
+        game_clocks(schedule_sides(p.schedules), p.schedules)
+        .filter(
+            (pl.col("season") == 2014)
+            & (pl.col("week") == 4)
+            & (pl.col("team") == "ARI")
+        )
+        .with_columns(pl.lit(2025).alias("season"))
+    )
+    depth = pl.DataFrame(
+        {
+            "dt": [
+                "2014-09-27T17:00:00Z",
+                "2014-09-28T15:30:00Z",
+                "2014-09-28T16:01:00Z",
+            ],
+            "team": ["ARI"] * 3,
+            "gsis_id": ["departed", "known", "future"],
+            "player_name": ["A", "B", "C"],
+            "pos_abb": ["QB"] * 3,
+            "pos_rank": [1] * 3,
+        }
+    )
+    assert depth_evidence(clocks, p.depth_charts, depth)["player_id"].to_list() == [
+        "known"
+    ]

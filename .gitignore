@@ -14,3 +14,4 @@ test.npy
 train.npy
 *.parquet
 /artifacts/weekly-study/
+/artifacts/weekly-roles/

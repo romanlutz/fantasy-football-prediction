@@ -85,6 +85,8 @@ from ffpred.providers.espn import (
 )
 from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
+from ffpred.study.role_evidence import NEWS_FILE
+from ffpred.study.roles import run_roles
 from ffpred.study.run import LAST_COMPLETE, run_study
 from ffpred.training.data import TrainingData, load_training_data
 from ffpred.training.ebm import EbmConfig, train_ebm, write_ebm_explanations
@@ -158,17 +160,9 @@ INJURY_REPORT_POSITIONS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _parser(settings: Settings) -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="ffpred",
-        description="Build and evaluate fantasy-football prediction models",
-    )
-    parser.add_argument("-v", "--verbose", action="count", default=0)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    build = subparsers.add_parser("build-dataset", help="build QB train/test datasets")
-    _add_build_arguments(build, settings)
-
+def _study_parsers(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
     study = subparsers.add_parser(
         "weekly-study", help="rebuild the weekly player forecast study"
     )
@@ -179,6 +173,32 @@ def _parser(settings: Settings) -> argparse.ArgumentParser:
     study.add_argument(
         "--output-dir", type=Path, default=Path("artifacts/weekly-study")
     )
+    roles = subparsers.add_parser(
+        "weekly-roles", help="backtest pregame team-role selections"
+    )
+    roles.add_argument("--end-year", type=int, default=LAST_COMPLETE)
+    roles.add_argument(
+        "--output-dir", type=Path, default=Path("artifacts/weekly-roles")
+    )
+    roles.add_argument(
+        "--role-news",
+        type=Path,
+        default=NEWS_FILE,
+        help="timestamped game-specific announcement CSV",
+    )
+
+
+def _parser(settings: Settings) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="ffpred",
+        description="Build and evaluate fantasy-football prediction models",
+    )
+    parser.add_argument("-v", "--verbose", action="count", default=0)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    build = subparsers.add_parser("build-dataset", help="build QB train/test datasets")
+    _add_build_arguments(build, settings)
+    _study_parsers(subparsers)
 
     build_dst = subparsers.add_parser(
         "build-dst-dataset", help="build team D/ST train/test datasets"
@@ -1163,6 +1183,13 @@ def main(  # noqa: PLR0912
                 args.end_year,
                 provider or _provider(settings),
                 exact_svr=args.exact_svr,
+            )
+        elif args.command == "weekly-roles":
+            output = run_roles(
+                args.output_dir,
+                args.end_year,
+                provider or _provider(settings),
+                news_file=args.role_news,
             )
         elif args.command == "build-forecast":
             output = _run_forecast_build(

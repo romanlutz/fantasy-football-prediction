@@ -5,7 +5,103 @@ including the possibility of zero. The forecasts cover completed regular-season
 games through **2025**. They are not preseason projections; a lineup decision
 can use these forecasts downstream.
 
-## Results: twelve held-out seasons, 2014-2025
+## Primary experiment: team roles, one hour before kickoff
+
+We select one projected starting QB, two RBs, three WRs and one TE for each
+team playing that week. No players are assigned to a bye. The team's **first
+game of the season** is outside this historical replay, since it has no prior
+in-season roster. There are two distinct questions: did we select the right
+players, and how accurately did we predict points for the players we selected?
+A wrong pick, a late scratch and a legitimate zero all stay in the forecast
+scorecard.
+
+### Results, 2014-2025
+
+The backtest filled **41,419 of 41,426 slots** across 5,918 team-games.
+There was a QB pick for every team-game; five RB and two TE slots went
+unfilled. The league-wide caps select 23,640 player-games instead. These are
+different populations, not competing models scored on identical players.
+
+| Position | Picks | Correct role picks | Returning role-holders selected | Trailing-ten MAE | Linear SVR MAE | Boosting MAE |
+|---|---:|---:|---:|---:|---:|---:|
+| QB | 5,918 | 90.6% | 52 / 66 (78.8%) | 7.08 | 6.80 | **6.61** |
+| RB | 11,831 | 82.4% | 136 / 197 (69.0%) | 5.12 | **4.79** | 4.83 |
+| WR | 17,754 | 83.5% | 238 / 314 (75.8%) | 4.38 | **4.17** | 4.25 |
+| TE | 5,916 | 79.6% | 64 / 101 (63.4%) | 3.67 | **3.48** | 3.58 |
+
+MAE is in non-PPR fantasy points, with the paper-style defense features held
+fixed for the fitted models. Boosting also had the lowest RMSE at every
+position. Both fitted models beat the trailing average on MAE. The additional
+opponent-adjusted defense block changed pooled MAE by less than 0.01 point
+at every position for both models.
+
+**Injury returns:** we selected 490 of 678 documented returning role-holders
+(72.3%). Of the 188 misses, **135 were already in the candidate list** but
+ranked below the team cutoff; **53 never entered the list** at the relevant
+position. Both are selection errors; neither can be found by looking at point
+error only. Christian McCaffrey was correctly selected as San Francisco's RB1
+in 2024 Week 10 after his Saturday activation, despite being absent from the
+lagged roster. His activation and Joe Flacco's 2024 Week 9 starter announcement
+are hand-verified examples, not independent evidence of archive-wide accuracy.
+
+[Pooled selection audit](team-roles/selection-pooled.csv) ·
+[Selection by season](team-roles/selection-by-season.csv) ·
+[Pooled forecast scores for both cohorts](team-roles/scores-pooled.csv) ·
+[Forecast scores by season](team-roles/scores-by-season.csv) ·
+[Run manifest](team-roles/manifest.json)
+
+**What the selector could know.** The cutoff is the scheduled kickoff in US
+Eastern time minus 60 minutes, converted to UTC game by game. The initial pool
+uses the team's prior-game roster. A dated depth chart, timestamped full or
+limited practice report, or a sourced announcement can add a name absent from
+that roster. Practicing is evidence of a *possible* return, not confirmation.
+The selector excludes a known Out or inactive player, treats Questionable as
+eligible, and ranks doubtful players behind other eligible candidates barring
+an explicit starter announcement. It ranks an announced QB first, then prefers
+a current QB1 depth listing when available. Other roles are ranked by the mean
+of the player's trailing-three and trailing-ten workload averages: pass attempts
+for QBs, carries plus targets for RBs, targets for WRs and TEs. A documented
+missed game is not a zero in that workload history. A known game-specific
+opportunity limit caps the workload estimate. Depth rank then player ID break
+ties. Insufficient candidates leave a vacancy, not a retrospective substitution.
+
+**What is missing.** The archive is not a complete historical feed of official
+starters, activations or gameday inactives. Through 2024, depth charts have week
+labels, not publication times, so only the prior team-game's chart can be used.
+In 2025 the latest whole team depth snapshot no more than seven days old is
+eligible at the cutoff; a removed player is not carried forward from an older
+snapshot. Conversely, the 2025 injury release has no report modification time
+and is not used for that game's selection. For older injury reports we use the
+recorded modification time, not a guarantee we have every published revision.
+No status from the target game's final roster or box score is used to select.
+The [official announcement ledger](../../src/ffpred/study/role-news.csv)
+contains two verified historical examples, not systematic coverage.
+
+**How selection is scored.** The independent evaluation population is the
+schedule's recorded starting QB and the team's players with the most positive
+realized opportunities at each skill position, with everyone tied at the last
+slot credited. This measures realized workload, not which eleven players took
+the first snap. Precision counts correct picks divided by all picks. Return
+recall counts selected returning role-holders divided by **all** realized
+returning role-holders, including those never in the candidate pool. A marked
+return requires no player box in the previous scheduled team-game and either
+an injured-reserve roster code (`R01`) or an Out report with an injury field
+for that game. A bye alone does not count, and unreported injuries are not
+inferred. These outcome labels never enter selection for the same game.
+
+Rebuild with `uv run --locked ffpred weekly-roles --end-year 2025`.
+`artifacts/weekly-roles` contains the candidate list (including nonselections
+and evidence times), predictions, realized roles, and per-season and pooled
+scorecards. Use `--role-news PATH` to substitute a sourced game-specific CSV
+using the bundled schema. `starter` is QB-only; `activated` establishes
+eligibility, not a starting job; `inactive` rules a player out; `limited`
+requires a numerical `max_opportunities`. A late report is ignored. The
+previous league caps (24/36/36/24, ranked by prior ten-observation workload
+only) are a separate comparison. Both cohorts use the same fitted forecasts
+and broad-roster training history. Injury evidence changes *selection*, not
+the estimators' point-prediction features in this comparison.
+
+## Full-roster results: twelve held-out seasons, 2014-2025
 
 **Player history does most of the work.** On 94,361 forecasts for 2,422
 distinct players, linear SVR beats the trailing average on MAE at all four

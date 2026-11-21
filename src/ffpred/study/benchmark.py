@@ -25,7 +25,11 @@ BLOCKS = {
 
 
 def backtest(
-    panel: pl.DataFrame, test_years: range, *, exact_svr: bool = False
+    panel: pl.DataFrame,
+    test_years: range,
+    *,
+    exact_svr: bool = False,
+    forecast_panel: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """Fit on completed earlier seasons. All columns below predict the same rows."""
     frames = []
@@ -34,10 +38,15 @@ def backtest(
             for position in POSITIONS:
                 group = panel.filter(pl.col("position") == position)
                 train = group.filter(pl.col("season") < year)
-                test = group.filter(pl.col("season") == year)
+                test = (
+                    group
+                    if forecast_panel is None
+                    else forecast_panel.filter(pl.col("position") == position)
+                ).filter(pl.col("season") == year)
+                identity = ["team"] if forecast_panel is not None else []
                 target = train["points"].to_numpy()
                 forecast = test.select(
-                    *PLAYER_WEEK, "game_id", "position", "points"
+                    *PLAYER_WEEK, "game_id", *identity, "position", "points"
                 ).with_columns(
                     test["last10_points"]
                     .fill_null(float(np.mean(target)))
