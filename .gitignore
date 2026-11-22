@@ -15,3 +15,4 @@ train.npy
 *.parquet
 /artifacts/weekly-study/
 /artifacts/weekly-roles/
+/artifacts/weekly-methods/
