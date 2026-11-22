@@ -36,6 +36,10 @@ playing team one hour before kickoff, and audits returns from injury:
 uv run --locked ffpred weekly-roles --end-year 2025
 ```
 
+Add `--compare-models --output-dir artifacts/weekly-methods` for the matched
+paper-versus-modern model comparison, including neural nets, nonlinear SVR,
+additive boosting, weekly rankings and paired season-level uncertainty.
+
 To reproduce the full-roster comparison and original-paper reconciliation:
 
 ```console

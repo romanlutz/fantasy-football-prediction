@@ -35,6 +35,11 @@ position. Both fitted models beat the trailing average on MAE. The additional
 opponent-adjusted defense block changed pooled MAE by less than 0.01 point
 at every position for both models.
 
+The [matched comparison of the paper's models and modern alternatives](methods/README.md)
+keeps these same role selections and tests a wider set of estimators and losses.
+It also audits trades, zeros and injury-return coverage, and distinguishes
+ranking players from predicting their expected points.
+
 **Injury returns:** we selected 490 of 678 documented returning role-holders
 (72.3%). Of the 188 misses, **135 were already in the candidate list** but
 ranked below the team cutoff; **53 never entered the list** at the relevant
@@ -168,7 +173,7 @@ an end-of-season rating.
 | Players | Passers with at least five attempts **in the game being predicted**, subject to the original team-membership check | QB, RB (including FB/HB), WR and TE, selected from the **previous completed team-game**; no target-week opportunity requirement |
 | Target | QB passing and rushing, penalizing every fumble | All positions receive credit for the same scoring plays; only a **lost** fumble costs two points |
 | Features | 34 numeric features, including last-game and last-ten player and opposing-defense statistics | Player usage and scoring history; a controlled comparison with no defense, the paper-style defense history, and additional opponent-adjusted efficiency |
-| Methods | Linear/kernel support-vector regression, feature selection and a shallow neural net; one 2014 test | Trailing-ten baseline, linear SVR and histogram gradient boosting; one expanding training window per position and held-out season |
+| Methods | Linear/kernel support-vector regression, feature selection and a shallow neural net; one 2014 test | Trailing-ten, linear/nonlinear SVR, shallow neural nets, ridge, additive and tree boosting; one expanding training window per position and held-out season |
 
 The [paper](https://arxiv.org/abs/1505.06918) reported 6.238 QB mean absolute
 error (MAE) in 2014. The historical-style nflverse builder and all-feature

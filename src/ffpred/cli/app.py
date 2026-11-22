@@ -178,6 +178,11 @@ def _study_parsers(
     )
     roles.add_argument("--end-year", type=int, default=LAST_COMPLETE)
     roles.add_argument(
+        "--compare-models",
+        action="store_true",
+        help="compare historical and modern estimators on paired team roles",
+    )
+    roles.add_argument(
         "--output-dir", type=Path, default=Path("artifacts/weekly-roles")
     )
     roles.add_argument(
@@ -1190,6 +1195,7 @@ def main(  # noqa: PLR0912
                 args.end_year,
                 provider or _provider(settings),
                 news_file=args.role_news,
+                compare_models=args.compare_models,
             )
         elif args.command == "build-forecast":
             output = _run_forecast_build(

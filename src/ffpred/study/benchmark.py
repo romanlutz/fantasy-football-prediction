@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 import polars as pl
 from sklearn.ensemble import HistGradientBoostingRegressor
@@ -22,6 +24,20 @@ BLOCKS = {
     "paper": (*PLAYER_FEATURES, *PAPER),
     "adjusted": (*PLAYER_FEATURES, *PAPER, *ADJUSTED),
 }
+
+
+def histogram_booster(
+    loss: Literal["squared_error", "absolute_error"] = "squared_error",
+) -> HistGradientBoostingRegressor:
+    return HistGradientBoostingRegressor(
+        loss=loss,
+        max_iter=80,
+        max_leaf_nodes=15,
+        min_samples_leaf=30,
+        learning_rate=0.07,
+        early_stopping=False,
+        random_state=42,
+    )
 
 
 def backtest(
@@ -60,14 +76,7 @@ def backtest(
                             if exact_svr
                             else create_scalable_estimator()
                         ),
-                        "boost": HistGradientBoostingRegressor(
-                            max_iter=80,
-                            max_leaf_nodes=15,
-                            min_samples_leaf=30,
-                            learning_rate=0.07,
-                            early_stopping=False,
-                            random_state=42,
-                        ),
+                        "boost": histogram_booster(),
                     }
                     for name, model in models.items():
                         estimator = make_pipeline(

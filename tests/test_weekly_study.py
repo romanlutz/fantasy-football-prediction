@@ -14,6 +14,7 @@ from ffpred.providers.fakes import FakeProvider
 from ffpred.study.benchmark import BLOCKS, backtest
 from ffpred.study.bridge import read_gamecenter
 from ffpred.study.defense import ADJUSTED, defense_snapshots
+from ffpred.study.methods import CHALLENGERS, KEY, REFERENCE, compare_methods
 from ffpred.study.panel import (
     PLAYER_FEATURES,
     PLAYER_WEEK,
@@ -349,7 +350,7 @@ def test_roles_freeze_news_keep_returns_and_audit_misses(tmp_path: Path) -> None
         "2014_4_ARI_LV,LV,OAKRB,OAKRB,RB,limited,2014-09-27T12:00:00Z,https://example.org/3,0\n",
         encoding="utf-8",
     )
-    run_roles(tmp_path, 2014, p, news_file=csv)
+    run_roles(tmp_path, 2014, p, news_file=csv, compare_models=True)
     c = pl.col
     rows = pl.read_parquet(tmp_path / "candidates.parquet").filter(c("week") == 4)
     selected = rows.filter(c("team_role"))
@@ -370,6 +371,18 @@ def test_roles_freeze_news_keep_returns_and_audit_misses(tmp_path: Path) -> None
     preds = pl.read_parquet(tmp_path / "predictions.parquet")
     # A rostered game with no box is still scored, not excluded in hindsight.
     assert preds.filter(c("player_id") == "NEW")["points"].item() == 0
+    methods = pl.read_parquet(tmp_path / "method-predictions.parquet")
+    assert_frame_equal(
+        methods.select(*KEY, "points", *REFERENCE).sort(KEY),
+        preds.filter(c("team_role")).select(*KEY, "points", *REFERENCE).sort(KEY),
+    )
+    audit = pl.read_csv(tmp_path / "methods-role-audit.csv").filter(
+        (c("position") == "RB") & (c("model") == "ridge")
+    )
+    assert (
+        audit.filter(c("cohort") == "missed_previous_game_injured")["slots"].item() == 1
+    )
+    assert audit.filter(c("cohort") == "realized_return_role")["slots"].item() == 1
     selection = pl.read_csv(tmp_path / "selection-pooled.csv")
     assert (selection["selected"] <= selection["planned"]).all()
     assert selection.filter(c("position") == "RB")["correct_returns"].item() == 1
@@ -378,6 +391,48 @@ def test_roles_freeze_news_keep_returns_and_audit_misses(tmp_path: Path) -> None
     clocks = game_clocks(schedule_sides(p.schedules), p.schedules)
     with pytest.raises(DataAcquisitionError, match="Invalid timestamped"):
         official_news(clocks, invalid)
+
+
+def test_compared_methods_never_fit_the_holdout() -> None:
+    c = pl.col
+    p = provider()
+    sides = schedule_sides(p.schedules)
+    boxes = box_scores(p.player_stats)
+    panel = (
+        player_panel(candidates(sides, p.rosters_weekly, boxes), boxes)
+        .join(defense_snapshots(sides, p.team_stats), on=["game_id", "opponent"])
+        .filter(c("position") == "QB")
+        .with_columns(pl.lit(True).alias("team_role"))
+    )
+    test = panel.filter(c("season") == 2014)
+    ref = test.select(*KEY, "points", "team_role").with_columns(
+        pl.lit(0.0).alias(name) for name in REFERENCE
+    )
+    with pytest.raises(DataAcquisitionError, match="identical team-role"):
+        compare_methods(panel, test, ref.slice(1))
+    with pytest.raises(DataAcquisitionError, match="identical team-role"):
+        compare_methods(panel, test, ref.with_columns(c("points") + 10))
+    baseline = compare_methods(panel, test, ref)
+    changed = compare_methods(
+        panel.with_columns(
+            pl.when(c("season") == 2014)
+            .then(500)
+            .otherwise(c("points"))
+            .alias("points")
+        ),
+        test.with_columns(c("points") + 10),
+        ref.with_columns(c("points") + 10),
+    )
+    assert_frame_equal(
+        baseline["method-predictions.parquet"].select(CHALLENGERS),
+        changed["method-predictions.parquet"].select(CHALLENGERS),
+    )
+    assert baseline["methods-exact-rbf-2014.csv"]["model"].to_list() == [
+        "rbf_approx",
+        "rbf_exact",
+    ]
+    paired = baseline["methods-paired-mae.csv"].filter(c("model") == "ridge")
+    assert paired["low95"].item() == pytest.approx(paired["mae_delta"].item())
 
 
 def test_daily_depth_is_a_whole_snapshot_before_the_cutoff() -> None:

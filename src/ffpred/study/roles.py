@@ -14,6 +14,7 @@ from ffpred.providers.protocol import NflDataProvider
 from ffpred.providers.provenance import ProvenanceProvider
 from ffpred.study.benchmark import backtest, scorecard
 from ffpred.study.defense import defense_snapshots
+from ffpred.study.methods import compare_methods, role_error_slices
 from ffpred.study.panel import (
     PLAYER_WEEK,
     box_scores,
@@ -95,6 +96,7 @@ def run_roles(
     provider: NflDataProvider,
     *,
     news_file: Path = NEWS_FILE,
+    compare_models: bool = False,
 ) -> dict[str, object]:
     if not PAPER_YEAR <= end_year <= LAST_COMPLETE:
         raise ConfigurationError("Weekly role study end year must be in 2014..2025")
@@ -172,6 +174,15 @@ def run_roles(
         "predictions.parquet": preds,
         "realized-roles.parquet": outcomes,
     }
+    if compare_models:
+        files.update(
+            compare_methods(
+                base_panel.filter(c("season") >= TRAIN_START), forecast_input, preds
+            )
+        )
+        files["methods-role-audit.csv"] = role_error_slices(
+            files["method-predictions.parquet"], selections, outcomes, absences
+        )
     for by_year, suffix in ((True, "by-season"), (False, "pooled")):
         files[f"selection-{suffix}.csv"] = selection_scores(
             observed_games, selections, outcomes, by_year=by_year
