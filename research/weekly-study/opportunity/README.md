@@ -1,8 +1,9 @@
 # Who belongs on the opening board, and how many carries will they get?
 
 **Use dated affiliations for team-openers and recent carry shares for RB forecasts.**
-Affiliations recovered 301 correct opening role picks across 2014-2025. Carry
-shares helped on the *same* RBs in 11 of 12 seasons by RMSE, but reduced their
+Team roster revisions recovered 155 more correct opening role picks than the
+earlier directory-based board and eliminated all 65 observed wrong-team boxes.
+Carry shares helped on the *same* RBs in 11 of 12 seasons by RMSE, but reduced their
 average point error by only 0.014. Adding inside-five usage improved one
 touchdown model slightly, not the overall point forecast or starter decisions.
 These are different findings: picking the right player does not imply being
@@ -10,49 +11,57 @@ able to predict his points much more closely.
 
 ## Opening roles: did we pick the right people?
 
-Both boards filled 2,687 of 2,688 slots across 384 team-openers: one QB, two
+The repaired board filled all 2,688 slots across 384 team-openers: one QB, two
 RBs, three WRs and one TE per team. A correct QB is the actual starter. At the
 other positions, a correct pick is among the team's highest positive workloads
 (carries plus targets for RB, targets for WR/TE), including ties at the boundary.
 These are players to forecast, not yet the fantasy league's start/sit decisions.
 
-| Position | Opening picks | Correct: previous board | Correct: dated board |
+| Position | Correct: no directories | Correct: directories only | Correct: with club rosters |
 |---|---:|---:|---:|
-| QB | 384 | 281 (73.2%) | 308 (80.2%) |
-| RB | 768 | 437 (56.9%) | 524 (68.2%) |
-| WR | 1,151 | 692 (60.1%) | 829 (72.0%) |
-| TE | 384 | 214 (55.7%) | 264 (68.8%) |
-| All | 2,687 | 1,624 (60.4%) | 1,925 (71.6%) |
+| QB | 281 (73.2%) | 308 (80.2%) | 322 (83.9%) |
+| RB | 437 (56.9%) | 524 (68.2%) | 583 (75.9%) |
+| WR | 692 (60.1%) | 829 (72.0%) | 892 (77.4%) |
+| TE | 214 (55.7%) | 264 (68.8%) | 283 (73.7%) |
+| All | 1,624 / 2,687 (60.4%) | 1,925 / 2,687 (71.6%) | 2,080 / 2,688 (77.4%) |
 
-Of the 576 opening picks replaced, only 46 were correct; 347 of their
-replacements were correct. For example, the dated board correctly picked
-Derek Carr for New Orleans and David Montgomery for Detroit in their 2023
-openers. Picks with a statistical box for a **different team fell from 272 to
-65**. A missing box is unverified, not a successful team match: there were 599
-missing boxes before and 461 after. No non-opening role pick changed.
+**The two missing seasons:** 2015 improved from 129 to 168 correct opening
+picks, and wrong-team boxes fell from 31 to zero. For 2018 the changes were
+121 to 172 correct and 28 to zero; the previously empty WR slot was filled.
+Across all 12 test years, wrong-team boxes fell from **272 to 65 to zero**
+across the three boards. No non-opening pick changed. [Before/after by season
+and position](roster-repair.csv) · [Pooled results](selection.csv)
 
-The archived directories cover **10 of 12 test seasons**, plus 2013 training.
-On the covered openers alone, correct picks rose from 1,374 to 1,675 of 2,240;
-wrong-team boxes fell from 213 to 6. Nine covered years gained correct picks;
-2025, which already had dated depth charts, tied. For **2015 and 2018** we
-found no sufficiently recent edition: all 447 picks are unchanged, including
-59 of the remaining 65 wrong-team boxes. [By season](opening-annual.csv) ·
-[Pooled and non-opening controls](selection.csv)
+**Zero observed mismatches is not perfect verification.** Of 2,688 repaired
+opening picks, 2,377 had a box for the predicted team. Positive snap counts
+verified another 95 who had no box. That leaves **216 unverified**, not 216
+wrong, confirmed inactive, or injured. No boxless opener with an unambiguous
+positive snap played for another team; two had done so on the directory-only
+board. After openers, **10** wrong-team boxes and **two** additional wrong-team
+snap-only records remain. Actual snaps and box teams are audit labels only.
+[Independent affiliation audit](affiliation-audit.csv)
 
-**What the sources establish.** We use pinned, pre-lock editions of `nflgame`
-player files and the DynastyProcess player directory, not modern downloads
-assumed to describe the past. These are not official 53-man rosters. A commit
-time is evidence the file was available, not the date the player signed.
-Only editions within 30 days before the first opening lock qualify. We use
-GSIS IDs, team, position, explicit active/reserve statuses where available,
-and rookie draft year, not fantasy rankings. We discard ambiguous ID listings.
-A crosswalk alone can retain retirees, so new candidates need an existing
-candidacy, a box in the preceding two seasons, a current rookie flag or
-explicit status. A missing listing is **not** a cut. Explicit free-agent or
-unavailable evidence can supersede a stale affiliation, and a later dated
-trade, depth chart or applicable report can supersede the directory. An
-affiliation confirms a team, not the starting role or health of a player.
-[Archived editions, dates and SHA-256 hashes](editions.csv)
+**Sources and cutoff.** We took the last publicly timestamped revision of each
+franchise's Wikipedia roster template at or before the league lock, for all
+32 clubs in 2013 training and 2014-2025 evaluation. All 416 snapshots were
+within 81 hours of lock. They are community-maintained, not official game-day
+inactives or depth charts. We use only names, positions, and active, reserve
+or practice-squad listings. Each [revision](club-revisions.csv) links to its
+contributors' version and records its UTC edit time, content hash and linkage
+counts. The [extractor](extract_club_rosters.py) reproduces the bundled facts
+from immutable revision IDs, not today's rendered templates. No player prose
+or depth ordering is used.
+
+We linked 9,220 of 9,469 listings to GSIS IDs using exact normalized names.
+For namesakes we use only prior-season rosters and the draft, never the team
+for which someone later played. Unresolved names and conflicting club records
+are not guessed. Earlier [player directories](editions.csv) remain fallback
+evidence. Explicit reserve or practice-squad status is distinguished from a
+missing listing; absence alone never means released. A newer dated move,
+applicable report or depth chart can supersede a roster. Confirmed affiliation
+matters for filling slots, but is neither a starter announcement nor evidence
+of health. Use `--directory-only` to reproduce the
+[previous study](https://github.com/romanlutz/fantasy-football-prediction/tree/3ce61ee/research/weekly-study/opportunity).
 
 ## RB forecasts: do workload features help for the same player?
 
@@ -87,17 +96,18 @@ carry features covered 84.1% of outcomes at 15.03 points mean width, versus
 narrower player ranges. [Scores and bias](scores.csv) · [By season](annual.csv)
 · [Opening vs. later games](opener-scores.csv)
 
-**Combined decision.** On the *dated* board, adding carry features reduced
-point RMSE from 6.538 to **6.522**, MAE from 4.936 to **4.922**, and weekly
-top-24 RB regret from **103.17 to 102.47 points** (13.40 actual top-24 picks).
-Adding the goal-line block raised RMSE to 6.527 and regret to 102.79. Regret
+**Combined decision.** On the *repaired* board, adding carry features reduced
+point RMSE from 6.537 to **6.521**, MAE from 4.936 to **4.924**, and weekly
+top-24 RB regret from **102.27 to 101.62 points** (13.44 actual top-24 picks).
+Adding the goal-line block raised RMSE to 6.527 and regret to 101.81. Regret
 is the total for all 24 RB slots in a 12-team league, not a single manager's
 loss. Pool changes and model changes should not both be credited to carry
-shares. For example, in **Week 1**, even perfect ranking of the old board
-could score only 321.49 RB points on average; on the dated board that ceiling
-was 329.02, against an unchanged league-wide best of 365.96. With baseline
-features the actual ensemble picks scored 211.98 versus 222.88. Opening RB
-MAE nevertheless *rose* from 4.79 to 4.84 on the changed population.
+shares. For example, in **Week 1**, perfect ranking of the directory-only
+board could score 329.02 RB points on average; on the repaired board that
+ceiling was 338.73. With baseline features the actual ensemble picks scored
+222.88 versus 231.49. With carry features, they scored 216.54 versus 231.65.
+These are outcomes for *different selections*, not improvements measured
+on identical players.
 [Top-24 decisions](starters.csv) · [Annual decisions](starter-annual.csv)
 
 ## Workload data and reproduction
@@ -123,7 +133,8 @@ include other non-ruled-out RB candidates' summed historical carry shares;
 this measures competition and need not sum to one. Inside-five run and target
 shares each shrink toward overall carry share with three prior opportunities.
 Missing history has its own indicator and train-only imputation, not invented
-rookie yardage. Only five selected RB player-weeks lacked player history;
+rookie yardage. Five selected RB player-weeks on the original board and 11
+on the repaired board lacked player history;
 all had team history. [History coverage](history-coverage.csv)
 
 ```console
@@ -141,6 +152,7 @@ reliably from low usage. No 2026 games or preseason performance were used.
 volume among available rushers with shares that add up. Test how a teammate's
 confirmed absence or return redistributes carries, rather than assuming
 everyone keeps their past share. Keep these exact RB rows and top-24 metric
-as controls, and report injury-return weeks separately. For opener selection,
-dated cuts, activations and depth charts for the two uncovered years are a
-more targeted investment than changing model families.
+as controls, and report injury-return weeks separately. The remaining
+affiliation work is in-season: distinguish transactions known by the weekly
+lock from moves that really happened later. A separate historical injury-exit
+ledger would be needed to verify mid-game injuries.

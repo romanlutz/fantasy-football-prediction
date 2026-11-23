@@ -145,7 +145,11 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
                 "doubtful",
                 "opening_depth",
                 "current_qb1",
-                *(["edition_confirmed"] if editions is not None else []),
+                *(
+                    ["club_confirmed", "edition_confirmed"]
+                    if editions is not None
+                    else []
+                ),
                 "expected_usage",
                 "depth_rank",
                 "player_id",
@@ -155,7 +159,7 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
                 False,
                 False,
                 True,
-                *([True] if editions is not None else []),
+                *([True, True] if editions is not None else []),
                 True,
                 False,
                 False,

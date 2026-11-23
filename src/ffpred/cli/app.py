@@ -187,6 +187,11 @@ def _study_parsers(
     )
     opportunity.add_argument("--end-year", type=int, default=LAST_COMPLETE)
     opportunity.add_argument(
+        "--directory-only",
+        action="store_true",
+        help="replay the earlier opener board without revision-pinned club rosters",
+    )
+    opportunity.add_argument(
         "--output-dir", type=Path, default=Path("artifacts/weekly-opportunity")
     )
     roles = subparsers.add_parser(
@@ -1211,7 +1216,10 @@ def main(  # noqa: PLR0912
             )
         elif args.command == "weekly-opportunity":
             output = run_opportunity(
-                args.output_dir, args.end_year, provider or _provider(settings)
+                args.output_dir,
+                args.end_year,
+                provider or _provider(settings),
+                directory_only=args.directory_only,
             )
         elif args.command == "weekly-roles":
             output = run_roles(

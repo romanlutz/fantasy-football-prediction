@@ -52,6 +52,10 @@
   },
   "news_sha256": "3bcf6d7e0645c49b4915be9249398ad549ce13d0c98dfe9ab9d1594b15d71e07",
   "editions_index_sha256": "aba1faa7aec28e906515bbc67cafcbc3cca80bb554bfd83942924e05f8ba85d4",
+  "club_rosters": {
+    "index_sha256": "c592376fffd6496a83501176a709076d5d953c1da9cf9b8c84e6cf40359518c6",
+    "facts_sha256": "4282d3df3b4e3e0844199cc78afd6ea9913918af1f3bb35300bbda09e7a2ee98"
+  },
   "outputs": {
     "original-baseline.parquet": {
       "rows": 12602,
@@ -67,23 +71,35 @@
     },
     "dated-baseline.parquet": {
       "rows": 12602,
-      "sha256": "8dc8c7efab623a575c473b8b42a42773dc866f5fe43c6222dde4466236a4b4a9"
+      "sha256": "4e2400cb5506aba0af336bfe49014aa5f219ec526028d7478e2a5b3f19d357cc"
     },
     "dated-carry.parquet": {
       "rows": 12602,
-      "sha256": "0fe66dcef8cc3344d92fce56cb8b0520d0c933a30f0fd8d2d9244397a59227e6"
+      "sha256": "c19756f806861188cd6e42407b1a72b72a8342956631afa3115ca52d864b6c1c"
     },
     "dated-carry_goal.parquet": {
       "rows": 12602,
-      "sha256": "64210fb39d39b885fd583bd8668fce8a1a6175543c12943d07d99190995fca3d"
+      "sha256": "19abec884c7d914ee3d907b20da8e63040f4397af7bb62d8e72a200104bf7b47"
     },
     "selection.csv": {
       "rows": 16,
-      "sha256": "0cde600e74a044c8386627f8088f77fe20b56b38c0e6034cbb1ce1ed00027b79"
+      "sha256": "9384c2b35ea6ab44975a0ddbcbddd6553c292eb9cfd4bb7124a35b78e89d3a32"
     },
     "opening-annual.csv": {
       "rows": 96,
-      "sha256": "45add13bbd43d6c9cb8eaf898a3cf71fe222a269efe3bd9f918954252afee314"
+      "sha256": "da02dd0799227ec82d7e7b63b168c558f3ff15c6c909bf7e2a86c6cd69d48696"
+    },
+    "club-revisions.csv": {
+      "rows": 416,
+      "sha256": "357b09c6cc3734cf7a202bf0b22226f3049d932f3fb4bdc91748d16c6bb2dca7"
+    },
+    "roster-repair.csv": {
+      "rows": 96,
+      "sha256": "cffbd1683bf025db8717c2ebfc395133bc29728cf30ff40d732286554183c8c2"
+    },
+    "affiliation-audit.csv": {
+      "rows": 170,
+      "sha256": "1b6a1c6fb9476603de923100a7abef395cd87d8df0aa00b7e43ea02a57d36cb2"
     },
     "editions.csv": {
       "rows": 11,
@@ -95,27 +111,27 @@
     },
     "history-coverage.csv": {
       "rows": 48,
-      "sha256": "85a3bc3d5384cc5b5a49fa3ec0e7525b84b2345264a29ce1fdc39c7adf36f99c"
+      "sha256": "11582ba759349e28be0193defba132ae6373c64ce95901695ca3ecbedb08128e"
     },
     "scores.csv": {
       "rows": 78,
-      "sha256": "d8b08851f87650732379caf2d656c9c00c8b9c27a0b1164b1f82648eace21d4c"
+      "sha256": "c98829c1a7c16315c41b3ca25b9bee6bf0bed4d1acff806db193f3df57dc2cae"
     },
     "annual.csv": {
       "rows": 936,
-      "sha256": "b34529df92ea07126b3a215031ad90117808a1b6b002c7afc6dd7e28bad3fdb7"
+      "sha256": "24c1ea40eb9735da2c9c59d9e79409dfeca29744f6fde155caf5011c80407280"
     },
     "opener-scores.csv": {
       "rows": 156,
-      "sha256": "62019a4636136c494029a0286510a99b2f9d785c47759eca3c719d9532edd190"
+      "sha256": "fc4a52cc118b9f49eb2d7bd56df733ff1f1668df73f939dc0ebd8b3ee3509978"
     },
     "starters.csv": {
       "rows": 84,
-      "sha256": "8d8a1f017675919f29ad17f6f2bab2b8bf3cbfdde92ebe378b82e810c5c858dd"
+      "sha256": "0420adc5a304ba5535c2eff475ea7ad8c37bca294f074eba8c7bdf41a865bdd7"
     },
     "starter-annual.csv": {
       "rows": 1008,
-      "sha256": "70d1facf705e2b151dcecda3298163ae41f507f1dfbc2ff3c43ada0f3a5f75fb"
+      "sha256": "b108069a9409784befec9406f917ed18f7a8a98197bc71fc760e14d66ac683ce"
     }
   }
 }

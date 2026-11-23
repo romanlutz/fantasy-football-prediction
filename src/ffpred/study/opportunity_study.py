@@ -11,6 +11,7 @@ from ffpred.datasets.io import file_sha256
 from ffpred.errors import ConfigurationError, DataAcquisitionError
 from ffpred.providers.protocol import NflDataProvider
 from ffpred.providers.provenance import ProvenanceProvider, fingerprint_frame
+from ffpred.study.club_rosters import FACTS, REVISIONS, club_editions
 from ffpred.study.matchup_eval import starter_scores
 from ffpred.study.matchup_models import NAMES, project
 from ffpred.study.matchup_pool import id_map
@@ -24,7 +25,7 @@ from ffpred.study.opportunities import (
     include_snap_zeros,
     rb_opportunities,
 )
-from ffpred.study.panel import PLAYER_WEEK
+from ffpred.study.panel import PLAYER_WEEK, TEAM_CODES
 from ffpred.study.role_evidence import ENTRY, NEWS_FILE, SIDE
 from ffpred.study.run import HISTORY_START, LAST_COMPLETE, PAPER_YEAR
 
@@ -47,7 +48,10 @@ PBP_COLUMNS = (
 
 
 def opportunity_sources(
-    provider: NflDataProvider, years: tuple[int, ...], snaps: pl.DataFrame
+    provider: NflDataProvider,
+    years: tuple[int, ...],
+    snaps: pl.DataFrame,
+    ids: pl.DataFrame,
 ) -> tuple[pl.DataFrame, pl.DataFrame, dict[str, str]]:
     teams: list[pl.DataFrame] = []
     players: list[pl.DataFrame] = []
@@ -59,11 +63,47 @@ def opportunity_sources(
         teams.append(team)
         players.append(player)
     team = pl.concat(teams).sort("season", "week", "team")
-    ids = id_map(provider.load_players(), provider.load_rosters_weekly(years))
     player = include_snap_zeros(pl.concat(players), team, snaps, ids).sort(
         "season", "week", "team", "player_id"
     )
     return team, player, hashes
+
+
+def affiliation_audit(
+    board: pl.DataFrame, snaps: pl.DataFrame, ids: pl.DataFrame
+) -> pl.DataFrame:
+    observed = (
+        snaps.filter(
+            (c("game_type") == "REG")
+            & (pl.sum_horizontal("offense_snaps", "defense_snaps", "st_snaps") > 0)
+        )
+        .join(ids, left_on="pfr_player_id", right_on="pfr_id")
+        .select(*PLAYER_WEEK, c("team").replace(TEAM_CODES).alias("snap_team"))
+        .unique()
+        .group_by(PLAYER_WEEK)
+        .agg(c("snap_team").first(), pl.len().alias("snap_teams"))
+    )
+    # Box and snap teams are evaluation labels, never sources for the picks.
+    category = (
+        pl.when((c("snap_teams") > 1) | (c("actual_team") != c("snap_team")))
+        .then(pl.lit("conflicting_records"))
+        .when(c("actual_team") == c("team"))
+        .then(pl.lit("same_box"))
+        .when(c("actual_team").is_not_null())
+        .then(pl.lit("other_box"))
+        .when(c("snap_team") == c("team"))
+        .then(pl.lit("same_snap_only"))
+        .when(c("snap_team").is_not_null())
+        .then(pl.lit("other_snap_only"))
+        .otherwise(pl.lit("unverified"))
+    )
+    return (
+        board.filter(c("team_role") & (c("season") >= PAPER_YEAR))
+        .join(observed, on=PLAYER_WEEK, how="left", validate="1:1")
+        .with_columns(category.alias("evidence"))
+        .group_by("season", "opener", "evidence")
+        .len("picks")
+    )
 
 
 def roster_tables(
@@ -149,8 +189,40 @@ def rb_tables(pred: pl.DataFrame, oracle: pl.DataFrame) -> dict[str, pl.DataFram
     }
 
 
+def _repair_tables(
+    earlier: dict[str, pl.DataFrame],
+    repaired: dict[str, pl.DataFrame],
+    directory_years: list[int],
+    snaps: pl.DataFrame,
+    ids: pl.DataFrame,
+) -> dict[str, pl.DataFrame]:
+    comparison = roster_tables(
+        {"original": earlier, "dated": repaired}, directory_years
+    )
+    boards = {"directory_only": earlier, "repaired": repaired}
+    return {
+        "roster-repair": comparison["opening-annual"]
+        .rename({"covered": "had_directory"})
+        .with_columns(
+            c("board").replace({"original": "directory_only", "dated": "repaired"})
+        ),
+        "affiliation-audit": pl.concat(
+            [
+                affiliation_audit(v["board"], snaps, ids).with_columns(
+                    pl.lit(k).alias("board")
+                )
+                for k, v in boards.items()
+            ]
+        ).sort("season", "opener", "board", "evidence"),
+    }
+
+
 def run_opportunity(
-    output: Path, end_year: int, provider: NflDataProvider
+    output: Path,
+    end_year: int,
+    provider: NflDataProvider,
+    *,
+    directory_only: bool = False,
 ) -> dict[str, object]:
     if not PAPER_YEAR <= end_year <= LAST_COMPLETE:
         raise ConfigurationError("Opportunity holdouts must end in 2014..2025")
@@ -158,15 +230,43 @@ def run_opportunity(
     source = ProvenanceProvider(provider)
     raw = matchup_sources(end_year)
     editions, meta = opening_editions(end_year)
+    years = tuple(range(HISTORY_START, end_year + 1))
+    directory = editions
+    players_index = provider.load_players()
+    roster_index = provider.load_rosters_weekly(years)
+    ids = id_map(players_index, roster_index)
+    club_meta = None
+    if not directory_only:
+        club, club_meta = club_editions(
+            end_year,
+            players_index,
+            roster_index,
+            raw["draft"],
+        )
+        previous = editions.with_columns(pl.lit(False).alias("club_roster"))
+        editions = pl.concat(
+            [previous, club.select(previous.columns)], how="vertical_relaxed"
+        )
     data = {
         label: prepare_board(source, end_year, **raw, editions=ed)
         for label, ed in (("original", None), ("dated", editions))
     }
-    years = tuple(range(HISTORY_START, end_year + 1))
-    teams, players, pbp_hashes = opportunity_sources(provider, years, raw["snaps"])
+    teams, players, pbp_hashes = opportunity_sources(provider, years, raw["snaps"], ids)
     if data["original"]["sides"].join(teams, on=SIDE, how="anti").height:
         raise DataAcquisitionError("Missing play-by-play for a completed team-game")
-    tables = roster_tables(data, meta["season"].to_list())
+    tables = roster_tables(data, editions["season"].unique().to_list())
+    if club_meta is not None:
+        tables["club-revisions"] = club_meta
+        earlier = prepare_board(source, end_year, **raw, editions=directory)
+        tables.update(
+            _repair_tables(
+                earlier,
+                data["dated"],
+                directory["season"].unique().to_list(),
+                raw["snaps"],
+                ids,
+            )
+        )
     tables["editions"] = meta
     tables["play-coverage"] = (
         teams.group_by("season")
@@ -263,6 +363,12 @@ def run_opportunity(
         },
         "news_sha256": file_sha256(NEWS_FILE),
         "editions_index_sha256": file_sha256(SOURCES),
+        "club_rosters": None
+        if directory_only
+        else {
+            "index_sha256": file_sha256(REVISIONS),
+            "facts_sha256": file_sha256(FACTS),
+        },
         "outputs": outputs,
     }
     (output / "manifest.json").write_text(

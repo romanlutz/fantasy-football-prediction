@@ -47,6 +47,8 @@ It includes team openers and freezes the entire league before the first game of 
 `uv run --locked ffpred weekly-opportunity --end-year 2025` runs the
 [dated opening roster and RB workload comparison](research/weekly-study/opportunity/README.md).
 It separates changes in who is selected from carry-share and goal-line forecasts on identical players.
+The default now uses pre-lock club roster revisions for every 2014-2025
+opener. Pass `--directory-only` to reproduce the earlier board.
 
 To reproduce the full-roster comparison and original-paper reconciliation:
 

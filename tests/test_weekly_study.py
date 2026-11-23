@@ -11,7 +11,7 @@ from polars.testing import assert_frame_equal
 
 from ffpred.errors import ConfigurationError, DataAcquisitionError
 from ffpred.providers.fakes import FakeProvider
-from ffpred.study import matchups, opening, opportunity_study
+from ffpred.study import club_rosters, matchups, opening, opportunity_study
 from ffpred.study.benchmark import BLOCKS, backtest
 from ffpred.study.bridge import read_gamecenter
 from ffpred.study.defense import ADJUSTED, defense_snapshots
@@ -688,6 +688,29 @@ def test_opener_evidence_is_dated_and_absence_is_not_a_release() -> None:
     boxes = pl.DataFrame({"season": [2024], "player_id": ["n"]})
     ev = opening_evidence(clocks, seeds, boxes, vintage)
     assert set(ev["player_id"]) == set("abcy")
+    directory = vintage.with_columns(
+        pl.lit("RB").alias("position"),
+        c("player_id").alias("name"),
+        pl.lit(False).alias("club_roster"),
+    )
+    revision = directory.filter(c("player_id") == "a").with_columns(
+        pl.lit(True).alias("club_roster"),
+        pl.lit("SEA").alias("team"),
+        pl.lit(lock - timedelta(hours=2)).alias("edition_at"),
+    )
+    for other, time, expected in [
+        ("SF", lock + timedelta(seconds=1), "SEA"),
+        ("SEA", lock, "SEA"),
+        ("SF", lock, "SF"),
+    ]:
+        conflicting = revision.with_columns(
+            pl.lit(time).alias("edition_at"), pl.lit(other).alias("team")
+        )
+        chosen = opening_evidence(
+            clocks, seeds, boxes, pl.concat([directory, revision, conflicting])
+        ).filter(c("player_id") == "a")
+        assert chosen["team"].to_list() == [expected]
+        assert chosen["club_roster"].item() == (expected == "SEA")
     pool = (
         pl.concat(
             [
@@ -801,7 +824,46 @@ def test_opportunity_study_replays_pinned_editions_and_paired_rb_rows(
     for year in range(2009, 2015):
         p.pbp_by_season[year] = plays.filter(c("season") == year)
     out = tmp_path / "opportunity"
+    roster_index, facts = tmp_path / "revisions.csv", tmp_path / "listings.csv"
+    pl.DataFrame(
+        {
+            "season": [2014],
+            "team": ["ARI"],
+            "stamp": ["2014-08-31T00:00:00Z"],
+            "revision": [1],
+        }
+    ).write_csv(roster_index)
+    name = p.rosters_weekly.filter(c("position") == "RB")["full_name"][0]
+    pl.DataFrame(
+        {
+            "revision": [1, 1],
+            "name": [name, "No matching identity"],
+            "section": ["active", "reserve"],
+            "position": ["RB", "TE"],
+        }
+    ).write_csv(facts)
+    for module in (club_rosters, opportunity_study):
+        monkeypatch.setattr(module, "REVISIONS", roster_index)
+        monkeypatch.setattr(module, "FACTS", facts)
+    p.players = p.players.join(
+        p.rosters_weekly.select("gsis_id", c("full_name").alias("display_name")).unique(
+            "gsis_id"
+        ),
+        on="gsis_id",
+    ).with_columns(
+        pl.lit(None, dtype=pl.String).alias(k)
+        for k in (
+            "first_name",
+            "last_name",
+            "football_name",
+            "common_first_name",
+            "suffix",
+        )
+    )
     opportunity_study.run_opportunity(out, 2014, p)
+    assert pl.read_csv(out / "club-revisions.csv").select("listings", "linked").row(
+        0
+    ) == (2, 1)
     baseline = pl.read_parquet(out / "original-baseline.parquet")
     added = pl.read_parquet(out / "original-carry_goal.parquet")
     assert_frame_equal(
@@ -814,6 +876,56 @@ def test_opportunity_study_replays_pinned_editions_and_paired_rb_rows(
         "rushing_tds",
         "rushing_yards",
     }
+
+
+def test_club_namesakes_cannot_be_resolved_from_the_target_game(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c = pl.col
+    revisions, facts = tmp_path / "revisions.csv", tmp_path / "facts.csv"
+    pl.DataFrame(
+        {
+            "revision": [10],
+            "stamp": ["2018-09-05T00:00:00Z"],
+            "season": [2018],
+            "team": ["SEA"],
+        }
+    ).write_csv(revisions)
+    pl.DataFrame(
+        {
+            "revision": [10],
+            "position": ["RB"],
+            "name": ["Same Name"],
+            "section": ["active"],
+        }
+    ).write_csv(facts)
+    monkeypatch.setattr(club_rosters, "REVISIONS", revisions)
+    monkeypatch.setattr(club_rosters, "FACTS", facts)
+    players = pl.DataFrame(
+        {"gsis_id": ["a", "b"], "display_name": ["Same Name"] * 2}
+    ).with_columns(
+        pl.lit(None, dtype=pl.String).alias(k)
+        for k in (
+            "first_name",
+            "common_first_name",
+            "football_name",
+            "suffix",
+            "last_name",
+        )
+    )
+    current = pl.DataFrame(
+        {"gsis_id": ["a"], "season": [2018], "position": ["RB"], "game_type": ["REG"]}
+    )
+    draft = current.drop("game_type").clear()
+    unresolved, meta = club_rosters.club_editions(2018, players, current, draft)
+    assert unresolved.is_empty() and meta["linked"].item() == 0
+    prior = current.with_columns(
+        pl.lit("b").alias("gsis_id"), (c("season") - 1).alias("season")
+    )
+    evidence, _ = club_rosters.club_editions(
+        2018, players, pl.concat([current, prior]), draft
+    )
+    assert evidence["player_id"].to_list() == ["b"]
 
 
 def test_rb_opportunities_use_prior_full_offense_and_real_zeros() -> None:

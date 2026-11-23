@@ -109,6 +109,19 @@ def opening_evidence(
         (c("edition_at") <= c("cutoff"))
         & (c("edition_at") >= c("cutoff") - pl.duration(days=30))
     )
+    if "club_roster" in allowed.columns:
+        # A recently edited team page is not proof that its entry supersedes
+        # a second club's contradictory entry. Ignore such revision evidence.
+        keys = ["season", "player_id"]
+        club = allowed.filter(c("club_roster"))
+        club = club.filter(
+            pl.struct("team", "position", "listed").n_unique().over(keys) == 1
+        )
+        allowed = (
+            pl.concat([allowed.filter(~c("club_roster")), club])
+            .sort(["edition_at", "club_roster", "name"], descending=[True, True, False])
+            .unique(keys, keep="first", maintain_order=True)
+        )
     # A fantasy crosswalk can retain retired players. Only admit a league listing
     # with pre-existing candidacy, a recent box, a rookie flag or explicit ACT.
     known = (
@@ -144,7 +157,14 @@ def apply_editions(
     reports: pl.DataFrame,
 ) -> pl.DataFrame:
     ev = evidence.select(
-        "season", "player_id", c("team").alias("edition_team"), "edition_at", "listed"
+        "season",
+        "player_id",
+        c("team").alias("edition_team"),
+        "edition_at",
+        "listed",
+        (
+            c("club_roster") if "club_roster" in evidence.columns else pl.lit(False)
+        ).alias("club_roster"),
     )
     moves = transfers.select("player_id", "move_at").sort("move_at")
     rows = (
@@ -177,6 +197,9 @@ def apply_editions(
     return (
         rows.filter(~fresh | sanctioned)
         .with_columns(
+            (c("opener") & sanctioned & c("club_roster"))
+            .fill_null(False)
+            .alias("club_confirmed"),
             (c("opener") & sanctioned).fill_null(False).alias("edition_confirmed"),
             pl.when(c("opener") & sanctioned)
             .then(pl.max_horizontal("identity_at", "edition_at"))
