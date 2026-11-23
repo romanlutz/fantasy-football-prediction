@@ -85,6 +85,7 @@ from ffpred.providers.espn import (
 )
 from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
+from ffpred.study.matchups import run_matchups
 from ffpred.study.role_evidence import NEWS_FILE
 from ffpred.study.roles import run_roles
 from ffpred.study.run import LAST_COMPLETE, run_study
@@ -172,6 +173,13 @@ def _study_parsers(
     )
     study.add_argument(
         "--output-dir", type=Path, default=Path("artifacts/weekly-study")
+    )
+    matchups = subparsers.add_parser(
+        "weekly-matchups", help="backtest matchup points, intervals and league starters"
+    )
+    matchups.add_argument("--end-year", type=int, default=LAST_COMPLETE)
+    matchups.add_argument(
+        "--output-dir", type=Path, default=Path("artifacts/weekly-matchups")
     )
     roles = subparsers.add_parser(
         "weekly-roles", help="backtest pregame team-role selections"
@@ -1188,6 +1196,10 @@ def main(  # noqa: PLR0912
                 args.end_year,
                 provider or _provider(settings),
                 exact_svr=args.exact_svr,
+            )
+        elif args.command == "weekly-matchups":
+            output = run_matchups(
+                args.output_dir, args.end_year, provider or _provider(settings)
             )
         elif args.command == "weekly-roles":
             output = run_roles(

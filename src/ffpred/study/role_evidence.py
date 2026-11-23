@@ -21,7 +21,9 @@ def position(column: str) -> pl.Expr:
     return pl.col(column).replace({"HB": "RB", "FB": "RB"}).alias("position")
 
 
-def game_clocks(sides: pl.DataFrame, schedule: pl.DataFrame) -> pl.DataFrame:
+def game_clocks(
+    sides: pl.DataFrame, schedule: pl.DataFrame, *, include_openers: bool = False
+) -> pl.DataFrame:
     c = pl.col
     kickoff = (
         pl.concat_str("gameday", "gametime", separator=" ")
@@ -36,11 +38,10 @@ def game_clocks(sides: pl.DataFrame, schedule: pl.DataFrame) -> pl.DataFrame:
     )
     if clocks.height != sides.height or clocks["cutoff"].null_count():
         raise DataAcquisitionError("Missing scheduled kickoff for a completed game")
-    return (
-        clocks.sort("season", "team", "week")
-        .with_columns(c("week").shift().over("season", "team").alias("roster_week"))
-        .drop_nulls("roster_week")
+    clocks = clocks.sort("season", "team", "week").with_columns(
+        c("week").shift().over("season", "team").alias("roster_week")
     )
+    return clocks if include_openers else clocks.drop_nulls("roster_week")
 
 
 def depth_evidence(

@@ -2,7 +2,7 @@ import gzip
 import io
 import json
 import tarfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import polars as pl
@@ -11,15 +11,20 @@ from polars.testing import assert_frame_equal
 
 from ffpred.errors import ConfigurationError, DataAcquisitionError
 from ffpred.providers.fakes import FakeProvider
+from ffpred.study import matchups
 from ffpred.study.benchmark import BLOCKS, backtest
 from ffpred.study.bridge import read_gamecenter
 from ffpred.study.defense import ADJUSTED, defense_snapshots
+from ffpred.study.matchup_eval import K, starter_scores
+from ffpred.study.matchup_models import NAMES, project
+from ffpred.study.matchup_pool import player_transfers, resolve_teams
 from ffpred.study.methods import CHALLENGERS, KEY, REFERENCE, compare_methods
 from ffpred.study.panel import (
     PLAYER_FEATURES,
     PLAYER_WEEK,
     POSITIONS,
     SCORING,
+    WEIGHTS,
     box_scores,
     candidates,
     player_panel,
@@ -463,3 +468,175 @@ def test_daily_depth_is_a_whole_snapshot_before_the_cutoff() -> None:
     assert depth_evidence(clocks, p.depth_charts, depth)["player_id"].to_list() == [
         "known"
     ]
+
+
+def test_only_known_player_moves_change_a_weekly_assignment() -> None:
+    c = pl.col
+    raw = pl.DataFrame(
+        {
+            "pfr_id": ["A", "A"],
+            "pfr_name": ["a", "a"],
+            "received": ["SEA", "SF"],
+            "trade_date": [date(2022, 4, 20), date(2022, 10, 20)],
+            "pick_season": [2022, None],
+            "pick_round": [2, None],
+        }
+    )
+    ids = pl.DataFrame({"pfr_id": ["A"], "player_id": ["1"]})
+    moves = player_transfers(raw, ids)
+    assert moves.select("team", "move_at").rows() == [
+        ("SF", datetime(2022, 10, 21, 4, tzinfo=UTC))
+    ]
+    t = datetime(2022, 10, 20, 23, tzinfo=UTC)
+    old = pl.DataFrame(
+        {
+            "season": [2022],
+            "week": [7],
+            "game_id": ["g"],
+            "team": ["CAR"],
+            "player_id": ["1"],
+            "prior_at": [datetime(2022, 10, 16, 19, tzinfo=UTC)],
+            "cutoff": [t],
+        }
+    ).with_columns(
+        pl.lit(None, dtype=pl.Datetime("us", "UTC")).alias(k)
+        for k in ("depth_at", "identity_at")
+    )
+    reports = old.select(
+        "game_id", "team", "player_id", c("depth_at").alias("report_at")
+    ).clear()
+    assert resolve_teams(old, reports, moves)[0]["team"].to_list() == ["CAR"]
+    both = pl.concat(
+        [
+            old,
+            old.with_columns(pl.lit("SF").alias("team"), pl.lit("g2").alias("game_id")),
+        ]
+    ).with_columns(pl.lit(datetime(2022, 10, 21, 5, tzinfo=UTC)).alias("cutoff"))
+    fixed, removed = resolve_teams(both, reports, moves)
+    assert fixed["team"].to_list() == ["SF"] and removed["stale_trade"].item()
+
+
+def test_weekly_oracle_credits_boundary_ties_not_every_tied_player() -> None:
+    k = K["QB"]
+    pts = [20.0] * (k - 1) + [10.0, 10.0, 10.0]
+    p = pl.DataFrame(
+        {
+            "season": [2014] * len(pts),
+            "week": [2] * len(pts),
+            "position": ["QB"] * len(pts),
+            "player_id": [str(i) for i in range(len(pts))],
+            "points": pts,
+        }
+    ).with_columns(
+        pl.Series(name, [0.0, *range(1, len(pts))], dtype=pl.Float64) for name in NAMES
+    )
+    u = (
+        p.select("season", "week", "player_id", "position", "points")
+        .head(1)
+        .with_columns(
+            pl.lit("unprojected").alias("player_id"), pl.lit(30.0).alias("points")
+        )
+    )
+    weekly, _ = starter_scores(p, u)
+    roles = weekly.filter(pl.col("oracle") == "roles").head(1)
+    league = weekly.filter(pl.col("oracle") == "league").head(1)
+    assert roles["hits"].item() == 10 and roles["regret"].item() == 20
+    assert league["hits"].item() == 9 and league["regret"].item() == 40
+
+
+def test_matchup_replay_scoring_intervals_and_holdout_invariance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    p = role_provider()
+    c = pl.col
+    for field in (
+        "rosters_weekly",
+        "player_stats",
+        "team_stats",
+        "depth_charts",
+        "schedules",
+    ):
+        f = getattr(p, field)
+        early = f.filter(
+            c("game_id").str.starts_with("2010")
+            if field == "team_stats"
+            else c("season") == 2010
+        )
+        cols = (
+            [c("season").replace({2010: 2013}).alias("season")]
+            if "season" in f.columns
+            else []
+        )
+        cols.extend(
+            c(k).str.replace("2010", "2013")
+            for k in ("game_id", "gameday")
+            if k in f.columns
+        )
+        setattr(p, field, pl.concat([f, early.with_columns(cols)]))
+    p.rosters_weekly = p.rosters_weekly.with_columns(c("gsis_id").alias("pfr_id"))
+    p.players = p.rosters_weekly.select("gsis_id", "pfr_id").unique()
+    snaps = p.rosters_weekly.filter(
+        (c("season") >= 2013) & (c("position") != "TE")
+    ).select(
+        "season",
+        "week",
+        "game_type",
+        c("team").replace({"ARZ": "ARI", "OAK": "LV"}),
+        c("gsis_id").alias("pfr_player_id"),
+        pl.lit(1).alias("offense_snaps"),
+        pl.lit(0).alias("defense_snaps"),
+        pl.lit(0).alias("st_snaps"),
+    )
+    draft = (
+        p.rosters_weekly.filter(c("season") == 2014)
+        .select(
+            "season",
+            "team",
+            "position",
+            "gsis_id",
+            c("full_name").alias("pfr_player_name"),
+        )
+        .unique()
+    )
+    raw = pl.DataFrame(
+        schema={
+            "pfr_id": pl.String,
+            "trade_date": pl.Date,
+            "pick_season": pl.Int32,
+            "pick_round": pl.Int32,
+            "received": pl.String,
+            "pfr_name": pl.String,
+        }
+    )
+    monkeypatch.setattr(
+        matchups,
+        "matchup_sources",
+        lambda end_year: {"trades": raw, "draft": draft, "snaps": snaps},
+    )
+    for pos in POSITIONS:
+        monkeypatch.setitem(K, pos, 1)
+    matchups.run_matchups(tmp_path, 2014, p)
+    pred = pl.read_parquet(tmp_path / "forecast.parquet")
+    assert (
+        pred.filter(c("week") == 1).height
+        and not pred.select(PLAYER_WEEK).is_duplicated().any()
+    )
+    assert pred.filter(
+        (c("q10") > c("q25")) | (c("q25") > c("q75")) | (c("q75") > c("q90"))
+    ).is_empty()
+    ledger = pl.sum_horizontal(c("forest_" + k) * v for k, v in WEIGHTS.items())
+    assert pred.select((ledger - c("factor_forest")).abs().max()).item() < 1e-7
+    board = pl.read_parquet(tmp_path / "board.parquet")
+    changed = project(
+        board.with_columns(
+            pl.when(c("season") == 2014)
+            .then(500.0)
+            .otherwise(c("points"))
+            .alias("points")
+        ),
+        2014,
+    )
+    assert_frame_equal(
+        changed.select(*NAMES, "q10", "q90", "play_probability"),
+        pred.select(*NAMES, "q10", "q90", "play_probability"),
+    )

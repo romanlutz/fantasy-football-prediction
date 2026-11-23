@@ -5,6 +5,12 @@ including the possibility of zero. The forecasts cover completed regular-season
 games through **2025**. They are not preseason projections; a lineup decision
 can use these forecasts downstream.
 
+The [expected-points and starter study](matchups/README.md) adds season
+openers, one league-wide decision time, unique team assignments, forecasts of
+opportunity and scoring components, player-specific prediction intervals and
+points lost relative to the best 12/24/24/12 starters. The earlier game-by-game
+benchmark below is preserved, not silently replaced.
+
 ## Primary experiment: team roles, one hour before kickoff
 
 We select one projected starting QB, two RBs, three WRs and one TE for each

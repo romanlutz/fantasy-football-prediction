@@ -1,0 +1,336 @@
+"""Rebuild a point-in-time weekly league draft board and matchup forecasts."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from pathlib import Path
+
+import nflreadpy as nfl
+import polars as pl
+
+from ffpred.datasets.io import file_sha256
+from ffpred.errors import ConfigurationError, DataAcquisitionError
+from ffpred.providers.protocol import NflDataProvider
+from ffpred.providers.provenance import ProvenanceProvider, fingerprint_frame
+from ffpred.study.defense import defense_snapshots
+from ffpred.study.matchup_eval import evaluate_matchups
+from ffpred.study.matchup_models import project
+from ffpred.study.matchup_pool import (
+    SEEDS,
+    SNAP_START,
+    WEEK,
+    id_map,
+    opener_seeds,
+    played_labels,
+    player_transfers,
+    resolve_teams,
+    trade_events,
+    weekly_clocks,
+)
+from ffpred.study.panel import (
+    CHANNELS,
+    OTHER,
+    PLAYER_WEEK,
+    POSITIONS,
+    SCORING,
+    STATS,
+    TEAM_CODES,
+    WEIGHTS,
+    box_scores,
+    candidates,
+    player_panel,
+    schedule_sides,
+)
+from ffpred.study.role_evidence import (
+    DEPTH_CHANGE,
+    ENTRY,
+    NEWS_FILE,
+    SIDE,
+    depth_evidence,
+    game_clocks,
+    injury_evidence,
+    official_news,
+    read_news,
+)
+from ffpred.study.role_selection import (
+    GROUP,
+    SLOTS,
+    documented_absences,
+    histories,
+    role_outcomes,
+    role_pool,
+    select_roles,
+)
+from ffpred.study.run import HISTORY_START, LAST_COMPLETE, PAPER_YEAR
+
+c = pl.col
+SCORE_TOLERANCE = 1e-7
+
+
+def prepare_board(
+    provider: ProvenanceProvider,
+    end_year: int,
+    trades: pl.DataFrame,
+    draft: pl.DataFrame,
+    snaps: pl.DataFrame,
+) -> dict[str, pl.DataFrame]:
+    years = tuple(range(HISTORY_START, end_year + 1))
+    schedule = provider.load_schedules(years)
+    sides = schedule_sides(schedule)
+    clocks = weekly_clocks(game_clocks(sides, schedule, include_openers=True))
+    rosters = provider.load_rosters_weekly(years)
+    boxes = box_scores(provider.load_player_stats(years))
+    if sides.join(
+        boxes.select("game_id", c("actual_team").alias("team")).unique(),
+        on=SIDE,
+        how="anti",
+    ).height:
+        raise DataAcquisitionError("Missing player boxes for a completed matchup")
+    ids = id_map(provider.load_players(), rosters)
+    injured = provider.load_injuries(years)
+    absences = documented_absences(rosters, injured, boxes)
+    reports = injury_evidence(clocks, injured)
+    depth = depth_evidence(
+        clocks,
+        provider.load_depth_charts([y for y in years if y < DEPTH_CHANGE]),
+        provider.load_depth_charts([DEPTH_CHANGE])
+        if end_year >= DEPTH_CHANGE
+        else None,
+    )
+    news = official_news(clocks, read_news(NEWS_FILE))
+    base = candidates(sides, rosters, boxes)
+    transfers = player_transfers(trades, ids)
+    moves = trade_events(transfers, rosters, clocks)
+    seeds = pl.concat(
+        [
+            moves.with_columns(pl.lit("trade").alias("roster_source")).select(SEEDS),
+            base.select(SEEDS),
+            opener_seeds(clocks, rosters, draft, boxes),
+        ]
+    ).unique(ENTRY, keep="first", maintain_order=True)
+    pool, removed = resolve_teams(
+        role_pool(clocks, seeds, depth, news, reports), reports, transfers
+    )
+    selected = select_roles(pool, reports, histories(base, boxes, absences))
+    # At openers a dated depth chart is fresher than last season's usage.
+    selected = selected.with_columns(
+        pl.when(c("opener") & c("depth_at").is_not_null())
+        .then(c("depth_rank"))
+        .otherwise(None)
+        .alias("opening_depth"),
+    )
+    ranks = (
+        selected.filter(~c("ruled_out"))
+        .sort(
+            [
+                "announced",
+                "doubtful",
+                "opening_depth",
+                "current_qb1",
+                "expected_usage",
+                "depth_rank",
+                "player_id",
+            ],
+            descending=[True, False, False, True, True, False, False],
+            nulls_last=True,
+        )
+        .with_columns(c("player_id").cum_count().over(GROUP).alias("team_rank"))
+        .select(*ENTRY, "team_rank")
+    )
+    selected = (
+        selected.drop("team_rank", "team_role")
+        .join(ranks, on=ENTRY, how="left")
+        .with_columns(
+            (c("team_rank") <= c("position").replace_strict(SLOTS))
+            .fill_null(False)
+            .alias("team_role")
+        )
+    )
+    panel = player_panel(selected, boxes)
+    played = played_labels(panel, snaps, ids, boxes)
+    stats = boxes.select(
+        *PLAYER_WEEK,
+        *STATS,
+        *OTHER[:-1],
+        (
+            (c("special_teams_tds") + c("fumble_recovery_tds")) * SCORING.other_td
+            + pl.sum_horizontal(c(f"{ch}_2pt_conversions") for ch in CHANNELS)
+            * SCORING.conversion
+            + c("receptions") * SCORING.reception
+        )
+        .round(2)
+        .alias("other_points"),
+    )
+    extra = boxes.select(*PLAYER_WEEK, "points", *STATS[1::2])
+    zeros = selected.select(PLAYER_WEEK).join(extra, on=PLAYER_WEEK, how="anti")
+    history = (
+        pl.concat(
+            [
+                extra,
+                zeros.with_columns(
+                    pl.lit(0.0).alias(v) for v in ["points", *STATS[1::2]]
+                ).select(extra.columns),
+            ],
+            how="vertical_relaxed",
+        )
+        .sort("player_id", *WEEK)
+        .with_columns(
+            c("points")
+            .shift()
+            .rolling_std(10, min_samples=2)
+            .over("player_id")
+            .alias("volatility"),
+            *(
+                c(v)
+                .shift()
+                .rolling_mean(10, min_samples=1)
+                .over("player_id")
+                .alias("lag_" + v)
+                for v in STATS[1::2]
+            ),
+        )
+    )
+    panel = (
+        panel.join(played, on=PLAYER_WEEK, validate="1:1")
+        .join(stats, on=PLAYER_WEEK, how="left")
+        .join(
+            boxes.select(*PLAYER_WEEK, *CHANNELS.values()), on=PLAYER_WEEK, how="left"
+        )
+        .with_columns(c([*WEIGHTS, *CHANNELS.values()]).fill_null(0))
+        .join(
+            history.select(
+                *PLAYER_WEEK, "volatility", *(f"lag_{v}" for v in STATS[1::2])
+            ),
+            on=PLAYER_WEEK,
+            validate="1:1",
+        )
+        .join(
+            defense_snapshots(sides, provider.load_team_stats(years)),
+            on=["game_id", "opponent"],
+            validate="m:1",
+        )
+        .join(
+            absences.rename({"week": "roster_week"}).with_columns(
+                pl.lit(True).alias("prior_absence")
+            ),
+            on=["season", "team", "roster_week", "player_id"],
+            how="left",
+        )
+        .with_columns(
+            c("prior_absence").fill_null(False),
+            (c("designation") == "Questionable").fill_null(False).alias("questionable"),
+            (c("practice_status") == "Limited Participation in Practice")
+            .fill_null(False)
+            .alias("limited"),
+            (c("season") * 100 + c("week") - c("history_period")).alias("history_gap"),
+            c("depth_at").is_not_null().alias("dated_depth"),
+        )
+    )
+    if (
+        panel.select(PLAYER_WEEK).is_duplicated().any()
+        or panel.filter(
+            (
+                c("points") - pl.sum_horizontal(c(k) * v for k, v in WEIGHTS.items())
+            ).abs()
+            > SCORE_TOLERANCE
+        ).height
+    ):
+        raise DataAcquisitionError(
+            "Ambiguous identity or unreconciled component ledger"
+        )
+    # Forecast eligible positions take precedence; the independent rest of league
+    # uses target game roster position solely to label the evaluation oracle.
+    pos = (
+        rosters.filter(c("game_type") == "REG")
+        .select(
+            *WEEK,
+            c("team").replace(TEAM_CODES).alias("actual_team"),
+            c("gsis_id").alias("player_id"),
+            c("position").replace({"FB": "RB", "HB": "RB"}).alias("game_pos"),
+        )
+        .unique()
+    )
+    pos = pos.filter(pl.len().over(*PLAYER_WEEK, "actual_team") == 1)
+    truth = (
+        boxes.join(pos, on=[*PLAYER_WEEK, "actual_team"], how="left")
+        .select(
+            *PLAYER_WEEK,
+            pl.coalesce(
+                "game_pos", c("box_position").replace({"FB": "RB", "HB": "RB"})
+            ).alias("position"),
+            "points",
+        )
+        .filter(c("position").is_in(POSITIONS))
+    )
+    realized = role_outcomes(clocks, schedule, boxes, rosters, absences)
+    selection = (
+        selected.filter(c("team_role") & (c("season") >= PAPER_YEAR))
+        .join(
+            realized.select(*ENTRY, "position", pl.lit(True).alias("correct")),
+            on=[*ENTRY, "position"],
+            how="left",
+            validate="1:1",
+        )
+        .group_by("position", "opener")
+        .agg(pl.len().alias("selected"), c("correct").count().alias("correct"))
+        .with_columns((c("correct") / c("selected")).alias("precision"))
+    )
+    return {
+        "board": panel.sort(*WEEK, "team", "position", "player_id"),
+        "removed": removed.sort(*PLAYER_WEEK, "team"),
+        "universe": truth,
+        "sides": clocks,
+        "selection": selection.sort("position", "opener"),
+    }
+
+
+def matchup_sources(end_year: int) -> dict[str, pl.DataFrame]:
+    return {
+        "trades": nfl.load_trades().filter(c("trade_date").dt.year() <= end_year),
+        "draft": nfl.load_draft_picks(list(range(HISTORY_START, end_year + 1))),
+        "snaps": nfl.load_snap_counts(list(range(SNAP_START, end_year + 1))),
+    }
+
+
+def run_matchups(
+    output: Path, end_year: int, provider: NflDataProvider
+) -> dict[str, object]:
+    if not PAPER_YEAR <= end_year <= LAST_COMPLETE:
+        raise ConfigurationError("Matchup holdouts must end in 2014..2025")
+    source = ProvenanceProvider(provider)
+    raw = matchup_sources(end_year)
+    data = prepare_board(source, end_year, **raw)
+    forecasts = project(data["board"], end_year)
+    results = evaluate_matchups(forecasts, data)
+    output.mkdir(parents=True, exist_ok=True)
+    files = {
+        "forecast.parquet": forecasts,
+        "board.parquet": data["board"],
+        "universe.parquet": data["universe"],
+        "affiliations.csv": data["removed"].filter(c("season") >= PAPER_YEAR),
+        "selection.csv": data["selection"],
+        **results,
+    }
+    for name, frame in files.items():
+        if name.endswith(".csv"):
+            frame.write_csv(output / name)
+        else:
+            frame.write_parquet(output / name)
+    manifest = {
+        "test_years": [PAPER_YEAR, end_year],
+        "lock": "60 minutes before first weekly kickoff in the completed-game archive",
+        "sources": {
+            **{k: asdict(v) for k, v in source.artifacts.items()},
+            **{k: asdict(fingerprint_frame(k, v)) for k, v in raw.items()},
+        },
+        "news_sha256": file_sha256(NEWS_FILE),
+        "outputs": {
+            k: {"rows": v.height, "sha256": file_sha256(output / k)}
+            for k, v in files.items()
+        },
+    }
+    (output / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    return {"directory": str(output), "forecasts": forecasts.height}

@@ -63,6 +63,26 @@ class WeeklyScoring:
 
 
 SCORING = WeeklyScoring()
+CHANNELS = {"passing": "attempts", "rushing": "carries", "receiving": "targets"}
+STATS = [f"{ch}_{stat}" for ch in CHANNELS for stat in ("yards", "tds")]
+OTHER = ["passing_interceptions", "fumbles_lost_total", "other_points"]
+WEIGHTS = dict(
+    zip(
+        [*STATS, *OTHER],
+        [
+            SCORING.pass_yard,
+            SCORING.pass_td,
+            SCORING.scrimmage_yard,
+            SCORING.other_td,
+            SCORING.scrimmage_yard,
+            SCORING.other_td,
+            SCORING.interception,
+            SCORING.lost_fumble,
+            1.0,
+        ],
+        strict=True,
+    )
+)
 USAGE = ("attempts", "carries", "targets", "receptions")
 HISTORY_FIELDS = ("points", *USAGE, "passing_yards", "rushing_yards", "receiving_yards")
 PLAYER_FEATURES = (

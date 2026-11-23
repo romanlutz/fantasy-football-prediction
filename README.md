@@ -40,6 +40,10 @@ Add `--compare-models --output-dir artifacts/weekly-methods` for the matched
 paper-versus-modern model comparison, including neural nets, nonlinear SVR,
 additive boosting, weekly rankings and paired season-level uncertainty.
 
+Use `uv run --locked ffpred weekly-matchups --end-year 2025` for the
+[component, ensemble, player prediction interval and 12-team starter study](research/weekly-study/matchups/README.md).
+It includes team openers and freezes the entire league before the first game of the week.
+
 To reproduce the full-roster comparison and original-paper reconciliation:
 
 ```console
