@@ -1,0 +1,121 @@
+{
+  "test_years": [
+    2014,
+    2025
+  ],
+  "pbp_input_columns": [
+    "season_type",
+    "game_id",
+    "season",
+    "week",
+    "posteam",
+    "play_type",
+    "rush_attempt",
+    "qb_kneel",
+    "rusher_player_id",
+    "receiver_player_id",
+    "yardline_100",
+    "play_deleted",
+    "two_point_attempt"
+  ],
+  "pbp_sha256_by_season": {
+    "2009": "94e52ca916e106932fc017e2689e782b4ed85b369794bf295ae823e33a58ad75",
+    "2010": "2aa85cd50e034b78c5adb1715809bcb5cb94041c538ba51b03e111e58def3898",
+    "2011": "7aed863aaa7b1a84c713b5b2643b5806688d14166e3727fdb2c5ec9bc5ede960",
+    "2012": "3acf4091d7d5f939f13717c494af8b4dbe41a7b5f9340e18a61397a8e05f61ee",
+    "2013": "ab34d2aa868476f48b908a8d2095f9c77a64751011706435220485ddddaee473",
+    "2014": "2817e602dde3616627e2c49f56f805e9bb00f9aed12aeebb7840c6d1e2161cd9",
+    "2015": "da19e5d09103bd97f6bbf8708f4c7a9d1c410e9816453fd0c1020e91a6a9ec14",
+    "2016": "5d143230ecbf0f4be2ea7f82f2040f56ddcf8d8514767d7279d10179bfdb047b",
+    "2017": "3c4a3be9dae61731a65af1039c3421afac9200f01f23da8ceba340305bd6bdc0",
+    "2018": "7c378adea13536777da4b3abbc12d9d297f8cef22cd973ed8d27d52965ef3315",
+    "2019": "a1594e5b14379f8c58a43b0a519e960a9f739ff5be84a6477fd985ccd04035cf",
+    "2020": "2cfc4baf12b8a70849f8b8c57790d35bb164e3c0549bf337333d4df35a3acd1b",
+    "2021": "bbf2aec832126ddb962cd8e442557e89bd36dbbd5eaebf1cef191e671db838a0",
+    "2022": "3b223b90e226990e8676808a5243aa1cdf86a34c8adfa354b1bec4da74d97225",
+    "2023": "488a2d9502cb6c2220054dfff4c1117715a0af38b03f8122597b4efc88ab7c7a",
+    "2024": "f91d523bdc3c073595cc42b752328d7cb1d1800d3742680a555f724cc293a7fa",
+    "2025": "d59420b9166510b784030bd66f361bac853d8f54b43bc30481fc2ed3e7d0aa4b"
+  },
+  "source_sha256": {
+    "schedules:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "8f984cd0ff8571486842de28e8560acfc692b1ae7463e1c1db37d1364a7ba21f",
+    "rosters_weekly:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "27233d9d34b34c7f5f09ddea8fdc0632343c1410b4852fd22b16c47d4fb40482",
+    "player_stats:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "cbe0084c58dca811ca4f09349d34e278fd85bd640656490375473e78a38f606d",
+    "players": "242107c5cea4d848cfb9444c26395672f5ac1216a683822802edd45f17483b25",
+    "injuries:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "cea9226c75691d215e81e7e23a98fa9a9e1db28421b9b2466837617c081fdece",
+    "depth_charts:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024": "2b97d65a457868675d3c8d789311028fe6faa2ada76d2066b6c67aecf972256f",
+    "depth_charts:2025": "334aaba9f9aeae0b680db59763a059f6c50c9fd77e1c220af257134ca0b94fd2",
+    "team_stats:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "42098a27da298f2b8f3fabbc65a792c66fb15d95a8c07c753049dfe064b05f44",
+    "trades": "c1c52f9dd0eb425829d121706560548090e968856db2b3c3c46ed14667480f0f",
+    "draft": "d746710609c7596dd6ce459cc8ce4b48215f5be212eb02013480bfa102f60054",
+    "snaps": "d2f7b6e4db9f1f4253601e0a3c975e86c29a32bcf32433e4c7ba51ed1f15764e"
+  },
+  "news_sha256": "3bcf6d7e0645c49b4915be9249398ad549ce13d0c98dfe9ab9d1594b15d71e07",
+  "editions_index_sha256": "aba1faa7aec28e906515bbc67cafcbc3cca80bb554bfd83942924e05f8ba85d4",
+  "outputs": {
+    "original-baseline.parquet": {
+      "rows": 12602,
+      "sha256": "981be5c4b243ab961c49686c0b3d9da4bd65a496ed6fd9477d794cb967a71509"
+    },
+    "original-carry.parquet": {
+      "rows": 12602,
+      "sha256": "78c0d481ba73bbefb752d6564ba3a70d3b3e36c5a7679e941de15915d00e37f8"
+    },
+    "original-carry_goal.parquet": {
+      "rows": 12602,
+      "sha256": "213b2510d7e6bc17618b7c6687af4fefa836ef0a85ca8a116ca53dc55254f4e3"
+    },
+    "dated-baseline.parquet": {
+      "rows": 12602,
+      "sha256": "8dc8c7efab623a575c473b8b42a42773dc866f5fe43c6222dde4466236a4b4a9"
+    },
+    "dated-carry.parquet": {
+      "rows": 12602,
+      "sha256": "0fe66dcef8cc3344d92fce56cb8b0520d0c933a30f0fd8d2d9244397a59227e6"
+    },
+    "dated-carry_goal.parquet": {
+      "rows": 12602,
+      "sha256": "64210fb39d39b885fd583bd8668fce8a1a6175543c12943d07d99190995fca3d"
+    },
+    "selection.csv": {
+      "rows": 16,
+      "sha256": "0cde600e74a044c8386627f8088f77fe20b56b38c0e6034cbb1ce1ed00027b79"
+    },
+    "opening-annual.csv": {
+      "rows": 96,
+      "sha256": "45add13bbd43d6c9cb8eaf898a3cf71fe222a269efe3bd9f918954252afee314"
+    },
+    "editions.csv": {
+      "rows": 11,
+      "sha256": "968375e833a64453d84add136da84fef90b3da3e96fc6638b85507911df51c51"
+    },
+    "play-coverage.csv": {
+      "rows": 17,
+      "sha256": "9bc0ea176ce53f3b6c6e5fb0b913b90fd79db79c81553eb03ca828596b0ffb2f"
+    },
+    "history-coverage.csv": {
+      "rows": 48,
+      "sha256": "85a3bc3d5384cc5b5a49fa3ec0e7525b84b2345264a29ce1fdc39c7adf36f99c"
+    },
+    "scores.csv": {
+      "rows": 78,
+      "sha256": "d8b08851f87650732379caf2d656c9c00c8b9c27a0b1164b1f82648eace21d4c"
+    },
+    "annual.csv": {
+      "rows": 936,
+      "sha256": "b34529df92ea07126b3a215031ad90117808a1b6b002c7afc6dd7e28bad3fdb7"
+    },
+    "opener-scores.csv": {
+      "rows": 156,
+      "sha256": "62019a4636136c494029a0286510a99b2f9d785c47759eca3c719d9532edd190"
+    },
+    "starters.csv": {
+      "rows": 84,
+      "sha256": "8d8a1f017675919f29ad17f6f2bab2b8bf3cbfdde92ebe378b82e810c5c858dd"
+    },
+    "starter-annual.csv": {
+      "rows": 1008,
+      "sha256": "70d1facf705e2b151dcecda3298163ae41f507f1dfbc2ff3c43ada0f3a5f75fb"
+    }
+  }
+}

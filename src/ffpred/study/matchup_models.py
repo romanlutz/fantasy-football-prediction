@@ -103,11 +103,11 @@ def _factor(
 
 
 def _intervals(
-    train: pl.DataFrame, cal: pl.DataFrame, test: pl.DataFrame
+    train: pl.DataFrame, cal: pl.DataFrame, test: pl.DataFrame, features: list[str]
 ) -> dict[str, Array]:
     impute = SimpleImputer(strategy="median", keep_empty_features=True)
-    x = impute.fit_transform(train.select(FEATURES))
-    xt = impute.transform(pl.concat([cal.select(FEATURES), test.select(FEATURES)]))
+    x = impute.fit_transform(train.select(features))
+    xt = impute.transform(pl.concat([cal.select(features), test.select(features)]))
     fitted = np.column_stack(
         [
             HistGradientBoostingRegressor(
@@ -139,14 +139,14 @@ def _intervals(
     return {f"q{round(q * 100)}": current[:, i] for i, q in enumerate(Q)}
 
 
-def _fold(group: pl.DataFrame, year: int) -> pl.DataFrame:
+def _fold(group: pl.DataFrame, year: int, features: list[str]) -> pl.DataFrame:
     earlier = group.filter(c("season") < year)
     broad = earlier.filter(c("season") >= SNAP_START)
     roles = broad.filter(c("team_role"))
     test = group.filter((c("season") == year) & c("team_role"))
     impute = SimpleImputer(strategy="median", keep_empty_features=True)
-    x = impute.fit_transform(roles.select(FEATURES))
-    xt = impute.transform(test.select(FEATURES))
+    x = impute.fit_transform(roles.select(features))
+    xt = impute.transform(test.select(features))
     y = roles["points"].to_numpy()
     preds = {
         "ridge_role": _ridge(x, y, xt),
@@ -156,8 +156,8 @@ def _fold(group: pl.DataFrame, year: int) -> pl.DataFrame:
         SimpleImputer(strategy="median", keep_empty_features=True), histogram_booster()
     )
     preds["boost_broad"] = broad_model.fit(
-        broad.select(FEATURES), broad["points"].to_numpy()
-    ).predict(test.select(FEATURES))
+        broad.select(features), broad["points"].to_numpy()
+    ).predict(test.select(features))
     preds["trailing"] = test["last10_points"].fill_null(float(y.mean())).to_numpy()
     known = roles["played"].is_not_null().to_numpy()
     played = roles["played"].fill_null(False).to_numpy()
@@ -189,6 +189,7 @@ def _fold(group: pl.DataFrame, year: int) -> pl.DataFrame:
             ),
             earlier.filter((c("season") == year - 1) & c("team_role")),
             test,
+            features,
         )
     )
     return test.select(
@@ -212,12 +213,22 @@ def _fold(group: pl.DataFrame, year: int) -> pl.DataFrame:
     ).with_columns(pl.Series(k, v) for k, v in preds.items())
 
 
-def project(board: pl.DataFrame, end_year: int) -> pl.DataFrame:
+def project(
+    board: pl.DataFrame,
+    end_year: int,
+    *,
+    extra_features: tuple[str, ...] = (),
+    positions: tuple[str, ...] = POSITIONS,
+) -> pl.DataFrame:
     with threadpool_limits(limits=2):
         return pl.concat(
             [
-                _fold(board.filter(c("position") == pos), year)
+                _fold(
+                    board.filter(c("position") == pos),
+                    year,
+                    [*FEATURES, *extra_features],
+                )
                 for year in range(PAPER_YEAR, end_year + 1)
-                for pos in POSITIONS
+                for pos in positions
             ]
         )

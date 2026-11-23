@@ -28,6 +28,7 @@ from ffpred.study.matchup_pool import (
     trade_events,
     weekly_clocks,
 )
+from ffpred.study.opening import apply_editions, opening_evidence
 from ffpred.study.panel import (
     CHANNELS,
     OTHER,
@@ -68,12 +69,14 @@ c = pl.col
 SCORE_TOLERANCE = 1e-7
 
 
-def prepare_board(
+def prepare_board(  # noqa: PLR0913 - keep the published board's source interface
     provider: ProvenanceProvider,
     end_year: int,
     trades: pl.DataFrame,
     draft: pl.DataFrame,
     snaps: pl.DataFrame,
+    *,
+    editions: pl.DataFrame | None = None,
 ) -> dict[str, pl.DataFrame]:
     years = tuple(range(HISTORY_START, end_year + 1))
     schedule = provider.load_schedules(years)
@@ -109,9 +112,23 @@ def prepare_board(
             opener_seeds(clocks, rosters, draft, boxes),
         ]
     ).unique(ENTRY, keep="first", maintain_order=True)
-    pool, removed = resolve_teams(
-        role_pool(clocks, seeds, depth, news, reports), reports, transfers
-    )
+    if editions is not None:
+        evidence = opening_evidence(clocks, seeds, boxes, editions)
+        extra_seeds = (
+            clocks.filter(c("opener"))
+            .join(evidence.filter(c("listed")), on=["season", "team"])
+            .with_columns(pl.lit("dated_affiliation").alias("roster_source"))
+            .select(SEEDS)
+        )
+        seeds = pl.concat([seeds, extra_seeds]).unique(
+            ENTRY, keep="first", maintain_order=True
+        )
+        pool = apply_editions(
+            role_pool(clocks, seeds, depth, news, reports), evidence, transfers, reports
+        )
+    else:
+        pool = role_pool(clocks, seeds, depth, news, reports)
+    pool, removed = resolve_teams(pool, reports, transfers)
     selected = select_roles(pool, reports, histories(base, boxes, absences))
     # At openers a dated depth chart is fresher than last season's usage.
     selected = selected.with_columns(
@@ -128,11 +145,21 @@ def prepare_board(
                 "doubtful",
                 "opening_depth",
                 "current_qb1",
+                *(["edition_confirmed"] if editions is not None else []),
                 "expected_usage",
                 "depth_rank",
                 "player_id",
             ],
-            descending=[True, False, False, True, True, False, False],
+            descending=[
+                True,
+                False,
+                False,
+                True,
+                *([True] if editions is not None else []),
+                True,
+                False,
+                False,
+            ],
             nulls_last=True,
         )
         .with_columns(c("player_id").cum_count().over(GROUP).alias("team_rank"))
@@ -264,15 +291,14 @@ def prepare_board(
         .filter(c("position").is_in(POSITIONS))
     )
     realized = role_outcomes(clocks, schedule, boxes, rosters, absences)
+    judged = selected.filter(c("team_role") & (c("season") >= PAPER_YEAR)).join(
+        realized.select(*ENTRY, "position", pl.lit(True).alias("correct")),
+        on=[*ENTRY, "position"],
+        how="left",
+        validate="1:1",
+    )
     selection = (
-        selected.filter(c("team_role") & (c("season") >= PAPER_YEAR))
-        .join(
-            realized.select(*ENTRY, "position", pl.lit(True).alias("correct")),
-            on=[*ENTRY, "position"],
-            how="left",
-            validate="1:1",
-        )
-        .group_by("position", "opener")
+        judged.group_by("position", "opener")
         .agg(pl.len().alias("selected"), c("correct").count().alias("correct"))
         .with_columns((c("correct") / c("selected")).alias("precision"))
     )
@@ -282,6 +308,9 @@ def prepare_board(
         "universe": truth,
         "sides": clocks,
         "selection": selection.sort("position", "opener"),
+        "judged": judged.select(
+            *ENTRY, "season", "position", "opener", c("correct").fill_null(False)
+        ),
     }
 
 

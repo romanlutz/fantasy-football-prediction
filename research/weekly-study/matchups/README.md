@@ -1,5 +1,8 @@
 # Expected matchup points, player uncertainty and starter choices
 
+Follow-up: [Dated opening affiliations, expected carry shares and inside-five opportunities](../opportunity/README.md).
+It tests selection and forecast improvements separately; the benchmark below is unchanged.
+
 **Use the ensemble for expected points and the component model to explain the miss.**
 Across 44,108 selected player-weeks and 209 regular-season weeks in 2014-2025,
 the equal-weight ensemble had the lowest RMSE at all four positions. Forecasting

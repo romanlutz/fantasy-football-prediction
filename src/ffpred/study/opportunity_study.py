@@ -1,0 +1,271 @@
+"""Separate opening-role selection from paired RB opportunity-feature comparisons."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import polars as pl
+
+from ffpred.datasets.io import file_sha256
+from ffpred.errors import ConfigurationError, DataAcquisitionError
+from ffpred.providers.protocol import NflDataProvider
+from ffpred.providers.provenance import ProvenanceProvider, fingerprint_frame
+from ffpred.study.matchup_eval import starter_scores
+from ffpred.study.matchup_models import NAMES, project
+from ffpred.study.matchup_pool import id_map
+from ffpred.study.matchups import matchup_sources, prepare_board
+from ffpred.study.opening import SOURCES, opening_editions
+from ffpred.study.opportunities import (
+    CARRY,
+    COUNTS,
+    GOAL,
+    count_opportunities,
+    include_snap_zeros,
+    rb_opportunities,
+)
+from ffpred.study.panel import PLAYER_WEEK
+from ffpred.study.role_evidence import ENTRY, NEWS_FILE, SIDE
+from ffpred.study.run import HISTORY_START, LAST_COMPLETE, PAPER_YEAR
+
+c = pl.col
+PBP_COLUMNS = (
+    "season_type",
+    "game_id",
+    "season",
+    "week",
+    "posteam",
+    "play_type",
+    "rush_attempt",
+    "qb_kneel",
+    "rusher_player_id",
+    "receiver_player_id",
+    "yardline_100",
+    "play_deleted",
+    "two_point_attempt",
+)
+
+
+def opportunity_sources(
+    provider: NflDataProvider, years: tuple[int, ...], snaps: pl.DataFrame
+) -> tuple[pl.DataFrame, pl.DataFrame, dict[str, str]]:
+    teams: list[pl.DataFrame] = []
+    players: list[pl.DataFrame] = []
+    hashes: dict[str, str] = {}
+    for year in years:
+        raw = provider.load_pbp(year).select(PBP_COLUMNS)
+        hashes[str(year)] = fingerprint_frame(str(year), raw).sha256
+        team, player = count_opportunities(raw)
+        teams.append(team)
+        players.append(player)
+    team = pl.concat(teams).sort("season", "week", "team")
+    ids = id_map(provider.load_players(), provider.load_rosters_weekly(years))
+    player = include_snap_zeros(pl.concat(players), team, snaps, ids).sort(
+        "season", "week", "team", "player_id"
+    )
+    return team, player, hashes
+
+
+def roster_tables(
+    data: dict[str, dict[str, pl.DataFrame]], covered: list[int]
+) -> dict[str, pl.DataFrame]:
+    rows = []
+    for key, group in data.items():
+        board = group["board"]
+        other = data["dated" if key == "original" else "original"]["judged"].select(
+            *ENTRY, "position"
+        )
+        rows.append(
+            group["judged"]
+            .join(board.select(*ENTRY, "week", "actual_team"), on=ENTRY, validate="1:1")
+            .with_columns(
+                pl.lit(key).alias("board"), c("season").is_in(covered).alias("covered")
+            )
+            .join(
+                other.with_columns(pl.lit(True).alias("same_pick")),
+                on=[*ENTRY, "position"],
+                how="left",
+            )
+        )
+    all_rows = pl.concat(rows)
+    measures = [
+        pl.len().alias("picks"),
+        c("correct").sum(),
+        c("correct").mean().alias("precision"),
+        (c("actual_team") == c("team")).sum().alias("same_team_box"),
+        (c("actual_team") != c("team")).sum().alias("other_team_box"),
+        c("actual_team").is_null().sum().alias("no_box"),
+        c("same_pick").is_null().sum().alias("changed_picks"),
+        (c("same_pick").is_null() & c("correct")).sum().alias("changed_correct"),
+    ]
+    return {
+        "selection": all_rows.group_by("board", "opener", "position")
+        .agg(measures)
+        .sort("opener", "position", "board"),
+        "opening-annual": all_rows.filter(c("opener"))
+        .group_by("season", "covered", "board", "position")
+        .agg(measures)
+        .sort("season", "position", "board"),
+    }
+
+
+def rb_tables(pred: pl.DataFrame, oracle: pl.DataFrame) -> dict[str, pl.DataFrame]:
+    targets = [(k, "points") for k in NAMES]
+    targets.extend(
+        (f"{label}_{k}", k)
+        for label in ("linear", "forest")
+        for k in ("carries", "rushing_tds", "rushing_yards")
+    )
+    long = pl.concat(
+        [
+            pred.select(
+                "season",
+                "opener",
+                pl.lit(k).alias("prediction"),
+                pl.lit(v).alias("target"),
+                (c(k) - c(v)).alias("err"),
+            )
+            for k, v in targets
+        ]
+    )
+    if not long["err"].is_finite().all() or long["err"].null_count():
+        raise DataAcquisitionError("Incomplete RB comparison")
+    metric = [
+        pl.len().alias("rows"),
+        c("err").abs().mean().alias("mae"),
+        c("err").pow(2).mean().sqrt().alias("rmse"),
+        c("err").mean().alias("bias"),
+    ]
+    weekly, starters = starter_scores(pred, oracle)
+    return {
+        "scores": long.group_by("target", "prediction").agg(metric),
+        "annual": long.group_by("season", "target", "prediction").agg(metric),
+        "opener-scores": long.group_by("opener", "target", "prediction").agg(metric),
+        "starters": starters,
+        "starter-annual": weekly.group_by("season", "model", "oracle").agg(
+            pl.len().alias("weeks"),
+            c("hits", "regret", "picked_points", "oracle_points").mean(),
+        ),
+    }
+
+
+def run_opportunity(
+    output: Path, end_year: int, provider: NflDataProvider
+) -> dict[str, object]:
+    if not PAPER_YEAR <= end_year <= LAST_COMPLETE:
+        raise ConfigurationError("Opportunity holdouts must end in 2014..2025")
+    output.mkdir(parents=True, exist_ok=True)
+    source = ProvenanceProvider(provider)
+    raw = matchup_sources(end_year)
+    editions, meta = opening_editions(end_year)
+    data = {
+        label: prepare_board(source, end_year, **raw, editions=ed)
+        for label, ed in (("original", None), ("dated", editions))
+    }
+    years = tuple(range(HISTORY_START, end_year + 1))
+    teams, players, pbp_hashes = opportunity_sources(provider, years, raw["snaps"])
+    if data["original"]["sides"].join(teams, on=SIDE, how="anti").height:
+        raise DataAcquisitionError("Missing play-by-play for a completed team-game")
+    tables = roster_tables(data, meta["season"].to_list())
+    tables["editions"] = meta
+    tables["play-coverage"] = (
+        teams.group_by("season")
+        .agg(
+            pl.len().alias("team_games"),
+            c(COUNTS).sum(),
+            (c("inside5_runs") == 0).sum().alias("zero_inside5_rush_games"),
+        )
+        .sort("season")
+    )
+    results: dict[str, list[pl.DataFrame]] = {}
+    outputs = {}
+    coverage = []
+    for label, group in data.items():
+        selected = (
+            group["board"]
+            .filter(c("team_role") & (c("season") >= PAPER_YEAR))
+            .select(*PLAYER_WEEK, "position", "points")
+        )
+        universe = pl.concat(
+            [
+                selected,
+                group["universe"]
+                .join(selected, on=PLAYER_WEEK, how="anti")
+                .select(selected.columns),
+            ],
+            how="vertical_relaxed",
+        ).filter((c("position") == "RB") & (c("season") >= PAPER_YEAR))
+        board = rb_opportunities(group["board"], teams, players)
+        held = board.filter(c("team_role") & (c("season") >= PAPER_YEAR))
+        coverage.append(
+            held.group_by("season", "opener")
+            .agg(
+                pl.len().alias("rows"),
+                c("carry_history_known").sum().alias("with_player_history"),
+                c("team_runs").count().alias("with_team_history"),
+            )
+            .with_columns(pl.lit(label).alias("board"))
+        )
+        for block, features in (
+            ("baseline", ()),
+            ("carry", CARRY),
+            ("carry_goal", (*CARRY, *GOAL)),
+        ):
+            pred = project(board, end_year, extra_features=features, positions=("RB",))
+            if not pred.select(*ENTRY, "points").equals(held.select(*ENTRY, "points")):
+                raise DataAcquisitionError(
+                    "RB forecasts do not match locked role selections"
+                )
+            filename = f"{label}-{block}.parquet"
+            pred.write_parquet(output / filename)
+            outputs[filename] = {
+                "rows": pred.height,
+                "sha256": file_sha256(output / filename),
+            }
+            for name, frame in rb_tables(pred, universe).items():
+                results.setdefault(name, []).append(
+                    frame.with_columns(
+                        pl.lit(label).alias("board"), pl.lit(block).alias("features")
+                    )
+                )
+    tables["history-coverage"] = pl.concat(coverage).sort("board", "season", "opener")
+    for name, frames in results.items():
+        tables[name] = pl.concat(frames).sort(
+            *[
+                k
+                for k in (
+                    "board",
+                    "features",
+                    "season",
+                    "opener",
+                    "target",
+                    "prediction",
+                    "model",
+                    "oracle",
+                )
+                if k in frames[0].columns
+            ]
+        )
+    for name, frame in tables.items():
+        filename = name + ".csv"
+        frame.write_csv(output / filename, float_precision=8)
+        outputs[filename] = {
+            "rows": frame.height,
+            "sha256": file_sha256(output / filename),
+        }
+    manifest = {
+        "test_years": [PAPER_YEAR, end_year],
+        "pbp_input_columns": PBP_COLUMNS,
+        "pbp_sha256_by_season": pbp_hashes,
+        "source_sha256": {
+            **{k: v.sha256 for k, v in source.artifacts.items()},
+            **{k: fingerprint_frame(k, v).sha256 for k, v in raw.items()},
+        },
+        "news_sha256": file_sha256(NEWS_FILE),
+        "editions_index_sha256": file_sha256(SOURCES),
+        "outputs": outputs,
+    }
+    (output / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    return {"directory": str(output), "test_years": [PAPER_YEAR, end_year]}

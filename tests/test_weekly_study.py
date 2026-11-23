@@ -2,7 +2,7 @@ import gzip
 import io
 import json
 import tarfile
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import polars as pl
@@ -11,7 +11,7 @@ from polars.testing import assert_frame_equal
 
 from ffpred.errors import ConfigurationError, DataAcquisitionError
 from ffpred.providers.fakes import FakeProvider
-from ffpred.study import matchups
+from ffpred.study import matchups, opening, opportunity_study
 from ffpred.study.benchmark import BLOCKS, backtest
 from ffpred.study.bridge import read_gamecenter
 from ffpred.study.defense import ADJUSTED, defense_snapshots
@@ -19,6 +19,14 @@ from ffpred.study.matchup_eval import K, starter_scores
 from ffpred.study.matchup_models import NAMES, project
 from ffpred.study.matchup_pool import player_transfers, resolve_teams
 from ffpred.study.methods import CHALLENGERS, KEY, REFERENCE, compare_methods
+from ffpred.study.opening import apply_editions, opening_evidence
+from ffpred.study.opportunities import (
+    CARRY,
+    GOAL,
+    count_opportunities,
+    include_snap_zeros,
+    rb_opportunities,
+)
 from ffpred.study.panel import (
     PLAYER_FEATURES,
     PLAYER_WEEK,
@@ -544,9 +552,7 @@ def test_weekly_oracle_credits_boundary_ties_not_every_tied_player() -> None:
     assert league["hits"].item() == 9 and league["regret"].item() == 40
 
 
-def test_matchup_replay_scoring_intervals_and_holdout_invariance(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def matchup_fixture() -> tuple[FakeProvider, dict[str, pl.DataFrame]]:
     p = role_provider()
     c = pl.col
     for field in (
@@ -608,11 +614,15 @@ def test_matchup_replay_scoring_intervals_and_holdout_invariance(
             "pfr_name": pl.String,
         }
     )
-    monkeypatch.setattr(
-        matchups,
-        "matchup_sources",
-        lambda end_year: {"trades": raw, "draft": draft, "snaps": snaps},
-    )
+    return p, {"trades": raw, "draft": draft, "snaps": snaps}
+
+
+def test_matchup_replay_scoring_intervals_and_holdout_invariance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    p, raw = matchup_fixture()
+    c = pl.col
+    monkeypatch.setattr(matchups, "matchup_sources", lambda end_year: raw)
     for pos in POSITIONS:
         monkeypatch.setitem(K, pos, 1)
     matchups.run_matchups(tmp_path, 2014, p)
@@ -639,4 +649,280 @@ def test_matchup_replay_scoring_intervals_and_holdout_invariance(
     assert_frame_equal(
         changed.select(*NAMES, "q10", "q90", "play_probability"),
         pred.select(*NAMES, "q10", "q90", "play_probability"),
+    )
+
+
+def test_opener_evidence_is_dated_and_absence_is_not_a_release() -> None:
+    c = pl.col
+    lock = datetime(2024, 9, 5, 23, tzinfo=UTC)
+    clocks = pl.DataFrame(
+        {
+            "game_id": ["g", "g"],
+            "team": ["SEA", "SF"],
+            "season": [2024, 2024],
+            "week": [1, 1],
+            "cutoff": [lock, lock],
+            "opener": [True, True],
+        }
+    )
+    # The old team has all six players. A dated directory explicitly assigns
+    # one to SF, and marks two unavailable. A later return clears the latter.
+    seeds = (
+        clocks.head(1)
+        .join(pl.DataFrame({"player_id": list("abcdef")}), how="cross")
+        .select("game_id", "team", "player_id")
+    )
+    vintage = pl.DataFrame(
+        {
+            "player_id": list("abcefxyn"),
+            "team": ["SF", "FA", "SEA", "SEA", "SEA", "SF", "SF", "SF"],
+            "listed": [True, False, False, True, True, True, True, True],
+            "edition_at": [
+                lock - timedelta(days=n) for n in (5, 5, 5, -1, 31, 5, 5, 5)
+            ],
+            "season": [2024] * 8,
+            "rookie": [False] * 6 + [True, False],
+            "has_active_status": [False] * 8,
+        }
+    )
+    boxes = pl.DataFrame({"season": [2024], "player_id": ["n"]})
+    ev = opening_evidence(clocks, seeds, boxes, vintage)
+    assert set(ev["player_id"]) == set("abcy")
+    pool = (
+        pl.concat(
+            [
+                seeds,
+                clocks.join(ev.filter(c("listed")), on=["team", "season"]).select(
+                    seeds.columns
+                ),
+            ]
+        )
+        .join(clocks, on=["game_id", "team"])
+        .with_columns(
+            pl.lit(None, dtype=pl.Datetime("us", "UTC")).alias(k)
+            for k in ("depth_at", "identity_at", "prior_at")
+        )
+    )
+    reports = seeds.filter(c("player_id") == "c").with_columns(
+        pl.lit(lock - timedelta(days=1)).alias("report_at")
+    )
+    moves = pool.select("player_id", c("identity_at").alias("move_at"), "team").clear()
+    fixed = apply_editions(pool, ev, moves, reports)
+    assert sorted(fixed.select("player_id", "team").rows()) == [
+        ("a", "SF"),
+        ("c", "SEA"),
+        ("d", "SEA"),
+        ("e", "SEA"),
+        ("f", "SEA"),
+        ("y", "SF"),
+    ]
+    assert set(fixed.filter(c("edition_confirmed"))["player_id"]) == {"a", "y"}
+    # A subsequent documented trade back takes precedence over the directory.
+    trade = pl.DataFrame(
+        {"player_id": ["a"], "team": ["SEA"], "move_at": [lock - timedelta(days=1)]}
+    )
+    with_prior = pool.with_columns(pl.lit(lock - timedelta(days=150)).alias("prior_at"))
+    reconciled = resolve_teams(
+        apply_editions(with_prior, ev, trade, reports), reports, trade
+    )[0]
+    assert reconciled.filter(c("player_id") == "a")["team"].to_list() == ["SEA"]
+
+
+def test_opportunity_study_replays_pinned_editions_and_paired_rb_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c = pl.col
+    p, raw = matchup_fixture()
+    monkeypatch.setattr(opportunity_study, "matchup_sources", lambda end_year: raw)
+    monkeypatch.setitem(K, "RB", 1)
+    index = tmp_path / "index.csv"
+    pl.DataFrame(
+        {
+            "season": [2013, 2014],
+            "repository": ["test/source"] * 2,
+            "commit": ["abc", "def"],
+            "stamp": ["2013-08-30T12:00:00Z", "2014-08-30T12:00:00Z"],
+            "path": ["players.json", "database.csv"],
+        }
+    ).write_csv(index)
+    monkeypatch.setattr(opening, "SOURCES", index)
+    monkeypatch.setattr(opportunity_study, "SOURCES", index)
+    archive = {
+        "00-0000001": {
+            "position": "HB",
+            "team": "KCC",
+            "status": "ACT",
+            "full_name": "Backup",
+        },
+        "00-0000002": {
+            "position": "QB",
+            "team": "SFO",
+            "status": "RES",
+            "full_name": "Reserve",
+        },
+        "00-0000003": {"position": "TE", "team": "SEA", "full_name": "Old"},
+    }
+
+    class Response:
+        def __init__(self, url: str) -> None:
+            self.content = (
+                json.dumps(archive)
+                if url.endswith("json")
+                else "gsis_id,name,pos,team,draft_year\n00-0000001,Backup,RB,FA*,2012\n"
+                "00-0000002,Duplicate,QB,SFO,2010\n00-0000002,Duplicate,QB,TBB,2010\n"
+            ).encode()
+
+        def raise_for_status(self) -> None:
+            pass
+
+    monkeypatch.setattr(opening.requests, "get", lambda url, timeout: Response(url))
+    editions, _ = opening.opening_editions(2014)
+    assert editions.select("season", "team", "position", "listed").rows() == [
+        (2013, "KC", "RB", True),
+        (2013, "SF", "QB", False),
+        (2014, "FA*", "RB", False),
+    ]
+    sides = schedule_sides(p.schedules)
+    plays = sides.select(
+        "game_id",
+        "season",
+        "week",
+        c("team").alias("posteam"),
+        pl.lit("REG").alias("season_type"),
+        pl.lit("run").alias("play_type"),
+        pl.lit(1).alias("rush_attempt"),
+        pl.lit(0).alias("qb_kneel"),
+        c("team").alias("rusher_player_id"),
+        pl.lit(None, dtype=pl.String).alias("receiver_player_id"),
+        pl.lit(5).alias("yardline_100"),
+        pl.lit(0).alias("play_deleted"),
+        pl.lit(0).alias("two_point_attempt"),
+    )
+    for year in range(2009, 2015):
+        p.pbp_by_season[year] = plays.filter(c("season") == year)
+    out = tmp_path / "opportunity"
+    opportunity_study.run_opportunity(out, 2014, p)
+    baseline = pl.read_parquet(out / "original-baseline.parquet")
+    added = pl.read_parquet(out / "original-carry_goal.parquet")
+    assert_frame_equal(
+        baseline.select(*PLAYER_WEEK, "team", "points"),
+        added.select(*PLAYER_WEEK, "team", "points"),
+    )
+    assert set(pl.read_csv(out / "scores.csv")["target"]) == {
+        "points",
+        "carries",
+        "rushing_tds",
+        "rushing_yards",
+    }
+
+
+def test_rb_opportunities_use_prior_full_offense_and_real_zeros() -> None:
+    c = pl.col
+    plays = pl.DataFrame(
+        {
+            "season_type": ["REG"] * 10 + ["POST"],
+            "game_id": ["old"] * 11,
+            "season": [2023] * 11,
+            "week": [18] * 11,
+            "posteam": ["SEA"] * 11,
+            "play_type": [
+                "run",
+                "run",
+                "run",
+                "run",
+                "no_play",
+                "run",
+                "run",
+                "pass",
+                "pass",
+                "pass",
+                "run",
+            ],
+            "rush_attempt": [1] * 7 + [0, 0, 0, 1],
+            "qb_kneel": [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+            "two_point_attempt": [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+            "play_deleted": [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+            "rusher_player_id": [
+                "back",
+                "qb",
+                None,
+                "qb",
+                "back",
+                "back",
+                "back",
+                None,
+                None,
+                None,
+                "back",
+            ],
+            "receiver_player_id": [None] * 7 + ["wr", "back", None, None],
+            "yardline_100": [5, 6, 4, 1, 3, 4, 1, 1, 6, 5, 3],
+        }
+    )
+    other = plays.head(1).with_columns(
+        pl.lit("SF").alias("posteam"),
+        pl.lit("sf_old").alias("game_id"),
+        pl.lit(20).alias("yardline_100"),
+        pl.lit("other").alias("rusher_player_id"),
+    )
+    future = other.with_columns(
+        pl.lit("new").alias("game_id"),
+        pl.lit(2024).alias("season"),
+        pl.lit(1).alias("week"),
+    )
+    team, player = count_opportunities(
+        pl.concat([plays, other, future], how="vertical_relaxed")
+    )
+    assert team.filter(c("team") == "SEA").select(
+        "runs", "inside5_runs", "inside5_targets"
+    ).rows() == [(3, 2, 1)]
+    assert team.filter(c("team") == "SF").select(
+        "inside5_runs", "inside5_targets"
+    ).rows() == [(0, 0), (0, 0)]
+    snaps = pl.DataFrame(
+        {
+            "season": [2023, 2023],
+            "week": [18, 18],
+            "team": ["SEA", "SEA"],
+            "game_type": ["REG", "REG"],
+            "pfr_player_id": ["zero", "dnp"],
+            "offense_snaps": [0, 0],
+            "defense_snaps": [0, 0],
+            "st_snaps": [1, 0],
+        }
+    )
+    ids = (
+        snaps.select("pfr_player_id")
+        .rename({"pfr_player_id": "pfr_id"})
+        .with_columns(c("pfr_id").alias("player_id"))
+    )
+    obs = include_snap_zeros(player, team, snaps, ids)
+    board = pl.DataFrame(
+        {
+            "game_id": ["new"] * 4,
+            "season": [2024] * 4,
+            "week": [1] * 4,
+            "position": ["RB"] * 4,
+            "team": ["SF"] * 4,
+            "player_id": ["back", "zero", "dnp", "other"],
+            "ruled_out": [False, False, False, True],
+        }
+    )
+    result = rb_opportunities(board, team, obs)
+    back = result.filter(c("player_id") == "back")
+    assert back.select(
+        "share_runs", "team_runs", "expected_runs", "backfield_competition"
+    ).row(0) == pytest.approx((1 / 3, 1, 1 / 3, 0))
+    assert back.select("share_inside5_runs", "expected_inside5_runs").row(
+        0
+    ) == pytest.approx((2 / 5, 0))
+    assert result.filter(c("player_id") == "zero")["share_runs"].item() == 0
+    assert result.filter(c("player_id") == "dnp")["share_runs"].item() is None
+    # Neither today's player allocation nor today's team totals can change X.
+    perturb = pl.when(c("season") == 2024).then(123).otherwise(c("runs")).alias("runs")
+    assert_frame_equal(
+        result.select(*CARRY, *GOAL),
+        rb_opportunities(
+            board, team.with_columns(perturb), obs.with_columns(perturb)
+        ).select(*CARRY, *GOAL),
     )

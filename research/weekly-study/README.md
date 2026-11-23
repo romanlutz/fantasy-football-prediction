@@ -11,6 +11,10 @@ opportunity and scoring components, player-specific prediction intervals and
 points lost relative to the best 12/24/24/12 starters. The earlier game-by-game
 benchmark below is preserved, not silently replaced.
 
+The [opening roster and RB workload experiment](opportunity/README.md)
+reconstructs pre-opener affiliations and tests carry shares and goal-line
+opportunities without changing the players in the forecast comparison.
+
 ## Primary experiment: team roles, one hour before kickoff
 
 We select one projected starting QB, two RBs, three WRs and one TE for each

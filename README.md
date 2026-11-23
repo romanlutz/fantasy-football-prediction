@@ -44,6 +44,10 @@ Use `uv run --locked ffpred weekly-matchups --end-year 2025` for the
 [component, ensemble, player prediction interval and 12-team starter study](research/weekly-study/matchups/README.md).
 It includes team openers and freezes the entire league before the first game of the week.
 
+`uv run --locked ffpred weekly-opportunity --end-year 2025` runs the
+[dated opening roster and RB workload comparison](research/weekly-study/opportunity/README.md).
+It separates changes in who is selected from carry-share and goal-line forecasts on identical players.
+
 To reproduce the full-roster comparison and original-paper reconciliation:
 
 ```console
