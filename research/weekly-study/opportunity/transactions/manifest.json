@@ -1,0 +1,130 @@
+{
+  "test_years": [
+    2014,
+    2025
+  ],
+  "transaction_news_sha256": "4d40ecf8867e8295f67ecee5661cbd87690605d3a82b2756af3e9bbc9e2dac57",
+  "pbp_input_columns": [
+    "season_type",
+    "game_id",
+    "season",
+    "week",
+    "posteam",
+    "play_type",
+    "rush_attempt",
+    "qb_kneel",
+    "rusher_player_id",
+    "receiver_player_id",
+    "yardline_100",
+    "play_deleted",
+    "two_point_attempt"
+  ],
+  "pbp_sha256_by_season": {
+    "2009": "94e52ca916e106932fc017e2689e782b4ed85b369794bf295ae823e33a58ad75",
+    "2010": "2aa85cd50e034b78c5adb1715809bcb5cb94041c538ba51b03e111e58def3898",
+    "2011": "7aed863aaa7b1a84c713b5b2643b5806688d14166e3727fdb2c5ec9bc5ede960",
+    "2012": "3acf4091d7d5f939f13717c494af8b4dbe41a7b5f9340e18a61397a8e05f61ee",
+    "2013": "ab34d2aa868476f48b908a8d2095f9c77a64751011706435220485ddddaee473",
+    "2014": "2817e602dde3616627e2c49f56f805e9bb00f9aed12aeebb7840c6d1e2161cd9",
+    "2015": "da19e5d09103bd97f6bbf8708f4c7a9d1c410e9816453fd0c1020e91a6a9ec14",
+    "2016": "5d143230ecbf0f4be2ea7f82f2040f56ddcf8d8514767d7279d10179bfdb047b",
+    "2017": "3c4a3be9dae61731a65af1039c3421afac9200f01f23da8ceba340305bd6bdc0",
+    "2018": "7c378adea13536777da4b3abbc12d9d297f8cef22cd973ed8d27d52965ef3315",
+    "2019": "a1594e5b14379f8c58a43b0a519e960a9f739ff5be84a6477fd985ccd04035cf",
+    "2020": "2cfc4baf12b8a70849f8b8c57790d35bb164e3c0549bf337333d4df35a3acd1b",
+    "2021": "bbf2aec832126ddb962cd8e442557e89bd36dbbd5eaebf1cef191e671db838a0",
+    "2022": "3b223b90e226990e8676808a5243aa1cdf86a34c8adfa354b1bec4da74d97225",
+    "2023": "488a2d9502cb6c2220054dfff4c1117715a0af38b03f8122597b4efc88ab7c7a",
+    "2024": "f91d523bdc3c073595cc42b752328d7cb1d1800d3742680a555f724cc293a7fa",
+    "2025": "d59420b9166510b784030bd66f361bac853d8f54b43bc30481fc2ed3e7d0aa4b"
+  },
+  "source_sha256": {
+    "schedules:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "8f984cd0ff8571486842de28e8560acfc692b1ae7463e1c1db37d1364a7ba21f",
+    "rosters_weekly:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "27233d9d34b34c7f5f09ddea8fdc0632343c1410b4852fd22b16c47d4fb40482",
+    "player_stats:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "cbe0084c58dca811ca4f09349d34e278fd85bd640656490375473e78a38f606d",
+    "players": "242107c5cea4d848cfb9444c26395672f5ac1216a683822802edd45f17483b25",
+    "injuries:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "cea9226c75691d215e81e7e23a98fa9a9e1db28421b9b2466837617c081fdece",
+    "depth_charts:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024": "2b97d65a457868675d3c8d789311028fe6faa2ada76d2066b6c67aecf972256f",
+    "depth_charts:2025": "334aaba9f9aeae0b680db59763a059f6c50c9fd77e1c220af257134ca0b94fd2",
+    "team_stats:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "42098a27da298f2b8f3fabbc65a792c66fb15d95a8c07c753049dfe064b05f44",
+    "trades": "c1c52f9dd0eb425829d121706560548090e968856db2b3c3c46ed14667480f0f",
+    "draft": "d746710609c7596dd6ce459cc8ce4b48215f5be212eb02013480bfa102f60054",
+    "snaps": "d2f7b6e4db9f1f4253601e0a3c975e86c29a32bcf32433e4c7ba51ed1f15764e"
+  },
+  "news_sha256": "3bcf6d7e0645c49b4915be9249398ad549ce13d0c98dfe9ab9d1594b15d71e07",
+  "editions_index_sha256": "aba1faa7aec28e906515bbc67cafcbc3cca80bb554bfd83942924e05f8ba85d4",
+  "club_rosters": {
+    "index_sha256": "c592376fffd6496a83501176a709076d5d953c1da9cf9b8c84e6cf40359518c6",
+    "facts_sha256": "4282d3df3b4e3e0844199cc78afd6ea9913918af1f3bb35300bbda09e7a2ee98"
+  },
+  "outputs": {
+    "club_only-carry.parquet": {
+      "rows": 12602,
+      "sha256": "c19756f806861188cd6e42407b1a72b72a8342956631afa3115ca52d864b6c1c"
+    },
+    "transactions-carry.parquet": {
+      "rows": 12603,
+      "sha256": "6e6deabfde4b5ff1416903db8b159f79c294e2e90bdfdb83c08eb962e71791d2"
+    },
+    "editions.csv": {
+      "rows": 11,
+      "sha256": "968375e833a64453d84add136da84fef90b3da3e96fc6638b85507911df51c51"
+    },
+    "club-revisions.csv": {
+      "rows": 416,
+      "sha256": "357b09c6cc3734cf7a202bf0b22226f3049d932f3fb4bdc91748d16c6bb2dca7"
+    },
+    "selection.csv": {
+      "rows": 16,
+      "sha256": "d4336d3b790e7fad643e70fa7c72fcd99e6c6a38a7148cd21406ac31f5e79c72"
+    },
+    "opening-annual.csv": {
+      "rows": 96,
+      "sha256": "68d0cfdb12843bfc1ce2b3b2a73c4c564f29e88663d75d7626eddd3ee26765a1"
+    },
+    "affiliation-tiers.csv": {
+      "rows": 21,
+      "sha256": "05fb45bbbb28829d2b688fffe5eea126bd71a84a18b1e2bcb999a6216a0bad20"
+    },
+    "roster-status.csv": {
+      "rows": 67,
+      "sha256": "040d1389ef801f4cbb7a69550a5d8b38ccb1cc2f3c522e75037e75fe631d448e"
+    },
+    "reviewed-mismatches.csv": {
+      "rows": 30,
+      "sha256": "c575cbacc7bcca474d95d5e99c4977b186d7a06045ee4b67757e53b2306933c7"
+    },
+    "unresolved.csv": {
+      "rows": 252,
+      "sha256": "5e8eca6c86881873b02fb3fcac33aa44a354b324c69616e077d0bb4246682c01"
+    },
+    "play-coverage.csv": {
+      "rows": 17,
+      "sha256": "9bc0ea176ce53f3b6c6e5fb0b913b90fd79db79c81553eb03ca828596b0ffb2f"
+    },
+    "history-coverage.csv": {
+      "rows": 48,
+      "sha256": "563775471f1481c01222ed8ade3fc6001d92eadbdddbf2ecdb0d59f8ba4bdfab"
+    },
+    "scores.csv": {
+      "rows": 26,
+      "sha256": "bd9f84bcefd66d3aafab5cdd90aa93089f59cdcaebd8369c3c26ebe42986726a"
+    },
+    "annual.csv": {
+      "rows": 312,
+      "sha256": "c9a6e6b6736e7ff10a2b962912338022c059886de3bc28acbee34e5de6e9aa72"
+    },
+    "opener-scores.csv": {
+      "rows": 52,
+      "sha256": "f6ebd097f3bdb2ff491a7c8c7505e58285d49cd862397879e02bbfb48569cbbe"
+    },
+    "starters.csv": {
+      "rows": 28,
+      "sha256": "3ca41736d91479e0e59d2de3db95ced66e16076ad06ca25eb712424ff94b4b96"
+    },
+    "starter-annual.csv": {
+      "rows": 336,
+      "sha256": "f90f557ed633e4e7bb244219bdb47d0063396487c28826fb0958ec15027a67a4"
+    }
+  }
+}

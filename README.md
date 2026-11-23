@@ -49,6 +49,8 @@ It includes team openers and freezes the entire league before the first game of 
 It separates changes in who is selected from carry-share and goal-line forecasts on identical players.
 The default now uses pre-lock club roster revisions for every 2014-2025
 opener. Pass `--directory-only` to reproduce the earlier board.
+Add `--transactions --output-dir artifacts/weekly-transactions` to compare the
+club-only control with the [transaction-corrected board and affiliation audit](research/weekly-study/opportunity/transactions/README.md).
 
 To reproduce the full-roster comparison and original-paper reconciliation:
 

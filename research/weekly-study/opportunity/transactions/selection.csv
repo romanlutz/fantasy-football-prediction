@@ -1,0 +1,17 @@
+board,opener,position,picks,correct,precision,same_team_box,other_team_box,no_box,changed_picks,changed_correct
+club_only,false,QB,5918,5192,0.87732342,5252,0,666,2,0
+transactions,false,QB,5918,5193,0.87749240,5253,0,665,2,1
+club_only,false,RB,11834,9461,0.79947609,10317,3,1514,15,1
+transactions,false,RB,11835,9467,0.79991550,10327,1,1507,16,7
+club_only,false,TE,5916,4519,0.76386072,5214,2,700,3,0
+transactions,false,TE,5916,4520,0.76402975,5216,0,700,3,1
+club_only,false,WR,17753,14365,0.80915902,15622,5,2126,18,2
+transactions,false,WR,17753,14374,0.80966597,15632,0,2121,18,11
+club_only,true,QB,384,322,0.83854167,330,0,54,0,0
+transactions,true,QB,384,322,0.83854167,330,0,54,0,0
+club_only,true,RB,768,583,0.75911458,678,0,90,0,0
+transactions,true,RB,768,583,0.75911458,678,0,90,0,0
+club_only,true,TE,384,283,0.73697917,356,0,28,0,0
+transactions,true,TE,384,283,0.73697917,356,0,28,0,0
+club_only,true,WR,1152,892,0.77430556,1013,0,139,1,0
+transactions,true,WR,1152,893,0.77517361,1014,0,138,1,1

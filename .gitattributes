@@ -1,2 +1,4 @@
 src/ffpred/study/club_*.csv text eol=lf
+src/ffpred/study/transaction_news.csv text eol=lf
 research/weekly-study/opportunity/*.csv text eol=lf
+research/weekly-study/opportunity/transactions/*.csv text eol=lf

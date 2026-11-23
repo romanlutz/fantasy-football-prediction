@@ -46,6 +46,12 @@ from ffpred.study.role_evidence import (
 )
 from ffpred.study.roles import run_roles
 from ffpred.study.run import run_study
+from ffpred.study.transactions import (
+    apply_transactions,
+    available_at,
+    transaction_facts,
+    transaction_seeds,
+)
 
 
 def provider() -> FakeProvider:
@@ -552,6 +558,121 @@ def test_weekly_oracle_credits_boundary_ties_not_every_tied_player() -> None:
     assert league["hits"].item() == 9 and league["regret"].item() == 40
 
 
+def test_transactions_respect_the_common_lock_and_do_not_create_playing_status() -> (
+    None
+):
+    c = pl.col
+    t = datetime(2022, 10, 20, 23, 15, tzinfo=UTC)
+    assert available_at("2022-10-20").astimezone(UTC) == datetime(
+        2022, 10, 21, 4, tzinfo=UTC
+    )
+    with pytest.raises(DataAcquisitionError, match="offset"):
+        available_at("2022-10-20T19:00:00")
+    clocks = pl.DataFrame(
+        [
+            {
+                "season": 2022,
+                "week": w,
+                "team": team,
+                "game_id": f"g{w}",
+                "cutoff": t + timedelta(days=7 * (w - 1)),
+            }
+            for w in (1, 2, 3)
+            for team in ("CAR", "SF")
+        ]
+    )
+    events = pl.DataFrame(
+        [
+            ("cut", "release", None, t, None),
+            ("cut", "agreement", "SF", t + timedelta(seconds=1), None),
+            ("ps", "practice", "SF", t, None),
+            ("ban", "opening_suspension", None, t - timedelta(days=40), 2),
+        ],
+        schema=["player_id", "kind", "new_team", "move_at", "games"],
+        orient="row",
+    ).with_columns(
+        pl.lit("RB").alias("position"),
+        pl.lit("player").alias("name"),
+        pl.lit(2022).alias("season"),
+        pl.lit("CAR").alias("old_team"),
+    )
+    facts = transaction_facts(events, clocks)
+    seeds = (
+        facts.select("game_id", "team", "player_id", "position", "name")
+        .clear()
+        .with_columns(pl.lit(None, dtype=pl.String).alias("roster_source"))
+    )
+    assert transaction_seeds(seeds, facts).select(
+        "game_id", "team", "player_id"
+    ).rows() == [("g2", "SF", "cut")]
+    pool = (
+        clocks.join(events.select("player_id").unique(), how="cross")
+        .with_columns(
+            pl.lit(None, dtype=pl.Datetime("us", "UTC")).alias(k)
+            for k in ("identity_at", "depth_at", "news_at")
+        )
+        .with_columns(pl.lit(None, dtype=pl.String).alias("kind"))
+    )
+    # A target-week box cannot reverse a release; it can establish a return for
+    # the following week's board. The control has no box at all.
+    boxes = pool.filter(
+        (c("week") == 2) & (c("team") == "CAR") & (c("player_id") == "cut")
+    ).rename({"team": "actual_team"})
+    fixed = apply_transactions(pool, facts, boxes, clocks)
+    assert fixed.filter((c("player_id") == "cut") & (c("team") == "CAR"))[
+        "week"
+    ].to_list() == [3]
+    assert (
+        not apply_transactions(pool, facts, boxes.clear(), clocks)
+        .filter((c("player_id") == "cut") & (c("team") == "CAR"))
+        .height
+    )
+    assert not fixed.filter((c("player_id") == "ps") & (c("week") == 1)).height
+    assert fixed.filter((c("team") == "CAR") & (c("player_id") == "ban"))[
+        "week"
+    ].to_list() == [3]
+    arrival = fixed.filter(
+        (c("team") == "SF") & (c("week") == 2) & (c("player_id") == "cut")
+    )
+    assert arrival["identity_at"].item() == t + timedelta(seconds=1)
+    assert arrival["kind"].item() is None
+
+
+def test_roster_corroboration_cannot_turn_into_evidence_of_play() -> None:
+    observed = pl.DataFrame(
+        {
+            "season": [2014] * 5,
+            "week": [1] * 5,
+            "team": ["LV"] * 5,
+            "player_id": ["a", "b", "c", "d", "e"],
+            "evidence": [
+                "unverified",
+                "unverified",
+                "unverified",
+                "same_box",
+                "unverified",
+            ],
+        }
+    )
+    rosters = pl.DataFrame(
+        {
+            "gsis_id": ["a", "b", "b", "c", "d", "e"],
+            "team": ["OAK", "BUF", "NYJ", "BUF", "BUF", "OAK"],
+            "status_description_abbr": [None, "A01", "I01", "P07", "A01", "A01"],
+            "game_type": ["REG"] * 5 + ["PRE"],
+        }
+    ).with_columns(pl.lit(2014).alias("season"), pl.lit(1).alias("week"))
+    result = opportunity_study.roster_audit(observed, rosters).sort("player_id")
+    assert result["evidence"].to_list() == [
+        "same_roster_only",
+        "conflicting_rosters",
+        "other_roster_only",
+        "same_box",
+        "no_record",
+    ]
+    assert result["roster_codes"][0] in ("", None)
+
+
 def matchup_fixture() -> tuple[FakeProvider, dict[str, pl.DataFrame]]:
     p = role_provider()
     c = pl.col
@@ -875,6 +996,16 @@ def test_opportunity_study_replays_pinned_editions_and_paired_rb_rows(
         "carries",
         "rushing_tds",
         "rushing_yards",
+    }
+    compared = tmp_path / "transaction-replay"
+    opportunity_study.run_opportunity(compared, 2014, p, transactions=True)
+    assert_frame_equal(
+        pl.read_parquet(compared / "club_only-carry.parquet"),
+        pl.read_parquet(out / "dated-carry.parquet"),
+    )
+    assert set(pl.read_csv(compared / "affiliation-tiers.csv")["board"]) == {
+        "club_only",
+        "transactions",
     }
 
 

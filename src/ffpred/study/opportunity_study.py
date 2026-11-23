@@ -28,6 +28,7 @@ from ffpred.study.opportunities import (
 from ffpred.study.panel import PLAYER_WEEK, TEAM_CODES
 from ffpred.study.role_evidence import ENTRY, NEWS_FILE, SIDE
 from ffpred.study.run import HISTORY_START, LAST_COMPLETE, PAPER_YEAR
+from ffpred.study.transactions import LEDGER, read_transactions
 
 c = pl.col
 PBP_COLUMNS = (
@@ -69,7 +70,7 @@ def opportunity_sources(
     return team, player, hashes
 
 
-def affiliation_audit(
+def observed_affiliations(
     board: pl.DataFrame, snaps: pl.DataFrame, ids: pl.DataFrame
 ) -> pl.DataFrame:
     observed = (
@@ -101,20 +102,117 @@ def affiliation_audit(
         board.filter(c("team_role") & (c("season") >= PAPER_YEAR))
         .join(observed, on=PLAYER_WEEK, how="left", validate="1:1")
         .with_columns(category.alias("evidence"))
+    )
+
+
+def affiliation_audit(
+    board: pl.DataFrame, snaps: pl.DataFrame, ids: pl.DataFrame
+) -> pl.DataFrame:
+    return (
+        observed_affiliations(board, snaps, ids)
         .group_by("season", "opener", "evidence")
         .len("picks")
     )
+
+
+def roster_audit(observed: pl.DataFrame, rosters: pl.DataFrame) -> pl.DataFrame:
+    weekly = (
+        rosters.filter(c("game_type") == "REG")
+        .select(
+            "season",
+            "week",
+            c("gsis_id").alias("player_id"),
+            c("team").replace(TEAM_CODES).alias("roster_team"),
+            "status_description_abbr",
+        )
+        .drop_nulls(["player_id", "roster_team"])
+        .unique()
+        .group_by(PLAYER_WEEK)
+        .agg(
+            c("roster_team").n_unique().alias("roster_teams"),
+            c("roster_team").unique().sort().str.join("|"),
+            c("status_description_abbr")
+            .drop_nulls()
+            .unique()
+            .sort()
+            .str.join("|")
+            .alias("roster_codes"),
+        )
+    )
+    return observed.join(
+        weekly, on=PLAYER_WEEK, how="left", validate="1:1"
+    ).with_columns(
+        pl.when(c("evidence") != "unverified")
+        .then(c("evidence"))
+        .when(c("roster_teams") > 1)
+        .then(pl.lit("conflicting_rosters"))
+        .when(c("roster_team") == c("team"))
+        .then(pl.lit("same_roster_only"))
+        .when(c("roster_team").is_not_null())
+        .then(pl.lit("other_roster_only"))
+        .otherwise(pl.lit("no_record"))
+        .alias("evidence")
+    )
+
+
+def transaction_tables(
+    data: dict[str, dict[str, pl.DataFrame]],
+    snaps: pl.DataFrame,
+    ids: pl.DataFrame,
+    rosters: pl.DataFrame,
+) -> dict[str, pl.DataFrame]:
+    observed = pl.concat(
+        [
+            roster_audit(observed_affiliations(group["board"], snaps, ids), rosters)
+            .select(
+                *PLAYER_WEEK,
+                *SIDE,
+                "opener",
+                "name",
+                "position",
+                "cutoff",
+                "evidence",
+                "actual_team",
+                "snap_team",
+                "roster_team",
+                "roster_codes",
+            )
+            .with_columns(pl.lit(label).alias("board"))
+            for label, group in data.items()
+        ]
+    )
+    after = observed.filter(c("board") == "transactions").select(
+        *PLAYER_WEEK, c("team").alias("selected_after")
+    )
+    cases = observed.filter(
+        (c("board") == "club_only") & c("evidence").str.starts_with("other_")
+    ).join(after, on=PLAYER_WEEK, how="left", validate="1:1")
+    return {
+        "affiliation-tiers": observed.group_by("board", "opener", "evidence")
+        .len("picks")
+        .sort("opener", "board", "evidence"),
+        "roster-status": observed.filter(c("evidence").str.ends_with("roster_only"))
+        .group_by("board", "opener", "evidence", "roster_codes")
+        .len("picks")
+        .sort("board", "opener", "evidence", "roster_codes"),
+        "reviewed-mismatches": cases.drop("board").sort(*PLAYER_WEEK),
+        "unresolved": observed.filter(
+            c("evidence").is_in(
+                ["no_record", "conflicting_rosters", "conflicting_records"]
+            )
+        ).sort("board", *PLAYER_WEEK),
+    }
 
 
 def roster_tables(
     data: dict[str, dict[str, pl.DataFrame]], covered: list[int]
 ) -> dict[str, pl.DataFrame]:
     rows = []
-    for key, group in data.items():
+    a, b = data
+    for key, counterpart in ((a, b), (b, a)):
+        group = data[key]
         board = group["board"]
-        other = data["dated" if key == "original" else "original"]["judged"].select(
-            *ENTRY, "position"
-        )
+        other = data[counterpart]["judged"].select(*ENTRY, "position")
         rows.append(
             group["judged"]
             .join(board.select(*ENTRY, "week", "actual_team"), on=ENTRY, validate="1:1")
@@ -217,46 +315,70 @@ def _repair_tables(
     }
 
 
+def _edition_inputs(
+    end_year: int,
+    players: pl.DataFrame,
+    rosters: pl.DataFrame,
+    draft: pl.DataFrame,
+    *,
+    directory_only: bool,
+) -> tuple[pl.DataFrame, pl.DataFrame, dict[str, pl.DataFrame]]:
+    directory, meta = opening_editions(end_year)
+    tables = {"editions": meta}
+    if directory_only:
+        return directory, directory, tables
+    club, tables["club-revisions"] = club_editions(end_year, players, rosters, draft)
+    previous = directory.with_columns(pl.lit(False).alias("club_roster"))
+    editions = pl.concat(
+        [previous, club.select(previous.columns)], how="vertical_relaxed"
+    )
+    return directory, editions, tables
+
+
 def run_opportunity(
     output: Path,
     end_year: int,
     provider: NflDataProvider,
     *,
     directory_only: bool = False,
+    transactions: bool = False,
 ) -> dict[str, object]:
     if not PAPER_YEAR <= end_year <= LAST_COMPLETE:
         raise ConfigurationError("Opportunity holdouts must end in 2014..2025")
+    if transactions and directory_only:
+        raise ConfigurationError(
+            "Transaction comparison needs the published club board"
+        )
     output.mkdir(parents=True, exist_ok=True)
     source = ProvenanceProvider(provider)
     raw = matchup_sources(end_year)
-    editions, meta = opening_editions(end_year)
     years = tuple(range(HISTORY_START, end_year + 1))
-    directory = editions
     players_index = provider.load_players()
     roster_index = provider.load_rosters_weekly(years)
     ids = id_map(players_index, roster_index)
-    club_meta = None
-    if not directory_only:
-        club, club_meta = club_editions(
-            end_year,
-            players_index,
-            roster_index,
-            raw["draft"],
-        )
-        previous = editions.with_columns(pl.lit(False).alias("club_roster"))
-        editions = pl.concat(
-            [previous, club.select(previous.columns)], how="vertical_relaxed"
-        )
+    directory, editions, tables = _edition_inputs(
+        end_year,
+        players_index,
+        roster_index,
+        raw["draft"],
+        directory_only=directory_only,
+    )
+    pairs = (
+        (("club_only", editions, None), ("transactions", editions, read_transactions()))
+        if transactions
+        else (("original", None, None), ("dated", editions, None))
+    )
     data = {
-        label: prepare_board(source, end_year, **raw, editions=ed)
-        for label, ed in (("original", None), ("dated", editions))
+        label: prepare_board(source, end_year, **raw, editions=ed, transactions=tx)
+        for label, ed, tx in pairs
     }
     teams, players, pbp_hashes = opportunity_sources(provider, years, raw["snaps"], ids)
-    if data["original"]["sides"].join(teams, on=SIDE, how="anti").height:
+    if data[pairs[0][0]]["sides"].join(teams, on=SIDE, how="anti").height:
         raise DataAcquisitionError("Missing play-by-play for a completed team-game")
-    tables = roster_tables(data, editions["season"].unique().to_list())
-    if club_meta is not None:
-        tables["club-revisions"] = club_meta
+    tables.update(roster_tables(data, editions["season"].unique().to_list()))
+    if transactions:
+        tables.update(transaction_tables(data, raw["snaps"], ids, roster_index))
+    elif not directory_only:
         earlier = prepare_board(source, end_year, **raw, editions=directory)
         tables.update(
             _repair_tables(
@@ -267,7 +389,6 @@ def run_opportunity(
                 ids,
             )
         )
-    tables["editions"] = meta
     tables["play-coverage"] = (
         teams.group_by("season")
         .agg(
@@ -306,11 +427,16 @@ def run_opportunity(
             )
             .with_columns(pl.lit(label).alias("board"))
         )
-        for block, features in (
-            ("baseline", ()),
-            ("carry", CARRY),
-            ("carry_goal", (*CARRY, *GOAL)),
-        ):
+        blocks = (
+            (("carry", CARRY),)
+            if transactions
+            else (
+                ("baseline", ()),
+                ("carry", CARRY),
+                ("carry_goal", (*CARRY, *GOAL)),
+            )
+        )
+        for block, features in blocks:
             pred = project(board, end_year, extra_features=features, positions=("RB",))
             if not pred.select(*ENTRY, "points").equals(held.select(*ENTRY, "points")):
                 raise DataAcquisitionError(
@@ -355,6 +481,7 @@ def run_opportunity(
         }
     manifest = {
         "test_years": [PAPER_YEAR, end_year],
+        **({"transaction_news_sha256": file_sha256(LEDGER)} if transactions else {}),
         "pbp_input_columns": PBP_COLUMNS,
         "pbp_sha256_by_season": pbp_hashes,
         "source_sha256": {

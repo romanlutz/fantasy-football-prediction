@@ -14,6 +14,8 @@ benchmark below is preserved, not silently replaced.
 The [opening roster and RB workload experiment](opportunity/README.md)
 reconstructs pre-opener affiliations and tests carry shares and goal-line
 opportunities without changing the players in the forecast comparison.
+The [transaction follow-up](opportunity/transactions/README.md) separates
+stale team assignments from moves that were not public at lineup lock.
 
 ## Primary experiment: team roles, one hour before kickoff
 

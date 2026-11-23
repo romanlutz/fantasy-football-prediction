@@ -9,6 +9,10 @@ touchdown model slightly, not the overall point forecast or starter decisions.
 These are different findings: picking the right player does not imply being
 able to predict his points much more closely.
 
+**Follow-up:** The [transaction audit](transactions/README.md) accounts for
+the 216 openers without a box or positive snap, checks the rest of the season
+against weekly rosters, and replays both boards with the same RB model.
+
 ## Opening roles: did we pick the right people?
 
 The repaired board filled all 2,688 slots across 384 team-openers: one QB, two
@@ -152,7 +156,7 @@ reliably from low usage. No 2026 games or preseason performance were used.
 volume among available rushers with shares that add up. Test how a teammate's
 confirmed absence or return redistributes carries, rather than assuming
 everyone keeps their past share. Keep these exact RB rows and top-24 metric
-as controls, and report injury-return weeks separately. The remaining
-affiliation work is in-season: distinguish transactions known by the weekly
-lock from moves that really happened later. A separate historical injury-exit
+as controls, and report injury-return weeks separately. The [in-season
+affiliation audit](transactions/README.md) distinguishes transactions known
+by the weekly lock from moves that happened later. A separate historical injury-exit
 ledger would be needed to verify mid-game injuries.

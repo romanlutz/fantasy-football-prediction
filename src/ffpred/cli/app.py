@@ -186,10 +186,16 @@ def _study_parsers(
         "weekly-opportunity", help="test opening affiliations and RB workload features"
     )
     opportunity.add_argument("--end-year", type=int, default=LAST_COMPLETE)
-    opportunity.add_argument(
+    affiliation = opportunity.add_mutually_exclusive_group()
+    affiliation.add_argument(
         "--directory-only",
         action="store_true",
         help="replay the earlier opener board without revision-pinned club rosters",
+    )
+    affiliation.add_argument(
+        "--transactions",
+        action="store_true",
+        help="compare dated transactions against the club board with RB carry features",
     )
     opportunity.add_argument(
         "--output-dir", type=Path, default=Path("artifacts/weekly-opportunity")
@@ -1220,6 +1226,7 @@ def main(  # noqa: PLR0912
                 args.end_year,
                 provider or _provider(settings),
                 directory_only=args.directory_only,
+                transactions=args.transactions,
             )
         elif args.command == "weekly-roles":
             output = run_roles(

@@ -64,6 +64,11 @@ from ffpred.study.role_selection import (
     select_roles,
 )
 from ffpred.study.run import HISTORY_START, LAST_COMPLETE, PAPER_YEAR
+from ffpred.study.transactions import (
+    apply_transactions,
+    transaction_facts,
+    transaction_seeds,
+)
 
 c = pl.col
 SCORE_TOLERANCE = 1e-7
@@ -77,6 +82,7 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
     snaps: pl.DataFrame,
     *,
     editions: pl.DataFrame | None = None,
+    transactions: pl.DataFrame | None = None,
 ) -> dict[str, pl.DataFrame]:
     years = tuple(range(HISTORY_START, end_year + 1))
     schedule = provider.load_schedules(years)
@@ -112,8 +118,17 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
             opener_seeds(clocks, rosters, draft, boxes),
         ]
     ).unique(ENTRY, keep="first", maintain_order=True)
-    if editions is not None:
-        evidence = opening_evidence(clocks, seeds, boxes, editions)
+    facts = (
+        transaction_facts(transactions, clocks) if transactions is not None else None
+    )
+    if facts is not None:
+        seeds = transaction_seeds(seeds, facts)
+    evidence = (
+        opening_evidence(clocks, seeds, boxes, editions)
+        if editions is not None
+        else None
+    )
+    if evidence is not None:
         extra_seeds = (
             clocks.filter(c("opener"))
             .join(evidence.filter(c("listed")), on=["season", "team"])
@@ -123,11 +138,11 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
         seeds = pl.concat([seeds, extra_seeds]).unique(
             ENTRY, keep="first", maintain_order=True
         )
-        pool = apply_editions(
-            role_pool(clocks, seeds, depth, news, reports), evidence, transfers, reports
-        )
-    else:
-        pool = role_pool(clocks, seeds, depth, news, reports)
+    pool = role_pool(clocks, seeds, depth, news, reports)
+    if facts is not None:
+        pool = apply_transactions(pool, facts, boxes, clocks)
+    if evidence is not None:
+        pool = apply_editions(pool, evidence, transfers, reports)
     pool, removed = resolve_teams(pool, reports, transfers)
     selected = select_roles(pool, reports, histories(base, boxes, absences))
     # At openers a dated depth chart is fresher than last season's usage.
