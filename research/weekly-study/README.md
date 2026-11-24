@@ -5,6 +5,11 @@ including the possibility of zero. The forecasts cover completed regular-season
 games through **2025**. They are not preseason projections; a lineup decision
 can use these forecasts downstream.
 
+The [per-game kickoff study](kickoff/README.md) forecasts each matchup until
+its own kickoff, keeps the common weekly freeze as a control, and scores only
+verified player, game and team matches. It does not treat a retrospective
+ranking of Thursday through Monday forecasts as a lineup available on Thursday.
+
 The [expected-points and starter study](matchups/README.md) adds season
 openers, one league-wide decision time, unique team assignments, forecasts of
 opportunity and scoring components, player-specific prediction intervals and

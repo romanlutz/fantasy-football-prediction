@@ -136,7 +136,7 @@ def read_news(path: Path) -> pl.DataFrame:
 def official_news(clocks: pl.DataFrame, news: pl.DataFrame) -> pl.DataFrame:
     c = pl.col
     invalid = (
-        ~c("kind").is_in(["starter", "activated", "inactive", "limited"])
+        ~c("kind").is_in(["starter", "activated", "released", "inactive", "limited"])
         | ~c("position").is_in(POSITIONS)
         | ~c("source").str.starts_with("https://")
         | ~c("published_at").str.contains(r"(?:Z|[+-]\d\d:\d\d)$")

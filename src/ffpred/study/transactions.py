@@ -30,7 +30,7 @@ def available_at(value: str) -> datetime:
 
 
 def read_transactions(path: Path = LEDGER) -> pl.DataFrame:
-    data = pl.read_csv(path)
+    data = pl.read_csv(path, schema_overrides={"games": pl.Int64})
     suspension = c("kind") == "opening_suspension"
     if (
         data.drop_nulls(

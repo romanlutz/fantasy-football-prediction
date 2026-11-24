@@ -315,7 +315,7 @@ def _repair_tables(
     }
 
 
-def _edition_inputs(
+def edition_inputs(
     end_year: int,
     players: pl.DataFrame,
     rosters: pl.DataFrame,
@@ -356,7 +356,7 @@ def run_opportunity(
     players_index = provider.load_players()
     roster_index = provider.load_rosters_weekly(years)
     ids = id_map(players_index, roster_index)
-    directory, editions, tables = _edition_inputs(
+    directory, editions, tables = edition_inputs(
         end_year,
         players_index,
         roster_index,
@@ -369,7 +369,15 @@ def run_opportunity(
         else (("original", None, None), ("dated", editions, None))
     )
     data = {
-        label: prepare_board(source, end_year, **raw, editions=ed, transactions=tx)
+        label: prepare_board(
+            source,
+            end_year,
+            raw["trades"],
+            raw["draft"],
+            raw["snaps"],
+            editions=ed,
+            transactions=tx,
+        )
         for label, ed, tx in pairs
     }
     teams, players, pbp_hashes = opportunity_sources(provider, years, raw["snaps"], ids)
@@ -379,7 +387,14 @@ def run_opportunity(
     if transactions:
         tables.update(transaction_tables(data, raw["snaps"], ids, roster_index))
     elif not directory_only:
-        earlier = prepare_board(source, end_year, **raw, editions=directory)
+        earlier = prepare_board(
+            source,
+            end_year,
+            raw["trades"],
+            raw["draft"],
+            raw["snaps"],
+            editions=directory,
+        )
         tables.update(
             _repair_tables(
                 earlier,

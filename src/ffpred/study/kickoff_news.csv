@@ -1,0 +1,6 @@
+game_id,team,player_id,name,position,kind,published_at,source,max_opportunities
+2014_01_CAR_TB,TB,00-0027089,Louis Murphy,WR,released,2014-09-07T04:00:00Z,https://www.buccaneers.com/news/patton-dixon-activated-for-season-opener-13666704,
+2015_01_NO_ARI,NO,00-0026289,Tim Hightower,RB,released,2015-09-13T04:00:00Z,https://www.nbcsports.com/nfl/profootballtalk/rumor-mill/news/tim-hightowers-comeback-ends-for-now,
+2016_01_LA_SF,SF,00-0028409,DuJuan Harris,RB,released,2016-09-12T14:40:00Z,https://www.49ers.com/news/49ers-promote-wr-chris-harper-to-active-roster-release-rb-dujuan-harris-17671031,
+2018_07_HOU_JAX,JAX,00-0031045,Carlos Hyde,RB,inactive,2018-10-21T15:31:34Z,https://www.houstontexans.com/news/texans-inactives-vs-jaguars,
+2023_05_NYG_MIA,MIA,00-0036326,Chase Claypool,WR,inactive,2023-10-08T15:30:00Z,https://www.giants.com/news/saquon-barkley-injury-status-update-miami-dolphins-nfl-week-5-inactives,
