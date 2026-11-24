@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -33,6 +34,14 @@ c = pl.col
 CLAIMS = Path(__file__).with_name("kickoff_claims.csv")
 ARMS = ("weekly", "kickoff", "kickoff-audited")
 TRADE_WEEKS = [(2018, 7, "00-0031045"), (2022, 7, "00-0033280")]
+
+
+def ledger_hashes(paths: list[Path]) -> dict[str, str]:
+    """Compare the committed evidence across Windows and LF checkouts."""
+    return {
+        p.name: hashlib.sha256(p.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+        for p in paths
+    }
 
 
 def strict_tables(
@@ -196,8 +205,8 @@ def run_kickoff(
         "source_sha256": {
             **{k: v.sha256 for k, v in source.artifacts.items()},
             **{k: fingerprint_frame(k, v).sha256 for k, v in raw.items()},
-            **{p.name: file_sha256(p) for p in inputs},
         },
+        "ledger_sha256_lf": ledger_hashes(inputs),
         "opening_editions": metadata["editions"]
         .select("season", "url", "sha256")
         .to_dicts(),

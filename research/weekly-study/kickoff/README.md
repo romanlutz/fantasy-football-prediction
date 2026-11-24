@@ -97,7 +97,8 @@ uv run --locked ffpred weekly-kickoff --arm kickoff-audited --end-year 2025
 The command writes separate `artifacts/weekly-kickoff/<arm>/` directories with
 the full forecast Parquet (including unscored forecasts), annual and pooled
 scores, interval coverage, role counts, trade cases, and hashed inputs and
-outputs. [Final manifest](kickoff-audited/manifest.json) ·
+outputs. Source CSV hashes normalize line endings to LF so Windows checkouts
+can verify the same evidence. [Final manifest](kickoff-audited/manifest.json) ·
 [Annual errors](kickoff-audited/annual.csv) · [Interval coverage](kickoff-audited/intervals.csv).
 See the [earlier weekly-lock experiment](../opportunity/transactions/README.md)
 for the independent control's original roster audit. Its historical scores
