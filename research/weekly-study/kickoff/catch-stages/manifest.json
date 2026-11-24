@@ -1,0 +1,150 @@
+{
+  "arm": "catch-stages",
+  "test_years": [
+    2014,
+    2025
+  ],
+  "cutoff_inclusive": "own kickoff minus one microsecond",
+  "target": "verified game + team + player, otherwise withheld",
+  "pbp_sha256_by_season": {
+    "2009": "4f622efac81971721f565a7a2fe820c6ee882f0e5a35b115826d4358cee62654",
+    "2010": "537ed9204dfe3c87b6d582b169f86c0a245e4fda003853bbe947a1b1dfbeb612",
+    "2011": "a96e5963b150270b97da95ae50fb0f31d9d1a22d33b393847c7e5e9400321d1a",
+    "2012": "6e544b2a39589738b2d6b7470a766286048b10c161aba2def17455251dcfc272",
+    "2013": "b81b84239ffdb359fd7ddbef856073a8c83ab7405d98be7a0e5be8010c22c76b",
+    "2014": "cf1f63213463848f8e47f9cd8287b66f83bcdf11c8010a5cf7a8dffd61a08043",
+    "2015": "8d472742e442696d3a6e9fd885a5b7c8cbbe2a446e66b96597adbb66763f58b6",
+    "2016": "16f7fedd2c736852f0ebc3b2746cfc1d0adf6b94a285f1305208700de8595bed",
+    "2017": "8803e42e746ff8cccaca92924b793124e8eeb01c3e55e469229cbd7dab1adb2b",
+    "2018": "d0c6b297e6b1159b3eba1ba07a2f40ac4f3d3acb0adf4a732930579012e518ac",
+    "2019": "84585c88ec658e0fdf14153e58070f09cbe8046e535fc288b77162c3ca1f8ba9",
+    "2020": "8b674a4cce68705ac3d5e9ef2093b649f477137343d7422acbc3a7b1d4184fa4",
+    "2021": "9756a49c3d00fd3187e41d1fa3f28296754677a3bd666c265df2f277f626c7b2",
+    "2022": "41c38d92d2bd6ffa968e5e0193e71198a2945e5174877bc296333cdc6624d302",
+    "2023": "651fe44eb9b3cb4e5200514e30311d49ea185f4a72f1740fc688e2a71459d328",
+    "2024": "f91d523bdc3c073595cc42b752328d7cb1d1800d3742680a555f724cc293a7fa",
+    "2025": "3eeae12b2a981661190010ad90854c3d12ef11c908f6c2012baaad4d6e599b89"
+  },
+  "source_sha256": {
+    "schedules:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "8f984cd0ff8571486842de28e8560acfc692b1ae7463e1c1db37d1364a7ba21f",
+    "rosters_weekly:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "27233d9d34b34c7f5f09ddea8fdc0632343c1410b4852fd22b16c47d4fb40482",
+    "player_stats:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "cbe0084c58dca811ca4f09349d34e278fd85bd640656490375473e78a38f606d",
+    "players": "4fcdcd932fa94bc42d81384252c9bd29575ca7c6d90a51bbf2b6cda565636d84",
+    "injuries:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "49d80bb25912fca9827b3f0c42a6abb2d590d5539dd7d7c9fa94d7c2d15d21f1",
+    "depth_charts:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024": "2b97d65a457868675d3c8d789311028fe6faa2ada76d2066b6c67aecf972256f",
+    "depth_charts:2025": "cde13c9744894af41b2f389d8a2995d91024ecf3d850e7283a0bef51b4068bb9",
+    "team_stats:2009-2010-2011-2012-2013-2014-2015-2016-2017-2018-2019-2020-2021-2022-2023-2024-2025": "42098a27da298f2b8f3fabbc65a792c66fb15d95a8c07c753049dfe064b05f44",
+    "trades": "876d90ec383dfd3f5726dcc20fe92b3572c7d334b468a4238d7d872ff910f064",
+    "draft": "542d6c596f63eec26ae8c17b03a88775c47845f096a3493c84062419ff39ed7b",
+    "snaps": "d2f7b6e4db9f1f4253601e0a3c975e86c29a32bcf32433e4c7ba51ed1f15764e"
+  },
+  "ledger_sha256_lf": {
+    "role-news.csv": "beaf92bb340cbd953cfc97f5245272f14cc7721b0d06db88d42dc36bdc445174",
+    "kickoff_news.csv": "4f9c8c91d3199b119a68fc96a52485eab52c8039283efaf4b6065e9b93eb5840",
+    "opening_sources.csv": "cac569d15126091aa3946ceb7c5351390338ab1dbc5ab00b8a650ac9d76c2052",
+    "club_revisions.csv": "c592376fffd6496a83501176a709076d5d953c1da9cf9b8c84e6cf40359518c6",
+    "club_roster_facts.csv": "4282d3df3b4e3e0844199cc78afd6ea9913918af1f3bb35300bbda09e7a2ee98",
+    "transaction_news.csv": "4d40ecf8867e8295f67ecee5661cbd87690605d3a82b2756af3e9bbc9e2dac57",
+    "kickoff_claims.csv": "54efc27ba95ab0bd1f19395b0a60c15219f4eee49bf3ff1d7987327fd0655cfe",
+    "historical_availability.csv": "6b5c8d29c1bb295472f24d3de5d36c8514be43094998892f661625384096f24e"
+  },
+  "opening_editions": [
+    {
+      "season": 2013,
+      "url": "https://raw.githubusercontent.com/BurntSushi/nflgame/14de6dfa6ca82479fe70f9741d3d3c1cd057f699/nflgame/players.json",
+      "sha256": "d33e23d8070b879f0e7d9ef1d50e89f6eeb4a9f4f40392cee74f116a109e58fa"
+    },
+    {
+      "season": 2014,
+      "url": "https://raw.githubusercontent.com/BurntSushi/nflgame/da1ea6a97dfb7c9aa26a55957139cda5abab9e54/nflgame/players.json",
+      "sha256": "d091b7be0f1951a6afb2cfd28b9ebb1c2bb2957390b53ec73565825103796cc9"
+    },
+    {
+      "season": 2016,
+      "url": "https://raw.githubusercontent.com/BurntSushi/nflgame/786e043593ebda849229372b5647f5def23a25f6/nflgame/players.json",
+      "sha256": "8abb5ded55d01d990f548e3ca686ad9d28cc6bc4905b9e6f2da7e4dce110a0db"
+    },
+    {
+      "season": 2017,
+      "url": "https://raw.githubusercontent.com/derek-adair/nflgame/50b290e8880430d08b8e1758127cfeb3121e6250/nflgame/players.json",
+      "sha256": "4724e12a010e88e25fc9ebcfbc5bd872341d211536c450db29c8f9cb30933cf3"
+    },
+    {
+      "season": 2019,
+      "url": "https://raw.githubusercontent.com/dynastyprocess/data/5f90f1d1738e2aaa4b00aa7a44c5d22b3f418a30/files/database.csv",
+      "sha256": "538aa81a1bc983bf17dc7f1d6bd931e402fa802119fc026c76275aa1a02c25bd"
+    },
+    {
+      "season": 2020,
+      "url": "https://raw.githubusercontent.com/dynastyprocess/data/f7c1b5fcdc70ddd11e110d5573a824106a6f81cd/files/db_playerids.csv",
+      "sha256": "52fa350940f0a798f718dd6415bc65541860a0faae1701afb8f9c73a2ce94523"
+    },
+    {
+      "season": 2021,
+      "url": "https://raw.githubusercontent.com/dynastyprocess/data/701109e4735b181bfa6696ef0e7873dbd437ccf9/files/db_playerids.csv",
+      "sha256": "2f7003901bdf89b813600f5844e0773b8f9996274151eac53897429ce3fd53aa"
+    },
+    {
+      "season": 2022,
+      "url": "https://raw.githubusercontent.com/dynastyprocess/data/f0ff5934399c592360aad25e2e0f39a38ec1d82e/files/db_playerids.csv",
+      "sha256": "557861234774714811d122981340f77c607db6e769d202d1dcf1f8370a93f6cd"
+    },
+    {
+      "season": 2023,
+      "url": "https://raw.githubusercontent.com/dynastyprocess/data/abc230c6c2ca5341d869ffd89ff6038fece7524b/files/db_playerids.csv",
+      "sha256": "89055ad05bf51d8d35f4356a85131d740d10ffcdc5dc0c317898101880ea2771"
+    },
+    {
+      "season": 2024,
+      "url": "https://raw.githubusercontent.com/dynastyprocess/data/b9d2e2b4269f91a626f241c49f127080c5a3d068/files/db_playerids.csv",
+      "sha256": "b7bb75a152525441461cb6ce64e19b0b3cdc40b1c13bb064134efcd8b5ad0a2c"
+    },
+    {
+      "season": 2025,
+      "url": "https://raw.githubusercontent.com/dynastyprocess/data/85c4a9a87901f18af3f73b658d89988870510a94/files/db_playerids.csv",
+      "sha256": "669f0c9e9c2083fb0334cdcbae43dca9573afc910baf922a4e8330e86661ad17"
+    }
+  ],
+  "outputs": {
+    "forecast.parquet": {
+      "rows": 44109,
+      "sha256": "d40b11f30d9d68189406c81fbb04071caf571792015bc250dcaf95367dfd9208"
+    },
+    "scores.csv": {
+      "rows": 40,
+      "sha256": "39519e041ab4e40e3cd1411ab06c32ab8dc91700756c4dbc1b954cd3b474591e"
+    },
+    "annual.csv": {
+      "rows": 480,
+      "sha256": "949807284e222976c3a16a4586417e07d26d228b66c38d35f4b0321aef65f037"
+    },
+    "intervals.csv": {
+      "rows": 40,
+      "sha256": "9e7c9cec32bcd9b7b7ec7d6524217ec4e030e44eba342b9fac2ac394315ce7bc"
+    },
+    "roles.csv": {
+      "rows": 8,
+      "sha256": "16eee68575437e2510a55c83f597394ceb30e8e76d6932d653281e8ba5f99169"
+    },
+    "evidence.csv": {
+      "rows": 28,
+      "sha256": "950301e743b6dbc8ece9f7e0fe93ef9df8be26b383b840fdd17376ad51657841"
+    },
+    "unscored.csv": {
+      "rows": 28,
+      "sha256": "221797888bfdab001f3529b89da52ae2a92591676794cf2e99cad7c4d78e5b57"
+    },
+    "trade-weeks.csv": {
+      "rows": 2,
+      "sha256": "c2511bd4e5c22644e67ad834c450e9b95e9d1a76d68f9052785af85922122f51"
+    },
+    "paired.csv": {
+      "rows": 12,
+      "sha256": "7f9b690168daa24a7c754fef6185821c8331480748591bb23c28f18225ec883b"
+    },
+    "stages.csv": {
+      "rows": 32,
+      "sha256": "3e0669074c5fc1cb36f356e98b419682b289a73743ffd24dee3a3ce42c0b71af"
+    }
+  }
+}

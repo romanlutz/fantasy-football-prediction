@@ -12,6 +12,7 @@ from ffpred.datasets.io import file_sha256
 from ffpred.errors import ConfigurationError, DataAcquisitionError
 from ffpred.providers.protocol import NflDataProvider
 from ffpred.providers.provenance import ProvenanceProvider, fingerprint_frame
+from ffpred.study.catch_stages import catch_labels, catch_tables
 from ffpred.study.club_rosters import FACTS, REVISIONS
 from ffpred.study.historical_availability import (
     AVAILABILITY,
@@ -32,7 +33,7 @@ from ffpred.study.transactions import LEDGER, read_transactions
 
 c = pl.col
 CLAIMS = Path(__file__).with_name("kickoff_claims.csv")
-ARMS = ("weekly", "kickoff", "kickoff-audited")
+ARMS = ("weekly", "kickoff", "kickoff-audited", "catch-stages")
 TRADE_WEEKS = [(2018, 7, "00-0031045"), (2022, 7, "00-0033280")]
 
 
@@ -156,7 +157,9 @@ def run_kickoff(
     )
     tx = read_transactions()
     inputs = [NEWS_FILE, KICKOFF_NEWS, SOURCES, REVISIONS, FACTS, LEDGER]
-    if arm == "kickoff-audited":
+    audited = arm in {"kickoff-audited", "catch-stages"}
+    split = arm == "catch-stages"
+    if audited:
         inputs.extend([CLAIMS, AVAILABILITY])
         tx = pl.concat([tx, read_transactions(CLAIMS)], how="vertical_relaxed")
     data = prepare_board(
@@ -166,14 +169,14 @@ def run_kickoff(
         editions=editions,
         transactions=tx,
         strict_clock="weekly" if arm == "weekly" else "kickoff",
-        pregame_filter=apply_historical_availability
-        if arm == "kickoff-audited"
-        else None,
+        pregame_filter=apply_historical_availability if audited else None,
     )
     teams, players_pbp, hashes = opportunity_sources(
         provider, years, raw["snaps"], id_map(players, rosters)
     )
     board = data["board"]
+    if split:
+        board = catch_labels(board, provider.load_player_stats(years))
     rb = rb_opportunities(board, teams, players_pbp)
     pred = pl.concat(
         [
@@ -182,11 +185,14 @@ def run_kickoff(
                 end_year,
                 positions=(pos,),
                 extra_features=CARRY if pos == "RB" else (),
+                catch_stages=split,
             )
             for pos in POSITIONS
         ]
     ).sort("season", "week", *ENTRY)
     files = strict_tables(pred, data)
+    if split:
+        files.update(catch_tables(pred.drop_nulls("points")))
     directory = output / arm
     directory.mkdir(parents=True, exist_ok=True)
     for name, frame in files.items():

@@ -7,6 +7,8 @@ the strict comparison.
 
 Follow-up: [Dated opening affiliations, expected carry shares and inside-five opportunities](../opportunity/README.md).
 It tests selection and forecast improvements separately; the benchmark below is unchanged.
+The [catch-stage experiment](../kickoff/catch-stages/README.md) separately models
+completions and receptions on the audited kickoff board.
 
 **Use the ensemble for expected points and the component model to explain the miss.**
 Across 44,108 selected player-weeks and 209 regular-season weeks in 2014-2025,

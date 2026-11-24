@@ -1,0 +1,13 @@
+position,model,reference,mae_delta,low95,high95,seasons_better,seasons
+QB,catch_ensemble,ensemble,0.00097309,-0.00225330,0.00420446,5,12
+QB,catch_forest,factor_forest,0.00212812,-0.00865324,0.01415311,6,12
+QB,catch_linear,factor_linear,0.00126889,-0.00129876,0.00356260,4,12
+RB,catch_ensemble,ensemble,0.00010738,-0.00068278,0.00092703,6,12
+RB,catch_forest,factor_forest,0.00032794,-0.00276909,0.00348924,6,12
+RB,catch_linear,factor_linear,-0.00012753,-0.00058316,0.00033394,8,12
+TE,catch_ensemble,ensemble,-0.00005318,-0.00208848,0.00152365,5,12
+TE,catch_forest,factor_forest,0.00276288,-0.00347711,0.00869105,5,12
+TE,catch_linear,factor_linear,0.00000036,-0.00099617,0.00101470,8,12
+WR,catch_ensemble,ensemble,0.00051957,-0.00114461,0.00218006,5,12
+WR,catch_forest,factor_forest,0.00333551,-0.00357724,0.01042820,4,12
+WR,catch_linear,factor_linear,-0.00038687,-0.00212736,0.00153032,8,12

@@ -50,6 +50,9 @@ has 1,853 picks not on the weekly board and drops 1,854 weekly picks. On the
 3.715 (TE). Improved coverage and role selection do not establish more accurate
 individual forecasts on an unchanged population.
 
+Follow-up on the identical audited matchups: [does separately predicting
+completions, catches and yards per catch improve the point forecast?](catch-stages/README.md)
+
 ## Which games count
 
 An exact game, team and player box is scored as recorded. Without a box, a

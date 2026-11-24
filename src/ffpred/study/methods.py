@@ -179,11 +179,11 @@ def method_scores(
     return summary(["season", *group]), summary(group)
 
 
-def paired_mae(annual: pl.DataFrame) -> pl.DataFrame:
+def paired_mae(annual: pl.DataFrame, reference: str = "svr_paper") -> pl.DataFrame:
     """Resample paired seasons, preserving player-game weights within each draw."""
     scores = []
     for (position,), group in annual.partition_by("position", as_dict=True).items():
-        base = group.filter(pl.col("model") == "svr_paper").sort("season")
+        base = group.filter(pl.col("model") == reference).sort("season")
         n = base["player_games"].to_numpy()
         weights = (
             np.random.default_rng(42).multinomial(
@@ -207,7 +207,7 @@ def paired_mae(annual: pl.DataFrame) -> pl.DataFrame:
                 {
                     "position": position,
                     "model": model,
-                    "reference": "svr_paper",
+                    "reference": reference,
                     "mae_delta": np.average(delta, weights=n),
                     "low95": low,
                     "high95": high,

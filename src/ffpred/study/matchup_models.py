@@ -46,6 +46,7 @@ NAMES = [
 Q = (0.1, 0.25, 0.75, 0.9)
 c = pl.col
 Array = NDArray[np.float64]
+CATCH_CHANNELS = {"passing": "completions", "receiving": "receptions"}
 
 
 def _ridge(x: Array, y: Array, xt: Array, weights: Array | None = None) -> Array:
@@ -69,6 +70,17 @@ def _mean_fit(
     return model.fit(x, y / scale, sample_weight=weights).predict(xt) * scale
 
 
+def _rates(x: Array, xt: Array, totals: Array, counts: Array, *, forest: bool) -> Array:
+    use = counts > 0
+    if not np.any(use):
+        return np.zeros((len(xt), totals.shape[1]))
+    ratios = totals[use] / counts[use, None]
+    target = ratios.ravel() if ratios.shape[1] == 1 else ratios
+    return _mean_fit(x[use], target, xt, forest=forest, weights=counts[use]).reshape(
+        len(xt), totals.shape[1]
+    )
+
+
 def _factor(
     train: pl.DataFrame, x: Array, xt: Array, p: Array, *, forest: bool
 ) -> dict[str, Array]:
@@ -81,11 +93,7 @@ def _factor(
         use = n > 0
         # Estimate E[total|X,played] / E[opportunities|X,played], not an
         # unweighted average of per-game ratios; zero-volume lateral plays survive.
-        rates = (
-            _mean_fit(x[use], y[use] / n[use, None], xt, forest=forest, weights=n[use])
-            if np.any(use)
-            else np.zeros((len(xt), 2))
-        )
+        rates = _rates(x, xt, y, n, forest=forest)
         rates[:, 1] = np.clip(rates[:, 1], 0, 1)
         orphan = y[~use].sum(axis=0) / len(y)
         pred[f"active_{unit}"] = nhat[:, i]
@@ -98,6 +106,40 @@ def _factor(
         pred[stat] = p * np.maximum(0, other[:, i])
     pred["points"] = sum(
         (pred[k] * v for k, v in WEIGHTS.items()), start=np.zeros(len(p))
+    )
+    return pred
+
+
+def _split_catches(  # noqa: PLR0913 - reuse the control's volume and participation
+    train: pl.DataFrame,
+    x: Array,
+    xt: Array,
+    p: Array,
+    base: dict[str, Array],
+    *,
+    forest: bool,
+) -> dict[str, Array]:
+    pred = {}
+    for ch, made in CATCH_CHANNELS.items():
+        unit = CHANNELS[ch]
+        catches = train[made].to_numpy()
+        rate = _rates(x, xt, catches[:, None], train[unit].to_numpy(), forest=forest)[
+            :, 0
+        ].clip(0, 1)
+        pred[f"{made}_rate"] = rate
+        pred[made] = base[unit] * rate
+        stats = [f"{ch}_yards", f"{ch}_tds"]
+        y = train.select(stats).to_numpy()
+        per_catch = _rates(x, xt, y, catches, forest=forest)
+        per_catch[:, 1] = per_catch[:, 1].clip(0, 1)
+        orphan = y[catches == 0].sum(axis=0) / len(y)
+        for i, stat in enumerate(stats):
+            pred[f"{stat}_per_catch"] = per_catch[:, i]
+            pred[stat] = pred[made] * per_catch[:, i] + p * orphan[i]
+    scoring = base | pred
+    pred["points"] = sum(
+        (scoring[k] * weight for k, weight in WEIGHTS.items()),
+        start=np.zeros(len(p)),
     )
     return pred
 
@@ -139,7 +181,9 @@ def _intervals(
     return {f"q{round(q * 100)}": current[:, i] for i, q in enumerate(Q)}
 
 
-def _fold(group: pl.DataFrame, year: int, features: list[str]) -> pl.DataFrame:
+def _fold(
+    group: pl.DataFrame, year: int, features: list[str], *, catch_stages: bool
+) -> pl.DataFrame:
     earlier = group.filter((c("season") < year) & c("points").is_not_null())
     broad = earlier.filter(c("season") >= SNAP_START)
     roles = broad.filter(c("team_role"))
@@ -171,8 +215,13 @@ def _fold(group: pl.DataFrame, year: int, features: list[str]) -> pl.DataFrame:
             .predict_proba(xt)[:, 1]
         )
     preds["play_probability"] = prob
+    active = roles.filter(c("played"))
     for label, forest in (("linear", False), ("forest", True)):
-        stats = _factor(roles.filter(c("played")), x[played], xt, prob, forest=forest)
+        stats = _factor(active, x[played], xt, prob, forest=forest)
+        if catch_stages:
+            split = _split_catches(active, x[played], xt, prob, stats, forest=forest)
+            preds[f"catch_{label}"] = split.pop("points")
+            preds.update({f"catch_{label}_{name}": v for name, v in split.items()})
         preds[f"factor_{label}"] = stats.pop("points")
         preds.update({f"{label}_{name}": v for name, v in stats.items()})
     preds["ensemble"] = np.mean(
@@ -182,6 +231,14 @@ def _fold(group: pl.DataFrame, year: int, features: list[str]) -> pl.DataFrame:
         ],
         axis=0,
     )
+    if catch_stages:
+        preds["catch_ensemble"] = np.mean(
+            [
+                preds[k]
+                for k in ("ridge_role", "boost_role", "catch_linear", "catch_forest")
+            ],
+            axis=0,
+        )
     preds.update(
         _intervals(
             earlier.filter(
@@ -215,6 +272,7 @@ def _fold(group: pl.DataFrame, year: int, features: list[str]) -> pl.DataFrame:
         "played",
         *WEIGHTS,
         *CHANNELS.values(),
+        *(list(CATCH_CHANNELS.values()) if catch_stages else []),
     ).with_columns(pl.Series(k, v) for k, v in preds.items())
 
 
@@ -224,6 +282,7 @@ def project(
     *,
     extra_features: tuple[str, ...] = (),
     positions: tuple[str, ...] = POSITIONS,
+    catch_stages: bool = False,
 ) -> pl.DataFrame:
     with threadpool_limits(limits=2):
         return pl.concat(
@@ -232,6 +291,7 @@ def project(
                     board.filter(c("position") == pos),
                     year,
                     [*FEATURES, *extra_features],
+                    catch_stages=catch_stages,
                 )
                 for year in range(PAPER_YEAR, end_year + 1)
                 for pos in positions

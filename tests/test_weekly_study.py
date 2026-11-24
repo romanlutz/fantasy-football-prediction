@@ -11,9 +11,11 @@ from polars.testing import assert_frame_equal
 
 from ffpred.errors import ConfigurationError, DataAcquisitionError
 from ffpred.providers.fakes import FakeProvider
+from ffpred.providers.provenance import ProvenanceProvider
 from ffpred.study import club_rosters, matchups, opening, opportunity_study
 from ffpred.study.benchmark import BLOCKS, backtest
 from ffpred.study.bridge import read_gamecenter
+from ffpred.study.catch_stages import PAIRS, catch_labels, catch_tables
 from ffpred.study.defense import ADJUSTED, defense_snapshots
 from ffpred.study.matchup_eval import K, starter_scores
 from ffpred.study.matchup_models import NAMES, project
@@ -945,6 +947,104 @@ def test_matchup_replay_scoring_intervals_and_holdout_invariance(
     assert_frame_equal(
         changed.select(*NAMES, "q10", "q90", "play_probability"),
         pred.select(*NAMES, "q10", "q90", "play_probability"),
+    )
+
+
+def test_completion_labels_require_exact_verified_matchup() -> None:
+    board = pl.DataFrame(
+        {
+            "game_id": ["g", "g", "g"],
+            "team": ["LV"] * 3,
+            "player_id": ["a", "b", "c"],
+            "outcome_status": ["same_box", "same_roster", "other_box"],
+            "points": [1.0, 0.0, None],
+            "attempts": [5, 0, None],
+            "targets": [0, 0, None],
+            "receptions": [0, 0, None],
+        }
+    )
+    boxes = pl.DataFrame(
+        {
+            "game_id": ["g", "g", "g2"],
+            "team": ["OAK", "BUF", "LV"],
+            "player_id": ["a", "c", "a"],
+            "completions": [3, 12, 7],
+            "season_type": ["REG"] * 3,
+        }
+    )
+    assert catch_labels(board, boxes)["completions"].to_list() == [3, 0, None]
+    with pytest.raises(DataAcquisitionError, match="completions"):
+        catch_labels(board, boxes.filter(pl.col("game_id") == "g2"))
+
+
+def test_catch_stage_replay_preserves_control_and_prices_zero_catch_yards() -> None:
+    c = pl.col
+    p, raw = matchup_fixture()
+    group = matchups.prepare_board(
+        ProvenanceProvider(p), 2014, raw["trades"], raw["draft"], raw["snaps"]
+    )["board"].with_columns(
+        (c("attempts") // 2).alias("completions"), pl.lit(0).alias("receptions")
+    )
+    controls = project(group, 2014, positions=("QB",))
+    split = project(group, 2014, positions=("QB",), catch_stages=True)
+    assert_frame_equal(controls, split.select(controls.columns))
+    changed = project(
+        group.with_columns(
+            pl.when(c("season") == 2014)
+            .then(0)
+            .otherwise(c("completions"))
+            .alias("completions"),
+            pl.when(c("season") == 2014)
+            .then(1)
+            .otherwise(c("receptions"))
+            .alias("receptions"),
+        ),
+        2014,
+        positions=("QB",),
+        catch_stages=True,
+    )
+    names = [col for col in split.columns if col.startswith("catch_")]
+    assert_frame_equal(changed.select(names), split.select(names))
+    # In this fixture every active receiver accrued yards without a credited catch.
+    for method in ("linear", "forest"):
+        pre = f"catch_{method}_"
+        assert split[pre + "receptions"].max() == 0
+        assert split.select((c(pre + "receiving_yards") > 0).all()).item()
+        assert split.select(
+            (c(pre + "completions") <= c(f"{method}_attempts")).all()
+        ).item()
+        reconstruction = pl.sum_horizontal(
+            c(
+                (
+                    pre
+                    if k.startswith(("passing_", "receiving_"))
+                    and k != "passing_interceptions"
+                    else f"{method}_"
+                )
+                + k
+            )
+            * w
+            for k, w in WEIGHTS.items()
+        )
+        assert (
+            split.select((c("catch_" + method) - reconstruction).abs().max()).item()
+            < 1e-8
+        )
+    tables = catch_tables(split)
+    assert set(tables["paired.csv"]["model"]) == set(PAIRS)
+    stages = tables["stages.csv"]
+    assert (
+        stages.select(
+            (
+                c("stat_mae")
+                - pl.sum_horizontal(
+                    "from_opportunities", "from_catch_rate", "from_yield"
+                )
+            )
+            .abs()
+            .max()
+        ).item()
+        < 1e-8
     )
 
 
