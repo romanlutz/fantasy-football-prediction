@@ -1,0 +1,3 @@
+season,week,game_id,team,player_id,name,opponent,cutoff,roster_source,identity_at,kind,news_at,ruled_out,team_rank,team_role,outcome_status,actual_team,roster_team,played,matchup_points,ensemble,scored_points
+2018,7,2018_07_CLE_TB,CLE,00-0031045,Carlos Hyde,TB,2018-10-18T23:20:00.000000+0000,weekly_roster,,,,false,1,true,superseded_move,,JAX,,,9.93922695,
+2022,7,2022_07_TB_CAR,CAR,00-0033280,Christian McCaffrey,TB,2022-10-20T23:15:00.000000+0000,weekly_roster,,,,false,1,true,other_box,SF,SF,,,13.90190134,

@@ -103,6 +103,8 @@ def opening_evidence(
     seeds: pl.DataFrame,
     boxes: pl.DataFrame,
     editions: pl.DataFrame,
+    *,
+    kickoff: bool = False,
 ) -> pl.DataFrame:
     cutoff = clocks.filter(c("opener")).group_by("season").agg(c("cutoff").min())
     allowed = editions.join(cutoff, on="season").filter(
@@ -124,15 +126,23 @@ def opening_evidence(
         )
     # A fantasy crosswalk can retain retired players. Only admit a league listing
     # with pre-existing candidacy, a recent box, a rookie flag or explicit ACT.
+    opener_games = clocks.filter(c("opener")).select(
+        "game_id", "team", "season", "cutoff"
+    )
+    known_seeds = seeds.join(opener_games, on=["game_id", "team"]).join(
+        cutoff.rename({"cutoff": "first_lock"}), on="season"
+    )
+    known_by_first = c("cutoff") == c("first_lock")
+    if kickoff:
+        # All prior-season and draft seeds predate the first kickoff, even for
+        # clubs that play on Monday. Later trade/transaction seeds may not.
+        known_by_first |= c("roster_source").is_in(
+            ["offseason_box", "offseason_carry", "draft"]
+        )
     known = (
         pl.concat(
             [
-                seeds.join(
-                    clocks.join(cutoff, on=["season", "cutoff"])
-                    .filter(c("opener"))
-                    .select("game_id", "team", "season"),
-                    on=["game_id", "team"],
-                ).select("season", "player_id"),
+                known_seeds.filter(known_by_first).select("season", "player_id"),
                 *(
                     boxes.select((c("season") + n).alias("season"), "player_id")
                     for n in (1, 2)

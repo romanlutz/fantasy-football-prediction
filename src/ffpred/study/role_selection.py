@@ -157,7 +157,7 @@ def select_roles(
             check_sortedness=False,
         )
     )
-    status = (c("kind") == "inactive").fill_null(False) | (
+    status = c("kind").is_in(["inactive", "released"]).fill_null(False) | (
         (c("designation") == "Out").fill_null(False)
         & (c("news_at").is_null() | (c("report_at") >= c("news_at")))
     )

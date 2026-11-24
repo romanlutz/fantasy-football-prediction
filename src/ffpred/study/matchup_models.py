@@ -140,7 +140,7 @@ def _intervals(
 
 
 def _fold(group: pl.DataFrame, year: int, features: list[str]) -> pl.DataFrame:
-    earlier = group.filter(c("season") < year)
+    earlier = group.filter((c("season") < year) & c("points").is_not_null())
     broad = earlier.filter(c("season") >= SNAP_START)
     roles = broad.filter(c("team_role"))
     test = group.filter((c("season") == year) & c("team_role"))
@@ -201,6 +201,11 @@ def _fold(group: pl.DataFrame, year: int, features: list[str]) -> pl.DataFrame:
         "position",
         "team",
         "actual_team",
+        *(
+            ["actual_game_id", "outcome_status", "snap_team", "roster_team", "opponent"]
+            if "outcome_status" in test.columns
+            else []
+        ),
         "opener",
         "team_rank",
         "prior_absence",

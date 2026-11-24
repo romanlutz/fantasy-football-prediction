@@ -1,5 +1,9 @@
 # Which team could we have forecast at lineup lock?
 
+**Follow-up:** [What changes when the player locks at his own kickoff?](../../kickoff/README.md)
+The later study keeps this Thursday control, forecasts McCaffrey for SF,
+rules Hyde out for JAX, and scores neither superseded old-team prediction.
+
 Of **30 in-season picks** that disagreed with a game box, a positive snap or
 a unique weekly roster, **28 were preventable**. Ten of those players still
 made the role cutoff for their new team; 18 did not. Two trades were genuinely

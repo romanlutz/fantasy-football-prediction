@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
+from typing import Literal
 
 import nflreadpy as nfl
 import polars as pl
@@ -16,6 +18,11 @@ from ffpred.providers.provenance import ProvenanceProvider, fingerprint_frame
 from ffpred.study.defense import defense_snapshots
 from ffpred.study.matchup_eval import evaluate_matchups
 from ffpred.study.matchup_models import project
+from ffpred.study.matchup_outcomes import (
+    matchup_evidence,
+    strict_panel,
+    superseded_at_game,
+)
 from ffpred.study.matchup_pool import (
     SEEDS,
     SNAP_START,
@@ -72,6 +79,77 @@ from ffpred.study.transactions import (
 
 c = pl.col
 SCORE_TOLERANCE = 1e-7
+Clock = Literal["weekly", "kickoff"]
+KICKOFF_NEWS = Path(__file__).with_name("kickoff_news.csv")
+
+
+def _rank_openers(selected: pl.DataFrame, *, has_editions: bool) -> pl.DataFrame:
+    selected = selected.with_columns(
+        pl.when(c("opener") & c("depth_at").is_not_null())
+        .then(c("depth_rank"))
+        .otherwise(None)
+        .alias("opening_depth"),
+    )
+    affiliations = ["club_confirmed", "edition_confirmed"] if has_editions else []
+    ranks = (
+        selected.filter(~c("ruled_out"))
+        .sort(
+            [
+                "announced",
+                "doubtful",
+                "opening_depth",
+                "current_qb1",
+                *affiliations,
+                "expected_usage",
+                "depth_rank",
+                "player_id",
+            ],
+            descending=[
+                True,
+                False,
+                False,
+                True,
+                *[True for _ in affiliations],
+                True,
+                False,
+                False,
+            ],
+            nulls_last=True,
+        )
+        .with_columns(c("player_id").cum_count().over(GROUP).alias("team_rank"))
+        .select(*ENTRY, "team_rank")
+    )
+    return (
+        selected.drop("team_rank", "team_role")
+        .join(ranks, on=ENTRY, how="left")
+        .with_columns(
+            (c("team_rank") <= c("position").replace_strict(SLOTS))
+            .fill_null(False)
+            .alias("team_role")
+        )
+    )
+
+
+def _opening_seeds(
+    clocks: pl.DataFrame,
+    seeds: pl.DataFrame,
+    boxes: pl.DataFrame,
+    editions: pl.DataFrame | None,
+    *,
+    kickoff: bool,
+) -> tuple[pl.DataFrame, pl.DataFrame | None]:
+    if editions is None:
+        return seeds, None
+    evidence = opening_evidence(clocks, seeds, boxes, editions, kickoff=kickoff)
+    extra = (
+        clocks.filter(c("opener"))
+        .join(evidence.filter(c("listed")), on=["season", "team"])
+        .with_columns(pl.lit("dated_affiliation").alias("roster_source"))
+        .select(SEEDS)
+    )
+    return pl.concat([seeds, extra]).unique(
+        ENTRY, keep="first", maintain_order=True
+    ), evidence
 
 
 def prepare_board(  # noqa: PLR0913 - keep the published board's source interface
@@ -83,11 +161,15 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
     *,
     editions: pl.DataFrame | None = None,
     transactions: pl.DataFrame | None = None,
+    strict_clock: Clock | None = None,
+    pregame_filter: Callable[[pl.DataFrame], pl.DataFrame] | None = None,
 ) -> dict[str, pl.DataFrame]:
     years = tuple(range(HISTORY_START, end_year + 1))
     schedule = provider.load_schedules(years)
     sides = schedule_sides(schedule)
-    clocks = weekly_clocks(game_clocks(sides, schedule, include_openers=True))
+    kickoff = strict_clock == "kickoff"
+    times = game_clocks(sides, schedule, include_openers=True)
+    clocks = weekly_clocks(times, kickoff=kickoff)
     rosters = provider.load_rosters_weekly(years)
     boxes = box_scores(provider.load_player_stats(years))
     if sides.join(
@@ -107,7 +189,12 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
         if end_year >= DEPTH_CHANGE
         else None,
     )
-    news = official_news(clocks, read_news(NEWS_FILE))
+    news_rows = (
+        read_news(NEWS_FILE)
+        if strict_clock is None
+        else pl.concat([read_news(NEWS_FILE), read_news(KICKOFF_NEWS)])
+    )
+    news = official_news(clocks, news_rows)
     base = candidates(sides, rosters, boxes)
     transfers = player_transfers(trades, ids)
     moves = trade_events(transfers, rosters, clocks)
@@ -123,76 +210,99 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
     )
     if facts is not None:
         seeds = transaction_seeds(seeds, facts)
-    evidence = (
-        opening_evidence(clocks, seeds, boxes, editions)
-        if editions is not None
-        else None
-    )
-    if evidence is not None:
-        extra_seeds = (
-            clocks.filter(c("opener"))
-            .join(evidence.filter(c("listed")), on=["season", "team"])
-            .with_columns(pl.lit("dated_affiliation").alias("roster_source"))
-            .select(SEEDS)
-        )
-        seeds = pl.concat([seeds, extra_seeds]).unique(
-            ENTRY, keep="first", maintain_order=True
-        )
+    seeds, evidence = _opening_seeds(clocks, seeds, boxes, editions, kickoff=kickoff)
     pool = role_pool(clocks, seeds, depth, news, reports)
     if facts is not None:
         pool = apply_transactions(pool, facts, boxes, clocks)
     if evidence is not None:
         pool = apply_editions(pool, evidence, transfers, reports)
-    pool, removed = resolve_teams(pool, reports, transfers)
-    selected = select_roles(pool, reports, histories(base, boxes, absences))
-    # At openers a dated depth chart is fresher than last season's usage.
-    selected = selected.with_columns(
-        pl.when(c("opener") & c("depth_at").is_not_null())
-        .then(c("depth_rank"))
-        .otherwise(None)
-        .alias("opening_depth"),
+    if strict_clock is not None:
+        pool = pool.filter((c("kind") != "released").fill_null(True))
+    pool, removed = resolve_teams(pool, reports, transfers, kickoff=kickoff)
+    if pregame_filter is not None:
+        if not kickoff:
+            raise ConfigurationError(
+                "Apply historical pregame availability only at kickoff"
+            )
+        pool = pregame_filter(pool)
+    selected = _rank_openers(
+        select_roles(pool, reports, histories(base, boxes, absences)),
+        has_editions=editions is not None,
     )
-    ranks = (
-        selected.filter(~c("ruled_out"))
-        .sort(
-            [
-                "announced",
-                "doubtful",
-                "opening_depth",
-                "current_qb1",
-                *(
-                    ["club_confirmed", "edition_confirmed"]
-                    if editions is not None
-                    else []
-                ),
-                "expected_usage",
-                "depth_rank",
-                "player_id",
-            ],
-            descending=[
-                True,
-                False,
-                False,
-                True,
-                *([True, True] if editions is not None else []),
-                True,
-                False,
-                False,
-            ],
-            nulls_last=True,
+    if strict_clock is None:
+        panel = _weekly_panel(selected, boxes, snaps, ids)
+    else:
+        # Exact game-day announcements can confirm an inactive or a departure
+        # after the control's freeze. Use them to label, never to back-edit, it.
+        final = weekly_clocks(times, kickoff=True)
+        game_news = official_news(final, news_rows)
+        superseded = (
+            superseded_at_game(
+                selected, final, transfers, transaction_facts(transactions, final)
+            )
+            if not kickoff and transactions is not None
+            else selected.select(ENTRY).clear()
         )
-        .with_columns(c("player_id").cum_count().over(GROUP).alias("team_rank"))
-        .select(*ENTRY, "team_rank")
-    )
-    selected = (
-        selected.drop("team_rank", "team_role")
-        .join(ranks, on=ENTRY, how="left")
+        evidence = matchup_evidence(
+            selected,
+            boxes,
+            snaps,
+            ids,
+            rosters,
+            sides=sides,
+            game_news=game_news,
+            superseded=superseded,
+        )
+        panel = strict_panel(selected, evidence, boxes)
+    panel = (
+        panel.join(
+            defense_snapshots(sides, provider.load_team_stats(years)),
+            on=["game_id", "opponent"],
+            validate="m:1",
+        )
+        .join(
+            absences.rename({"week": "roster_week"}).with_columns(
+                pl.lit(True).alias("prior_absence")
+            ),
+            on=["season", "team", "roster_week", "player_id"],
+            how="left",
+        )
         .with_columns(
-            (c("team_rank") <= c("position").replace_strict(SLOTS))
+            c("prior_absence").fill_null(False),
+            (c("designation") == "Questionable").fill_null(False).alias("questionable"),
+            (c("practice_status") == "Limited Participation in Practice")
             .fill_null(False)
-            .alias("team_role")
+            .alias("limited"),
+            (c("season") * 100 + c("week") - c("history_period")).alias("history_gap"),
+            c("depth_at").is_not_null().alias("dated_depth"),
         )
     )
+    if (
+        panel.select(ENTRY if kickoff else PLAYER_WEEK).is_duplicated().any()
+        or panel.filter(
+            (
+                c("points") - pl.sum_horizontal(c(k) * v for k, v in WEIGHTS.items())
+            ).abs()
+            > SCORE_TOLERANCE
+        ).height
+    ):
+        raise DataAcquisitionError(
+            "Ambiguous identity or unreconciled component ledger"
+        )
+    outputs = _role_results(
+        selected, clocks, schedule, boxes, rosters, absences=absences
+    )
+    return {
+        **outputs,
+        "board": panel.sort(*WEEK, "team", "position", "player_id"),
+        "removed": removed.sort(*PLAYER_WEEK, "team"),
+        "sides": clocks,
+    }
+
+
+def _weekly_panel(
+    selected: pl.DataFrame, boxes: pl.DataFrame, snaps: pl.DataFrame, ids: pl.DataFrame
+) -> pl.DataFrame:
     panel = player_panel(selected, boxes)
     played = played_labels(panel, snaps, ids, boxes)
     stats = boxes.select(
@@ -237,7 +347,7 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
             ),
         )
     )
-    panel = (
+    return (
         panel.join(played, on=PLAYER_WEEK, validate="1:1")
         .join(stats, on=PLAYER_WEEK, how="left")
         .join(
@@ -251,40 +361,18 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
             on=PLAYER_WEEK,
             validate="1:1",
         )
-        .join(
-            defense_snapshots(sides, provider.load_team_stats(years)),
-            on=["game_id", "opponent"],
-            validate="m:1",
-        )
-        .join(
-            absences.rename({"week": "roster_week"}).with_columns(
-                pl.lit(True).alias("prior_absence")
-            ),
-            on=["season", "team", "roster_week", "player_id"],
-            how="left",
-        )
-        .with_columns(
-            c("prior_absence").fill_null(False),
-            (c("designation") == "Questionable").fill_null(False).alias("questionable"),
-            (c("practice_status") == "Limited Participation in Practice")
-            .fill_null(False)
-            .alias("limited"),
-            (c("season") * 100 + c("week") - c("history_period")).alias("history_gap"),
-            c("depth_at").is_not_null().alias("dated_depth"),
-        )
     )
-    if (
-        panel.select(PLAYER_WEEK).is_duplicated().any()
-        or panel.filter(
-            (
-                c("points") - pl.sum_horizontal(c(k) * v for k, v in WEIGHTS.items())
-            ).abs()
-            > SCORE_TOLERANCE
-        ).height
-    ):
-        raise DataAcquisitionError(
-            "Ambiguous identity or unreconciled component ledger"
-        )
+
+
+def _role_results(  # noqa: PLR0913 - separate sources for the evaluation oracle
+    selected: pl.DataFrame,
+    clocks: pl.DataFrame,
+    schedule: pl.DataFrame,
+    boxes: pl.DataFrame,
+    rosters: pl.DataFrame,
+    *,
+    absences: pl.DataFrame,
+) -> dict[str, pl.DataFrame]:
     # Forecast eligible positions take precedence; the independent rest of league
     # uses target game roster position solely to label the evaluation oracle.
     pos = (
@@ -322,10 +410,7 @@ def prepare_board(  # noqa: PLR0913 - keep the published board's source interfac
         .with_columns((c("correct") / c("selected")).alias("precision"))
     )
     return {
-        "board": panel.sort(*WEEK, "team", "position", "player_id"),
-        "removed": removed.sort(*PLAYER_WEEK, "team"),
         "universe": truth,
-        "sides": clocks,
         "selection": selection.sort("position", "opener"),
         "judged": judged.select(
             *ENTRY, "season", "position", "opener", c("correct").fill_null(False)
@@ -348,7 +433,7 @@ def run_matchups(
         raise ConfigurationError("Matchup holdouts must end in 2014..2025")
     source = ProvenanceProvider(provider)
     raw = matchup_sources(end_year)
-    data = prepare_board(source, end_year, **raw)
+    data = prepare_board(source, end_year, raw["trades"], raw["draft"], raw["snaps"])
     forecasts = project(data["board"], end_year)
     results = evaluate_matchups(forecasts, data)
     output.mkdir(parents=True, exist_ok=True)

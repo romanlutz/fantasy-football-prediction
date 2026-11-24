@@ -17,7 +17,12 @@ from ffpred.study.bridge import read_gamecenter
 from ffpred.study.defense import ADJUSTED, defense_snapshots
 from ffpred.study.matchup_eval import K, starter_scores
 from ffpred.study.matchup_models import NAMES, project
-from ffpred.study.matchup_pool import player_transfers, resolve_teams
+from ffpred.study.matchup_outcomes import (
+    matchup_evidence,
+    strict_panel,
+    superseded_at_game,
+)
+from ffpred.study.matchup_pool import player_transfers, resolve_teams, weekly_clocks
 from ffpred.study.methods import CHALLENGERS, KEY, REFERENCE, compare_methods
 from ffpred.study.opening import apply_editions, opening_evidence
 from ffpred.study.opportunities import (
@@ -39,6 +44,7 @@ from ffpred.study.panel import (
     schedule_sides,
 )
 from ffpred.study.role_evidence import (
+    ENTRY,
     depth_evidence,
     game_clocks,
     official_news,
@@ -556,6 +562,175 @@ def test_weekly_oracle_credits_boundary_ties_not_every_tied_player() -> None:
     league = weekly.filter(pl.col("oracle") == "league").head(1)
     assert roles["hits"].item() == 10 and roles["regret"].item() == 20
     assert league["hits"].item() == 9 and league["regret"].item() == 40
+
+
+def test_an_earlier_prediction_survives_a_later_teams_deadline() -> None:
+    early = datetime(2022, 10, 20, 23, tzinfo=UTC)
+    later = early + timedelta(days=3)
+    games = pl.DataFrame(
+        {
+            "season": [2022] * 2,
+            "week": [7] * 2,
+            "game_id": ["g1", "g2"],
+            "team": ["CAR", "SF"],
+            "cutoff": [early, later],
+            "roster_week": [6, 6],
+        }
+    )
+    assert weekly_clocks(games)["cutoff"].to_list() == [early, early]
+    pool = weekly_clocks(games, kickoff=True).with_columns(
+        pl.lit("runner").alias("player_id"),
+        pl.lit(early - timedelta(days=4)).alias("prior_at"),
+        *(
+            pl.lit(None, dtype=pl.Datetime("us", "UTC")).alias(k)
+            for k in ("identity_at", "depth_at")
+        ),
+    )
+    assert pool["cutoff"].to_list() == [
+        t + timedelta(hours=1, microseconds=-1) for t in (early, later)
+    ]
+    reports = pool.select(*ENTRY, pl.col("depth_at").alias("report_at")).clear()
+    moved = pl.DataFrame(
+        {
+            "player_id": ["runner"],
+            "team": ["SF"],
+            "move_at": [early + timedelta(days=1)],
+        }
+    )
+    kept, _ = resolve_teams(pool, reports, moved, kickoff=True)
+    assert set(kept["game_id"]) == {"g1", "g2"}
+    # An exactly-at-kickoff announcement is already too late on the later side.
+    news = pl.DataFrame(
+        [
+            ("g1", "CAR", "runner", early + timedelta(minutes=59)),
+            ("g2", "SF", "runner", later + timedelta(hours=1)),
+        ],
+        schema=[*ENTRY, "stamp"],
+        orient="row",
+    ).with_columns(
+        pl.col("stamp").dt.strftime("%Y-%m-%dT%H:%M:%SZ").alias("published_at"),
+        pl.lit("Runner").alias("name"),
+        pl.lit("RB").alias("position"),
+        pl.lit("inactive").alias("kind"),
+        pl.lit("https://example.org/").alias("source"),
+        pl.lit(None, dtype=pl.Float64).alias("max_opportunities"),
+    )
+    assert official_news(pool.select("team", "game_id", "cutoff"), news)[
+        "team"
+    ].to_list() == ["CAR"]
+
+
+def test_only_exact_game_and_team_targets_are_scored() -> None:
+    p, _ = matchup_fixture()
+    c = pl.col
+    names = [
+        "switch",
+        "wrong_game",
+        "snap",
+        "roster",
+        "missing",
+        "other_roster",
+        "cut",
+        "traded",
+    ]
+    pool = pl.DataFrame(
+        {
+            "game_id": ["old"] * len(names) + ["new"],
+            "team": ["ARI"] * len(names) + ["LV"],
+            "player_id": [*names, "switch"],
+        }
+    ).with_columns(
+        pl.lit(2014).alias("season"),
+        pl.lit(3).alias("week"),
+        pl.lit(201403).alias("period"),
+    )
+    template = box_scores(p.player_stats).head(1)
+    boxes = pl.concat(
+        [
+            template.with_columns(
+                pl.lit("switch").alias("player_id"),
+                pl.lit("new").alias("game_id"),
+                pl.lit("LV").alias("actual_team"),
+            ),
+            template.with_columns(
+                pl.lit("wrong_game").alias("player_id"),
+                pl.lit("other").alias("game_id"),
+                pl.lit("ARI").alias("actual_team"),
+            ),
+        ]
+    ).with_columns(pl.lit(2014).alias("season"), pl.lit(3).alias("week"))
+    snaps = pl.DataFrame(
+        {
+            "game_id": ["old", "new"],
+            "team": ["ARI", "LV"],
+            "pfr_player_id": ["snap", "switch"],
+        }
+    ).with_columns(
+        pl.lit("REG").alias("game_type"),
+        pl.lit(2014).alias("season"),
+        pl.lit(3).alias("week"),
+        pl.lit(1).alias("offense_snaps"),
+        pl.lit(0).alias("defense_snaps"),
+        pl.lit(0).alias("st_snaps"),
+    )
+    ids = pool.select("player_id", c("player_id").alias("pfr_id")).unique()
+    rosters = pl.DataFrame(
+        {"gsis_id": ["roster", "other_roster", "traded"], "team": ["ARI", "LV", "ARI"]}
+    ).with_columns(
+        pl.lit("REG").alias("game_type"),
+        pl.lit(2014).alias("season"),
+        pl.lit(3).alias("week"),
+    )
+    sides = pool.select("season", "week", "game_id", "team").unique()
+    news = pool.filter(c("player_id") == "cut").select(
+        *ENTRY, pl.lit("released").alias("kind")
+    )
+    freeze = datetime(2014, 9, 17, 23, tzinfo=UTC)
+    final = sides.with_columns(pl.lit(freeze + timedelta(days=4)).alias("cutoff"))
+    moved = pl.DataFrame(
+        {
+            "player_id": ["traded"],
+            "team": ["LV"],
+            "move_at": [freeze + timedelta(days=1)],
+        }
+    )
+    facts = news.clear().select(
+        *ENTRY, c("kind").alias("state"), pl.lit(freeze).alias("move_at")
+    )
+    superseded = superseded_at_game(
+        pool.with_columns(pl.lit(freeze).alias("cutoff")), final, moved, facts
+    )
+    evidence = matchup_evidence(
+        pool,
+        boxes,
+        snaps,
+        ids,
+        rosters,
+        sides=sides,
+        game_news=news,
+        superseded=superseded,
+    )
+    panel = strict_panel(pool, evidence, boxes)
+    foreign = panel.filter((c("player_id") == "switch") & (c("team") == "ARI"))
+    assert foreign.select("outcome_status", "points", "played", "carries").row(0) == (
+        "other_box",
+        None,
+        None,
+        None,
+    )
+    good = panel.filter((c("player_id") == "switch") & (c("team") == "LV"))
+    assert good.select("points", "played").row(0) == (boxes["points"][0], True)
+    zeros = panel.filter(c("player_id").is_in(["snap", "roster"])).sort("player_id")
+    assert zeros.select("points", "played").rows() == [(0.0, False), (0.0, True)]
+    excluded = panel.filter(c("points").is_null())
+    assert set(excluded["outcome_status"]) == {
+        "unverified",
+        "other_box",
+        "other_roster",
+        "superseded_release",
+        "superseded_move",
+    }
+    assert not excluded["played"].count()
 
 
 def test_transactions_respect_the_common_lock_and_do_not_create_playing_status() -> (

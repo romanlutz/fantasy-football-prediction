@@ -24,14 +24,18 @@ def id_map(players: pl.DataFrame, rosters: pl.DataFrame) -> pl.DataFrame:
     return ids.filter(pl.len().over("pfr_id") == 1).rename({"gsis_id": "player_id"})
 
 
-def weekly_clocks(clocks: pl.DataFrame) -> pl.DataFrame:
-    return clocks.sort("team", "season", "week").with_columns(
+def weekly_clocks(clocks: pl.DataFrame, *, kickoff: bool = False) -> pl.DataFrame:
+    clocks = clocks.sort("team", "season", "week").with_columns(
         c("cutoff").shift().over("team").alias("prior_at"),
         c("season").shift().over("team").alias("prior_season"),
         c("week").shift().over("team").alias("prior_week"),
         c("roster_week").is_null().alias("opener"),
-        c("cutoff").min().over(WEEK).alias("cutoff"),
     )
+    if kickoff:
+        # The source cutoff is inclusive. A report stamped at kickoff is too late.
+        advance = pl.duration(hours=1) - pl.duration(microseconds=1)
+        return clocks.with_columns(c("cutoff") + advance, c("prior_at") + advance)
+    return clocks.with_columns(c("cutoff").min().over(WEEK).alias("cutoff"))
 
 
 def opener_seeds(
@@ -161,8 +165,14 @@ def trade_events(
 
 
 def resolve_teams(
-    pool: pl.DataFrame, reports: pl.DataFrame, moves: pl.DataFrame
+    pool: pl.DataFrame,
+    reports: pl.DataFrame,
+    moves: pl.DataFrame,
+    *,
+    kickoff: bool = False,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
+    # A Sunday decision cannot remove a forecast already issued on Thursday.
+    competing = [*PLAYER_WEEK, "cutoff"] if kickoff else PLAYER_WEEK
     moves = moves.select(
         "player_id", c("team").alias("destination"), c("move_at").alias("trade_at")
     )
@@ -180,7 +190,7 @@ def resolve_teams(
             pl.max_horizontal("identity_at", "depth_at", "report_at", "prior_at").alias(
                 "evidence_at"
             ),
-            pl.len().over(PLAYER_WEEK).alias("team_count"),
+            pl.len().over(competing).alias("team_count"),
         )
     )
     stale = (
@@ -198,7 +208,7 @@ def resolve_teams(
     )
     keep = (
         rows.filter(~c("stale_trade"))
-        .unique(PLAYER_WEEK, keep="first", maintain_order=True)
+        .unique(competing, keep="first", maintain_order=True)
         .select(ENTRY)
     )
     removed = rows.join(keep, on=ENTRY, how="anti")

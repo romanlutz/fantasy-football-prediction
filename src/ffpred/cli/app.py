@@ -85,6 +85,7 @@ from ffpred.providers.espn import (
 )
 from ffpred.providers.nflreadpy import NflReadPyProvider
 from ffpred.providers.protocol import NflDataProvider
+from ffpred.study.kickoff import ARMS, run_kickoff
 from ffpred.study.matchups import run_matchups
 from ffpred.study.opportunity_study import run_opportunity
 from ffpred.study.role_evidence import NEWS_FILE
@@ -181,6 +182,15 @@ def _study_parsers(
     matchups.add_argument("--end-year", type=int, default=LAST_COMPLETE)
     matchups.add_argument(
         "--output-dir", type=Path, default=Path("artifacts/weekly-matchups")
+    )
+    kickoff = subparsers.add_parser(
+        "weekly-kickoff",
+        help="compare strict game and team forecasts, not locked lineups",
+    )
+    kickoff.add_argument("--end-year", type=int, default=LAST_COMPLETE)
+    kickoff.add_argument("--arm", choices=ARMS, default="kickoff")
+    kickoff.add_argument(
+        "--output-dir", type=Path, default=Path("artifacts/weekly-kickoff")
     )
     opportunity = subparsers.add_parser(
         "weekly-opportunity", help="test opening affiliations and RB workload features"
@@ -1219,6 +1229,13 @@ def main(  # noqa: PLR0912
         elif args.command == "weekly-matchups":
             output = run_matchups(
                 args.output_dir, args.end_year, provider or _provider(settings)
+            )
+        elif args.command == "weekly-kickoff":
+            output = run_kickoff(
+                args.output_dir,
+                args.end_year,
+                provider or _provider(settings),
+                arm=args.arm,
             )
         elif args.command == "weekly-opportunity":
             output = run_opportunity(

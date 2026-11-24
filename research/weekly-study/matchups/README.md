@@ -1,5 +1,10 @@
 # Expected matchup points, player uncertainty and starter choices
 
+For the [per-game kickoff study with strict outcomes](../kickoff/README.md),
+use the new scorecard. This older common-lock benchmark includes player-week
+targets; its sensitivity that sets a wrong-team matchup to zero is not used in
+the strict comparison.
+
 Follow-up: [Dated opening affiliations, expected carry shares and inside-five opportunities](../opportunity/README.md).
 It tests selection and forecast improvements separately; the benchmark below is unchanged.
 
