@@ -93,11 +93,13 @@ uv run --locked ffpred weekly-opportunity --transactions --end-year 2025 --outpu
 [RB scores](scores.csv) · [Annual errors](annual.csv) ·
 [Top-24 RB picks and points lost](starters.csv) · [Reproduction manifest](manifest.json)
 
-**Still unknown:** the [unresolved file](unresolved.csv) lists every pick on
+**What was unknown at publication:** the [unresolved file](unresolved.csv) lists every pick on
 both boards lacking all three evidence sources or having conflicting records.
 Of the **122 non-opening picks** on the repaired board with none of the three
-records, **111 are from 2014-2016**. Start with those seasons' official gamebooks
-and game-day inactive lists before assigning a reason. Neither absence from all three sources nor low
-usage proves an injury. A separate timestamped injury-exit dataset is needed
+records, **111 are from 2014-2016**. The [follow-up eligibility audit](historical-availability.md)
+resolved all 111 using dated transactions and announcements. This does not change
+the published common-lock board or convert its missing records into zeros.
+Neither absence from all three sources nor low usage proves an injury.
+A separate timestamped injury-exit dataset is needed
 to evaluate injury-shortened games; the real outcomes stay in the primary
 manager-facing scorecard.
