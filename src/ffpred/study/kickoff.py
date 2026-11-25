@@ -35,11 +35,24 @@ from ffpred.study.pass_workload import (
 )
 from ffpred.study.role_evidence import ENTRY, NEWS_FILE
 from ffpred.study.run import HISTORY_START, LAST_COMPLETE, PAPER_YEAR
+from ffpred.study.target_inheritance import (
+    inheritance_replay,
+    inheritance_tables,
+    regular_reports,
+    teammate_features,
+)
 from ffpred.study.transactions import LEDGER, read_transactions
 
 c = pl.col
 CLAIMS = Path(__file__).with_name("kickoff_claims.csv")
-ARMS = ("weekly", "kickoff", "kickoff-audited", "catch-stages", "pass-workload")
+ARMS = (
+    "weekly",
+    "kickoff",
+    "kickoff-audited",
+    "catch-stages",
+    "pass-workload",
+    "target-inheritance",
+)
 TRADE_WEEKS = [(2018, 7, "00-0031045"), (2022, 7, "00-0033280")]
 
 
@@ -163,7 +176,8 @@ def run_kickoff(
     )
     tx = read_transactions()
     inputs = [NEWS_FILE, KICKOFF_NEWS, SOURCES, REVISIONS, FACTS, LEDGER]
-    audited = arm in {"kickoff-audited", "catch-stages", "pass-workload"}
+    pass_workload = arm in {"pass-workload", "target-inheritance"}
+    audited = arm in {"kickoff-audited", "catch-stages"} or pass_workload
     split = arm == "catch-stages"
     if audited:
         inputs.extend([CLAIMS, AVAILABILITY])
@@ -192,7 +206,7 @@ def run_kickoff(
                 positions=(pos,),
                 extra_features=CARRY if pos == "RB" else (),
                 catch_stages=split,
-                keep_pass_td_rates=arm == "pass-workload",
+                keep_pass_td_rates=pass_workload,
             )
             for pos in POSITIONS
         ]
@@ -200,13 +214,22 @@ def run_kickoff(
     files = strict_tables(pred, data)
     if split:
         files.update(catch_tables(pred.drop_nulls("points")))
-    if arm == "pass-workload":
+    if pass_workload:
         games = team_games(provider.load_team_stats(years))
-        roles = share_board(
-            board, games, provider.load_player_stats(years), players_pbp
-        ).join(rb.select(*ENTRY, *CARRY), on=ENTRY, how="left", validate="1:1")
+        player_boxes = provider.load_player_stats(years)
+        roles = share_board(board, games, player_boxes, players_pbp).join(
+            rb.select(*ENTRY, *CARRY), on=ENTRY, how="left", validate="1:1"
+        )
         enriched, budgets = workload_replay(pred, roles, games, end_year)
-        files.update(workload_tables(enriched, budgets))
+        if arm == "target-inheritance":
+            reports = regular_reports(board, games, player_boxes)
+            enriched = inheritance_replay(
+                enriched, teammate_features(roles, reports), end_year
+            )
+            files.update(inheritance_tables(enriched, reports))
+            files["teams.parquet"] = budgets
+        else:
+            files.update(workload_tables(enriched, budgets))
         files["forecast.parquet"] = enriched
     directory = output / arm
     directory.mkdir(parents=True, exist_ok=True)

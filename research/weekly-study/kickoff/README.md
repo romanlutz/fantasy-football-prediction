@@ -55,6 +55,8 @@ completions, catches and yards per catch improve the point forecast?](catch-stag
 That experiment identified attempts and targets as the largest contributors to
 yardage error. The [team passing volume and player share experiment](pass-workload/README.md)
 then tested whether forecasting those counts differently improves fantasy points.
+The [teammate availability experiment](target-inheritance/README.md) tests the
+next question: can pregame reports tell us which pass catchers get extra targets?
 
 ## Which games count
 

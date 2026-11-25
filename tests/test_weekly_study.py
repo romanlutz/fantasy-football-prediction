@@ -12,7 +12,13 @@ from polars.testing import assert_frame_equal
 from ffpred.errors import ConfigurationError, DataAcquisitionError
 from ffpred.providers.fakes import FakeProvider
 from ffpred.providers.provenance import ProvenanceProvider
-from ffpred.study import club_rosters, matchups, opening, opportunity_study
+from ffpred.study import (
+    club_rosters,
+    matchups,
+    opening,
+    opportunity_study,
+    target_inheritance,
+)
 from ffpred.study.benchmark import BLOCKS, backtest
 from ffpred.study.bridge import read_gamecenter
 from ffpred.study.catch_stages import PAIRS, catch_labels, catch_tables
@@ -63,6 +69,11 @@ from ffpred.study.role_evidence import (
 )
 from ffpred.study.roles import run_roles
 from ffpred.study.run import run_study
+from ffpred.study.target_inheritance import (
+    regular_reports,
+    target_leaders,
+    teammate_features,
+)
 from ffpred.study.transactions import (
     apply_transactions,
     available_at,
@@ -1130,6 +1141,194 @@ def test_workload_holdout_labels_cannot_move_same_game_forecast() -> None:
         (c("stat") == "targets") & (c("model") == "workload")
     )
     assert scored["games"].sum() == forecast.height - 1
+
+
+def test_target_inheritance_uses_only_prior_club_games_and_reported_peers() -> None:
+    c = pl.col
+    lock = datetime(2014, 9, 7, 17, tzinfo=UTC) - timedelta(microseconds=1)
+    earlier, late = lock - timedelta(days=1), lock + timedelta(microseconds=1)
+    names = [
+        "out",
+        "limited",
+        "unknown",
+        "late",
+        "back",
+        "new_club",
+        "single_game",
+        "inactive",
+        "cap",
+        "stale",
+    ]
+    board = pl.DataFrame(
+        {
+            "player_id": names,
+            "designation": [
+                "Out",
+                None,
+                "Out",
+                "Out",
+                "Out",
+                "Out",
+                "Out",
+                None,
+                None,
+                "Out",
+            ],
+            "position": ["WR", "TE", *(["WR"] * 8)],
+            "practice_status": ["Limited Participation in Practice"] * 2 + [None] * 8,
+            "report_at": [
+                earlier,
+                earlier,
+                None,
+                late,
+                earlier,
+                earlier,
+                earlier,
+                None,
+                None,
+                earlier,
+            ],
+            "kind": [None] * 4 + ["activated", None, None, "inactive", None, None],
+            "news_at": [None] * 4 + [lock, None, None, lock, None, None],
+            "limit_at": [None] * 8 + [lock, None],
+            "max_opportunities": [None] * 8 + [5.0, None],
+        }
+    ).with_columns(
+        pl.lit("BUF").alias("team"),
+        pl.lit("now").alias("game_id"),
+        pl.lit(2014).alias("season"),
+        pl.lit(1).alias("week"),
+        c("player_id").alias("name"),
+        pl.lit(lock).alias("cutoff"),
+    )
+    games = pl.DataFrame(
+        {
+            "game_id": ["old", "g1", "g2", "g3", "g4", "g5", "now"],
+            "season": [2013] * 6 + [2014],
+            "week": [9, 11, 12, 14, 15, 17, 1],
+            "team": ["BUF"] * 7,
+            "targets": [20] * 7,
+        }
+    )
+    boxes = (
+        games.select("game_id", "team")
+        .join(board.select("player_id"), how="cross")
+        .with_columns(
+            pl.when(c("player_id") == "new_club")
+            .then(pl.lit("NYJ"))
+            .otherwise(c("team"))
+            .alias("team"),
+            pl.when(c("game_id") == "now")
+            .then(1000)
+            .when(c("player_id") == "stale")
+            .then(pl.when(c("game_id") == "old").then(25).otherwise(0))
+            .when(c("player_id") == "single_game")
+            .then(pl.when(c("game_id") == "g5").then(10).otherwise(0))
+            .otherwise(2)
+            .alias("targets"),
+            pl.lit("REG").alias("season_type"),
+        )
+    )
+    reports = regular_reports(board, games, boxes)
+    assert dict(reports.select("player_id", "signal").iter_rows()) == {
+        "out": "out_report",
+        "limited": "limited_practice",
+        "inactive": "inactive",
+        "cap": "announced_limit",
+    }
+    assert reports["recent_team_share"].to_list() == pytest.approx([0.10] * 4)
+    assert_frame_equal(
+        reports,
+        regular_reports(
+            board,
+            games.with_columns(
+                pl.when(c("game_id") == "now")
+                .then(1100)
+                .otherwise(c("targets"))
+                .alias("targets")
+            ),
+            boxes.filter(c("game_id") != "now"),
+        ),
+    )
+    selected = board.filter(c("player_id").is_in(["limited", "unknown"])).with_columns(
+        pl.lit(1).alias("team_rank"),
+        pl.lit(0.3).alias("share_targets"),
+    )
+    f = teammate_features(selected, reports.filter(c("position") == "TE"))
+    assert f.filter(c("player_id") == "limited")["peer_report"].item() == "none"
+    peer = f.filter(c("player_id") == "unknown").row(0, named=True)
+    assert peer["peer_report"] == "limited_only" and peer[
+        "limited_TE_recent"
+    ] == pytest.approx(0.03)
+    f = teammate_features(selected, reports)
+    assert f.filter(c("player_id") == "limited")["out_WR"].item() == pytest.approx(0.2)
+
+
+def test_target_leaders_compare_only_complete_teammate_pools() -> None:
+    pred = pl.DataFrame(
+        {
+            "game_id": ["complete"] * 4 + ["unknown"] * 2,
+            "player_id": ["flagged", "w", "r", "t", "a", "b"],
+            "team": ["BUF"] * 6,
+            "peer_report": ["out"] * 6,
+            "position": ["WR", "WR", "RB", "TE", "WR", "RB"],
+            "status": ["limited", None, None, None, None, None],
+            "points": [5, 2, 0, 4, None, 1],
+            "targets": [12, 5, 2, 5, None, 1],
+            "workload_targets": [9, 2, 4, 3, 1, 2],
+            "inherit_targets": [9, 5, 3, 3, 1, 2],
+        }
+    )
+    actual = target_leaders(pred).row(0, named=True)
+    assert (actual["team_games"], actual["changed_pick"]) == (1, 1)
+    assert (actual["workload_correct"], actual["inherit_correct"]) == (0, 1)
+
+
+def test_teammate_adjustment_reserves_unaffected_shares(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    c = pl.col
+    control = pl.DataFrame(
+        {
+            "team": ["BUF"] * 3,
+            "game_id": ["limited"] * 3,
+            "player_id": ["limited", "te", "rb"],
+            "position": ["WR", "TE", "RB"],
+            "allocated_share_targets": [0.3, 0.25, 0.25],
+            "play_probability": [1.0, 0.5, 1.0],
+            "points": [None, 5.0, 2.0],
+        }
+    ).with_columns(
+        pl.lit(2014).alias("season"),
+        pl.lit(4).alias("week"),
+        pl.lit(30.0).alias("budget_targets"),
+        c("allocated_share_targets").alias("uncapped_targets"),
+        (30 * c("allocated_share_targets")).alias("workload_targets"),
+        *(
+            pl.lit(10.0).alias(f"workload_{m}")
+            for m in ["linear", "forest", "ensemble"]
+        ),
+        *(pl.lit(10.0).alias(f"{m}_receiving_rate") for m in ["linear", "forest"]),
+        *(pl.lit(0.0).alias(f"{m}_receiving_td_rate") for m in ["linear", "forest"]),
+    )
+    roles = control.select(ENTRY).with_columns(
+        pl.Series("status", ["limited", None, None]),
+        pl.Series("peer_report", ["none", "limited_only", "limited_only"]),
+        *(pl.lit(0.0).alias(k) for k in target_inheritance.SIGNALS),
+    )
+    monkeypatch.setattr(
+        target_inheritance,
+        "active_shares",
+        lambda *args, **kw: roles.select(ENTRY).with_columns(
+            pl.lit(1.0).alias("active_share_targets")
+        ),
+    )
+    forecast = target_inheritance.inheritance_replay(control, roles, 2014).sort(
+        "player_id"
+    )
+    assert forecast["inherit_targets"].to_list() == pytest.approx([9, 14, 7])
+    assert forecast["inherit_ensemble"].to_list() == pytest.approx([10, 13.25, 9.75])
+    assert forecast["points"].null_count() == 1
 
 
 def test_catch_stage_replay_preserves_control_and_prices_zero_catch_yards() -> None:

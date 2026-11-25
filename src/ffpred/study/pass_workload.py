@@ -176,10 +176,17 @@ def share_board(
     return roles
 
 
-def active_shares(roles: pl.DataFrame, end_year: int) -> pl.DataFrame:
+def active_shares(
+    roles: pl.DataFrame,
+    end_year: int,
+    *,
+    units: tuple[str, ...] = UNITS,
+    extra_features: tuple[str, ...] = (),
+    positions: tuple[str, ...] = POSITIONS,
+) -> pl.DataFrame:
     folds = []
     for year in range(PAPER_YEAR, end_year + 1):
-        for pos in POSITIONS:
+        for pos in positions:
             group = roles.filter(c("position") == pos)
             prior = group.filter(
                 c("season").is_between(SNAP_START, year - 1)
@@ -188,9 +195,9 @@ def active_shares(roles: pl.DataFrame, end_year: int) -> pl.DataFrame:
             )
             test = group.filter(c("season") == year)
             features = [*SHARE_FEATURES, *CARRY] if pos == "RB" else SHARE_FEATURES
-            x, xt = _design(prior, test, features)
+            x, xt = _design(prior, test, [*features, *extra_features])
             estimates = []
-            for unit in UNITS:
+            for unit in units:
                 team = prior[f"actual_team_{unit}"].to_numpy()
                 share = prior[unit].to_numpy() / team
                 rate = ridge_mean(x, share, xt, weights=team).clip(0, 1)

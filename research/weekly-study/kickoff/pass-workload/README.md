@@ -90,8 +90,8 @@ for QB attempts and RB/WR targets against both control models, not TE targets.
 **Implication for the paper.** Keep the original ensemble as a control and
 report the workload variant for WR and RB. The gains are too small to claim
 better lineup decisions without a playable start/sit replay. The best next
-workload test is to measure who inherits targets when a regular receiver is
-out or limited, using only reports available at the game's kickoff. This
+workload test was to measure [who inherits targets when a regular receiver is
+out or limited](../target-inheritance/README.md), using only reports available at the game's kickoff. This
 experiment did not add route participation, forecast weather, or game-script
 inputs, or test a change to individual prediction intervals.
 
