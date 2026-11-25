@@ -1,0 +1,13 @@
+position,model,reference,mae_delta,low95,high95,seasons_better,seasons
+QB,workload_ensemble,ensemble,-0.01221638,-0.02594163,0.00314283,10,12
+QB,workload_forest,factor_forest,-0.00113251,-0.03092911,0.03502745,8,12
+QB,workload_linear,factor_linear,-0.01705202,-0.04412926,0.01345326,8,12
+RB,workload_ensemble,ensemble,-0.00634646,-0.00863324,-0.00398939,11,12
+RB,workload_forest,factor_forest,-0.02465314,-0.03166790,-0.01758753,12,12
+RB,workload_linear,factor_linear,-0.00758785,-0.01210836,-0.00318601,9,12
+TE,workload_ensemble,ensemble,-0.00544454,-0.01438590,0.00521222,9,12
+TE,workload_forest,factor_forest,-0.00918460,-0.03050250,0.01309227,9,12
+TE,workload_linear,factor_linear,-0.00641243,-0.02195767,0.01300518,8,12
+WR,workload_ensemble,ensemble,-0.02065824,-0.03051329,-0.01213878,11,12
+WR,workload_forest,factor_forest,-0.04625144,-0.08694925,-0.01562698,10,12
+WR,workload_linear,factor_linear,-0.02768954,-0.03942555,-0.01594675,10,12

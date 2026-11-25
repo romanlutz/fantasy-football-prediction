@@ -49,7 +49,7 @@ Array = NDArray[np.float64]
 CATCH_CHANNELS = {"passing": "completions", "receiving": "receptions"}
 
 
-def _ridge(x: Array, y: Array, xt: Array, weights: Array | None = None) -> Array:
+def ridge_mean(x: Array, y: Array, xt: Array, weights: Array | None = None) -> Array:
     scaler = StandardScaler().fit(x, sample_weight=weights)
     return (
         Ridge(alpha=20)
@@ -62,7 +62,7 @@ def _mean_fit(
     x: Array, y: Array, xt: Array, *, forest: bool, weights: Array | None = None
 ) -> Array:
     if not forest:
-        return _ridge(x, y, xt, weights)
+        return ridge_mean(x, y, xt, weights)
     scale = np.maximum(np.std(y, axis=0), 0.01)
     model = ExtraTreesRegressor(
         n_estimators=24, max_depth=10, min_samples_leaf=20, n_jobs=1, random_state=42
@@ -99,6 +99,8 @@ def _factor(
         pred[f"active_{unit}"] = nhat[:, i]
         pred[unit] = p * nhat[:, i]
         pred[f"{ch}_rate"] = rates[:, 0]
+        if ch in CATCH_CHANNELS:
+            pred[f"{ch}_td_rate"] = rates[:, 1]
         pred[f"{ch}_yards"] = p * (nhat[:, i] * rates[:, 0] + orphan[0])
         pred[f"{ch}_tds"] = p * (nhat[:, i] * rates[:, 1] + orphan[1])
     other = _mean_fit(x, train.select(OTHER).to_numpy(), xt, forest=forest)
@@ -182,7 +184,12 @@ def _intervals(
 
 
 def _fold(
-    group: pl.DataFrame, year: int, features: list[str], *, catch_stages: bool
+    group: pl.DataFrame,
+    year: int,
+    features: list[str],
+    *,
+    catch_stages: bool,
+    keep_pass_td_rates: bool,
 ) -> pl.DataFrame:
     earlier = group.filter((c("season") < year) & c("points").is_not_null())
     broad = earlier.filter(c("season") >= SNAP_START)
@@ -193,7 +200,7 @@ def _fold(
     xt = impute.transform(test.select(features))
     y = roles["points"].to_numpy()
     preds = {
-        "ridge_role": _ridge(x, y, xt),
+        "ridge_role": ridge_mean(x, y, xt),
         "boost_role": histogram_booster().fit(x, y).predict(xt),
     }
     broad_model = make_pipeline(
@@ -223,6 +230,9 @@ def _fold(
             preds[f"catch_{label}"] = split.pop("points")
             preds.update({f"catch_{label}_{name}": v for name, v in split.items()})
         preds[f"factor_{label}"] = stats.pop("points")
+        if not keep_pass_td_rates:
+            for ch in CATCH_CHANNELS:
+                del stats[f"{ch}_td_rate"]
         preds.update({f"{label}_{name}": v for name, v in stats.items()})
     preds["ensemble"] = np.mean(
         [
@@ -276,13 +286,14 @@ def _fold(
     ).with_columns(pl.Series(k, v) for k, v in preds.items())
 
 
-def project(
+def project(  # noqa: PLR0913 - optional study arms preserve the control's output schema
     board: pl.DataFrame,
     end_year: int,
     *,
     extra_features: tuple[str, ...] = (),
     positions: tuple[str, ...] = POSITIONS,
     catch_stages: bool = False,
+    keep_pass_td_rates: bool = False,
 ) -> pl.DataFrame:
     with threadpool_limits(limits=2):
         return pl.concat(
@@ -292,6 +303,7 @@ def project(
                     year,
                     [*FEATURES, *extra_features],
                     catch_stages=catch_stages,
+                    keep_pass_td_rates=keep_pass_td_rates,
                 )
                 for year in range(PAPER_YEAR, end_year + 1)
                 for pos in positions

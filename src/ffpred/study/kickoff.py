@@ -27,13 +27,19 @@ from ffpred.study.opening import SOURCES
 from ffpred.study.opportunities import CARRY, rb_opportunities
 from ffpred.study.opportunity_study import edition_inputs, opportunity_sources
 from ffpred.study.panel import POSITIONS
+from ffpred.study.pass_workload import (
+    share_board,
+    team_games,
+    workload_replay,
+    workload_tables,
+)
 from ffpred.study.role_evidence import ENTRY, NEWS_FILE
 from ffpred.study.run import HISTORY_START, LAST_COMPLETE, PAPER_YEAR
 from ffpred.study.transactions import LEDGER, read_transactions
 
 c = pl.col
 CLAIMS = Path(__file__).with_name("kickoff_claims.csv")
-ARMS = ("weekly", "kickoff", "kickoff-audited", "catch-stages")
+ARMS = ("weekly", "kickoff", "kickoff-audited", "catch-stages", "pass-workload")
 TRADE_WEEKS = [(2018, 7, "00-0031045"), (2022, 7, "00-0033280")]
 
 
@@ -157,7 +163,7 @@ def run_kickoff(
     )
     tx = read_transactions()
     inputs = [NEWS_FILE, KICKOFF_NEWS, SOURCES, REVISIONS, FACTS, LEDGER]
-    audited = arm in {"kickoff-audited", "catch-stages"}
+    audited = arm in {"kickoff-audited", "catch-stages", "pass-workload"}
     split = arm == "catch-stages"
     if audited:
         inputs.extend([CLAIMS, AVAILABILITY])
@@ -186,6 +192,7 @@ def run_kickoff(
                 positions=(pos,),
                 extra_features=CARRY if pos == "RB" else (),
                 catch_stages=split,
+                keep_pass_td_rates=arm == "pass-workload",
             )
             for pos in POSITIONS
         ]
@@ -193,6 +200,14 @@ def run_kickoff(
     files = strict_tables(pred, data)
     if split:
         files.update(catch_tables(pred.drop_nulls("points")))
+    if arm == "pass-workload":
+        games = team_games(provider.load_team_stats(years))
+        roles = share_board(
+            board, games, provider.load_player_stats(years), players_pbp
+        ).join(rb.select(*ENTRY, *CARRY), on=ENTRY, how="left", validate="1:1")
+        enriched, budgets = workload_replay(pred, roles, games, end_year)
+        files.update(workload_tables(enriched, budgets))
+        files["forecast.parquet"] = enriched
     directory = output / arm
     directory.mkdir(parents=True, exist_ok=True)
     for name, frame in files.items():

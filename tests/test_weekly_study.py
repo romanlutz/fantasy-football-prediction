@@ -45,6 +45,15 @@ from ffpred.study.panel import (
     player_panel,
     schedule_sides,
 )
+from ffpred.study.pass_workload import (
+    TEAM_FEATURES,
+    UNITS,
+    distribute,
+    share_board,
+    team_games,
+    workload_replay,
+    workload_tables,
+)
 from ffpred.study.role_evidence import (
     ENTRY,
     depth_evidence,
@@ -975,6 +984,152 @@ def test_completion_labels_require_exact_verified_matchup() -> None:
     assert catch_labels(board, boxes)["completions"].to_list() == [3, 0, None]
     with pytest.raises(DataAcquisitionError, match="completions"):
         catch_labels(board, boxes.filter(pl.col("game_id") == "g2"))
+
+
+def test_workload_history_follows_player_not_absence_or_trade() -> None:
+    c = pl.col
+    stats = pl.DataFrame(
+        [
+            (2013, 15, "a", "BUF", "LV", 30, 25),
+            (2013, 16, "b", "BUF", "LV", 50, 40),
+            (2013, 17, "c", "BUF", "LV", 20, 18),
+            (2014, 1, "d", "LV", "BUF", 40, 38),
+        ],
+        schema=["season", "week", "game_id", "team", "opponent_team", *UNITS],
+        orient="row",
+    ).with_columns(
+        pl.lit("REG").alias("season_type"),
+        pl.lit(20).alias("carries"),
+        pl.lit(2).alias("sacks_suffered"),
+    )
+    boxes = stats.head(1).with_columns(
+        pl.lit("traded").alias("player_id"),
+        pl.lit(0).alias("attempts"),
+        pl.lit(5).alias("targets"),
+    )
+    # A scoreless snap in game b is an appearance. No evidence in c is not one.
+    snaps = stats.slice(1, 1).select(
+        *PLAYER_WEEK[:2], "game_id", "team", pl.lit("traded").alias("player_id")
+    )
+    board = pl.DataFrame(
+        [
+            ("d", "LV", "traded", True),
+            ("d", "LV", "rookie", True),
+            ("d", "LV", "out", False),
+        ],
+        schema=[*ENTRY, "team_role"],
+        orient="row",
+    ).with_columns(pl.lit(201401).alias("period"))
+    roles = share_board(board, team_games(stats), boxes, snaps)
+    assert set(roles["player_id"]) == {"traded", "rookie"}
+    old = roles.filter(c("player_id") == "traded").row(0, named=True)
+    new = roles.filter(c("player_id") == "rookie").row(0, named=True)
+    assert old["prior_appearances"] == 2 and old["share_targets"] == pytest.approx(
+        5 / 65
+    )
+    assert old["actual_team_targets"] == 38 and old["peers_share_targets"] == 0
+    assert new["prior_appearances"] == 0 and new["share_targets"] is None
+    assert new["peers_share_targets"] == old["share_targets"]
+
+
+def test_workload_holdout_labels_cannot_move_same_game_forecast() -> None:
+    c = pl.col
+    p, raw = matchup_fixture()
+    board = matchups.prepare_board(
+        ProvenanceProvider(p), 2014, raw["trades"], raw["draft"], raw["snaps"]
+    )["board"].with_columns(pl.lit(0).alias(name) for name in CARRY)
+    team = p.team_stats.join(
+        schedule_sides(p.schedules).rename({"opponent": "opponent_team"}),
+        on=["team", "game_id"],
+        validate="1:1",
+    ).with_columns(pl.lit(18).alias("targets"))
+    stats = p.player_stats
+    seen = stats.select(*PLAYER_WEEK, "game_id", "team").clear()
+    base = project(board, 2014, keep_pass_td_rates=True)
+    changed_game = c("game_id") == "2014_2_ARI_LV"
+
+    def replay(t: pl.DataFrame, s: pl.DataFrame, b: pl.DataFrame) -> pl.DataFrame:
+        games = team_games(t)
+        return workload_replay(base, share_board(b, games, s, seen), games, 2014)[0]
+
+    new_team = team.with_columns(
+        pl.when(changed_game).then(63).otherwise(c("attempts")).alias("attempts"),
+        pl.when(changed_game).then(55).otherwise(c("targets")).alias("targets"),
+    )
+    new_stats = stats.with_columns(
+        pl.when(changed_game).then(0).otherwise(c("targets")).alias("targets")
+    )
+    forecast = replay(team, stats, board)
+    changed = replay(
+        new_team,
+        new_stats,
+        board.with_columns(
+            pl.when(changed_game).then(None).otherwise(c("points")).alias("points"),
+            pl.when(changed_game).then(False).otherwise(c("played")).alias("played"),
+        ),
+    )
+    before = team_games(team).filter(changed_game)
+    assert_frame_equal(
+        before.select(TEAM_FEATURES),
+        team_games(new_team).filter(changed_game).select(TEAM_FEATURES),
+    )
+    cols = [
+        *ENTRY,
+        *(
+            k
+            for k in forecast.columns
+            if k.startswith(("workload_", "budget_", "active_share_"))
+        ),
+    ]
+    assert_frame_equal(
+        forecast.filter(changed_game).select(cols),
+        changed.filter(changed_game).select(cols),
+    )
+    later = (c("season") == 2014) & (c("week") == 4)
+    assert (
+        team_games(new_team).filter(later)["allowed_targets_3"][0]
+        > team_games(team).filter(later)["allowed_targets_3"][0]
+    )
+    control = project(board, 2014).sort("season", "week", *ENTRY)
+    assert_frame_equal(control, forecast.select(control.columns))
+    replaced = {"passing_yards", "receiving_yards", "passing_tds", "receiving_tds"}
+    for method in ("linear", "forest"):
+        reconstruction = pl.sum_horizontal(
+            c((f"workload_{method}_" if k in replaced else f"{method}_") + k) * w
+            for k, w in WEIGHTS.items()
+        )
+        assert (
+            forecast.select(
+                (c(f"workload_{method}") - reconstruction).abs().max()
+            ).item()
+            < 1e-8
+        )
+    side = (
+        forecast.filter(c("game_id") == forecast["game_id"][0])
+        .filter(c("team") == forecast["team"][0])
+        .head(2)
+    )
+    allocated = distribute(
+        side.with_columns(
+            pl.lit(0.75).alias("play_probability"),
+            pl.lit(1.0).alias("active_share_attempts"),
+            pl.lit(0.2).alias("active_share_targets"),
+        )
+    )
+    assert allocated["allocated_share_attempts"].to_list() == [0.5, 0.5]
+    assert allocated["allocated_share_targets"].to_list() == pytest.approx([0.15, 0.15])
+    missing = forecast.with_row_index().with_columns(
+        pl.when(c("index") == 0).then(None).otherwise(c("points")).alias("points")
+    )
+    budgets = (
+        team_games(team)
+        .filter(c("season") == 2014)
+        .with_columns(c(u).alias(f"budget_{u}") for u in UNITS)
+    )
+    scored = workload_tables(missing, budgets)["player-volume.csv"].filter(
+        (c("stat") == "targets") & (c("model") == "workload")
+    )
+    assert scored["games"].sum() == forecast.height - 1
 
 
 def test_catch_stage_replay_preserves_control_and_prices_zero_catch_yards() -> None:

@@ -52,6 +52,9 @@ individual forecasts on an unchanged population.
 
 Follow-up on the identical audited matchups: [does separately predicting
 completions, catches and yards per catch improve the point forecast?](catch-stages/README.md)
+That experiment identified attempts and targets as the largest contributors to
+yardage error. The [team passing volume and player share experiment](pass-workload/README.md)
+then tested whether forecasting those counts differently improves fantasy points.
 
 ## Which games count
 

@@ -1,0 +1,17 @@
+position,model,reference,mae_delta,low95,high95,seasons_better,seasons,stat
+QB,workload,forest,-0.06744057,-0.10714657,-0.02774374,8,12,attempts
+QB,workload,linear,-0.09089676,-0.14227352,-0.04022435,11,12,attempts
+QB,workload,forest,0.00084355,-0.00050955,0.00244385,6,12,targets
+QB,workload,linear,0.00039243,0.00005076,0.00075900,4,12,targets
+RB,workload,forest,0.00171818,0.00124087,0.00222119,0,12,attempts
+RB,workload,linear,0.00040476,0.00021614,0.00058753,1,12,attempts
+RB,workload,forest,-0.03029681,-0.03635871,-0.02345250,12,12,targets
+RB,workload,linear,-0.01191813,-0.01690779,-0.00621108,10,12,targets
+TE,workload,forest,0.00041902,0.00010026,0.00077570,2,12,attempts
+TE,workload,linear,-0.00003239,-0.00008496,0.00001252,4,12,attempts
+TE,workload,forest,-0.00056971,-0.02165645,0.02022487,7,12,targets
+TE,workload,linear,-0.00300490,-0.01385682,0.01126822,7,12,targets
+WR,workload,forest,0.00069935,0.00008537,0.00137262,4,12,attempts
+WR,workload,linear,0.00009705,-0.00011642,0.00032259,6,12,attempts
+WR,workload,forest,-0.03398131,-0.06407421,-0.01227333,10,12,targets
+WR,workload,linear,-0.02016304,-0.02871799,-0.01107873,11,12,targets

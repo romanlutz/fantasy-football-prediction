@@ -1,0 +1,5 @@
+stat,model,team_games,mae,rmse,bias
+attempts,offense_last8,6302,6.57059267,8.25192782,0.08285068
+attempts,team_ridge,6302,6.34122279,7.97568604,-0.02401122
+targets,offense_last8,6302,6.38001825,8.03144127,0.11022295
+targets,team_ridge,6302,6.17029676,7.77159263,0.15428926
